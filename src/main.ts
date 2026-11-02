@@ -147,6 +147,7 @@ function loop(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   game.update(dt);
+  game.cutscene.skipProgress = game.cutsceneSkipProgress;
 
   if (game.phase === "menu") titleScene.update(dt);
 
@@ -163,6 +164,15 @@ createThreePixelEngine(canvas).then((engine) => {
     requestAnimationFrame(loop);
   }
 });
+
+window.addEventListener("blur", () => game.autoPause());
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) game.autoPause();
+});
+
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("debug")) {
+  void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game));
+}
 
 canvas.addEventListener("click", (e) => {
   input.focus();

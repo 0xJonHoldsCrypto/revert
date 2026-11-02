@@ -1,3 +1,4 @@
+import { WORLD } from "../constants";
 import type { ChestKind, EnvObstacleKind, WeaponKind } from "../types";
 import type { WeaponRarity } from "./rarity";
 
@@ -160,9 +161,8 @@ export const CHEST_WEAPON_POOL: WeaponKind[] = [
 ];
 
 export function biomeAt(x: number, y: number): BiomeId {
-  if (x < 1600 && y < 1600) return "wasteland";
-  if (x >= 3200) return "cex";
-  if (y >= 3200) return "defi";
-  if (x >= 1600 && y >= 1600 && x < 3200 && y < 3200) return "apt";
-  return "wasteland";
+  const east = x >= WORLD.width / 2;
+  const south = y >= WORLD.height / 2;
+  if (east) return south ? "apt" : "cex";
+  return south ? "defi" : "wasteland";
 }

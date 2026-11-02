@@ -3,7 +3,10 @@ export class Input {
   mouse = { x: 0, y: 0, down: false };
   dashPressed = false;
   pausePressed = false;
-  cutsceneAdvancePressed = false;
+  advanceHeld = false;
+  confirmPressed = false;
+  restartPressed = false;
+  cardPick: number | null = null;
   touchMove = { x: 0, y: 0 };
   touchDash = false;
 
@@ -14,6 +17,7 @@ export class Input {
   constructor(private canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => this.onKey(e, true));
     window.addEventListener("keyup", (e) => this.onKey(e, false));
+    window.addEventListener("blur", () => this.releaseAll());
     canvas.addEventListener("mousemove", (e) => {
       const r = canvas.getBoundingClientRect();
       this.mouse.x = e.clientX - r.left;
@@ -93,17 +97,53 @@ export class Input {
     }
     if (down) {
       this.keys.add(k);
+      if (e.repeat) return;
       if (k === " " || k === "shift") this.dashPressed = true;
       if (k === "escape" || k === "p") this.pausePressed = true;
-      if (k === "enter" || k === " ") this.cutsceneAdvancePressed = true;
+      if (k === "enter" || k === " ") {
+        this.confirmPressed = true;
+        this.advanceHeld = true;
+      }
+      if (k === "r") this.restartPressed = true;
+      if (k === "1" || k === "2" || k === "3") this.cardPick = Number(k) - 1;
     } else {
       this.keys.delete(k);
+      if (k === "enter" || k === " ") this.advanceHeld = false;
     }
   }
 
-  consumeAdvanceCutscene(): boolean {
-    const v = this.cutsceneAdvancePressed;
-    this.cutsceneAdvancePressed = false;
+  clearEdges() {
+    this.dashPressed = false;
+    this.touchDash = false;
+    this.pausePressed = false;
+    this.advanceHeld = false;
+    this.confirmPressed = false;
+    this.restartPressed = false;
+    this.cardPick = null;
+  }
+
+  releaseAll() {
+    this.keys.clear();
+    this.touchMove.x = 0;
+    this.touchMove.y = 0;
+    this.clearEdges();
+  }
+
+  consumeConfirm(): boolean {
+    const v = this.confirmPressed;
+    this.confirmPressed = false;
+    return v;
+  }
+
+  consumeRestart(): boolean {
+    const v = this.restartPressed;
+    this.restartPressed = false;
+    return v;
+  }
+
+  consumeCardPick(): number | null {
+    const v = this.cardPick;
+    this.cardPick = null;
     return v;
   }
 

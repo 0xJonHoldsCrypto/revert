@@ -85,6 +85,7 @@ export class CutsceneEngine {
   private totalTime = 0;
   private onComplete: (() => void) | null = null;
   private heroId: CharacterId = "sec-dev";
+  skipProgress = 0;
 
   setHero(id: CharacterId) {
     this.heroId = id;
@@ -191,6 +192,10 @@ export class CutsceneEngine {
     ctx.fillStyle = "#f3ecdf";
     ctx.font = `500 12px ${FONT_MONO}`;
     ctx.fillText("hold to skip", w - 16, h - 12);
+    if (this.skipProgress > 0) {
+      ctx.fillStyle = INK.gold;
+      ctx.fillRect(w - 96, h - 6, 80 * this.skipProgress, 2);
+    }
     ctx.restore();
   }
 

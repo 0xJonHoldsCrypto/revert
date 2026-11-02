@@ -61,6 +61,9 @@ import {
   shuffle,
 } from "../utils/math";
 
+const CUTSCENE_SKIP_HOLD_SEC = 1;
+const CUTSCENE_TAP_MAX_SEC = 0.35;
+
 let nextId = 1;
 function uid(): number {
   return nextId++;
@@ -125,6 +128,8 @@ export class Game {
   private maxHpBonus = 0;
   private pendingBossKind: EnemyKind | null = null;
   private victoryPending = false;
+  private cutsceneHold = 0;
+  god = false;
   worldSeed = 0;
 
   constructor(
@@ -155,8 +160,8 @@ export class Game {
     this.player = {
       id: uid(),
       characterId: ch.id,
-      x: WORLD.width / 2,
-      y: WORLD.height / 2,
+      x: WORLD.width / 4,
+      y: WORLD.height / 4,
       vx: 0,
       vy: 0,
       radius: PLAYER_RADIUS,
@@ -212,7 +217,9 @@ export class Game {
 
   setPhase(phase: GamePhase) {
     this.phase = phase;
-    if (phase === "menu" || phase === "won" || phase === "lost") this.music.stop();
+    this.input.clearEdges();
+    this.cutsceneHold = 0;
+    if (phase === "menu" || phase === "won" || phase === "lost" || phase === "paused") this.music.stop();
     if (phase === "menu") this.rollMenuHero();
     if (phase === "playing") {
       this.music.start();
@@ -228,6 +235,14 @@ export class Game {
   togglePause() {
     if (this.phase === "playing") this.setPhase("paused");
     else if (this.phase === "paused") this.setPhase("playing");
+  }
+
+  autoPause() {
+    if (this.phase === "playing") this.setPhase("paused");
+  }
+
+  get cutsceneSkipProgress(): number {
+    return clamp(this.cutsceneHold / CUTSCENE_SKIP_HOLD_SEC, 0, 1);
   }
 
   pickUpgrade(index: number) {
@@ -295,16 +310,27 @@ export class Game {
   }
 
   update(dt: number) {
-    if (this.phase === "menu") return;
-
-    if (this.phase === "cutscene") {
-      this.cutscene.update(dt);
-      if (this.input.consumeAdvanceCutscene()) this.cutscene.advance();
-      if (this.input.consumePause()) this.cutscene.skip();
+    if (this.phase === "menu") {
+      if (this.input.consumeConfirm()) this.requestStartRun(true);
       return;
     }
 
-    if (this.phase === "levelup" || this.phase === "won" || this.phase === "lost") return;
+    if (this.phase === "cutscene") {
+      this.updateCutsceneInput(dt);
+      if (this.phase === "cutscene") this.cutscene.update(dt);
+      return;
+    }
+
+    if (this.phase === "levelup") {
+      const pick = this.input.consumeCardPick();
+      if (pick !== null) this.pickUpgrade(pick);
+      return;
+    }
+
+    if (this.phase === "won" || this.phase === "lost") {
+      if (this.input.consumeRestart()) this.requestStartRun();
+      return;
+    }
 
     if (this.input.consumePause()) this.togglePause();
     if (this.phase === "paused") return;
@@ -312,7 +338,7 @@ export class Game {
     this.elapsed += dt;
     this.stats.timeSurvived = this.elapsed;
 
-    if (this.elapsed >= WIN_TIME_SEC && !this.victoryPending) {
+    if (this.victoryReady()) {
       this.victoryPending = true;
       this.setPhase("cutscene");
       this.cutscene.play("victory", () => this.setPhase("won"));
@@ -332,17 +358,37 @@ export class Game {
     this.updatePickups(dt);
     this.updateParticles(dt);
     this.updateYield(dt);
-    this.music.updateRegion(this.player.x, this.player.y);
+    this.music.updateRegion(biomeAt(this.player.x, this.player.y));
     const mv = this.input.moveVector();
     this.recorder.sample(this.elapsed, mv.x, mv.y, false);
     this.checkBossSchedule();
     this.updateCamera();
     this.pushHud();
 
+    if (this.god) this.player.hp = this.player.maxHp;
     if (this.player.hp <= 0) {
+      this.player.hp = 0;
       this.player.dead = true;
       this.setPhase("lost");
     }
+  }
+
+  private updateCutsceneInput(dt: number) {
+    this.input.consumePause();
+    if (this.input.advanceHeld) {
+      this.cutsceneHold += dt;
+      if (this.cutsceneHold >= CUTSCENE_SKIP_HOLD_SEC) this.cutscene.skip();
+      return;
+    }
+    const tapped = this.cutsceneHold > 0 && this.cutsceneHold < CUTSCENE_TAP_MAX_SEC;
+    this.cutsceneHold = 0;
+    if (tapped) this.cutscene.advance();
+  }
+
+  private victoryReady(): boolean {
+    if (this.victoryPending || this.elapsed < WIN_TIME_SEC) return false;
+    if (this.pendingBossKind || this.bossesSpawned < BOSS_TIMES.length) return false;
+    return !this.enemies.some((e) => !e.dead && ENEMIES[e.kind].isBoss);
   }
 
   private updatePlayer(dt: number) {
@@ -397,17 +443,38 @@ export class Game {
       if (!this.playerInObstacle(p, o)) continue;
       const def = ENV_OBSTACLES[o.kind];
       if (def.damagePerSec) {
-        p.hp -= def.damagePerSec * dt * (1 - p.armor);
+        p.hp -= def.damagePerSec * dt * (1 - this.totalArmor());
       }
-      if (def.blocks) {
-        p.x -= p.vx * dt;
-        p.y -= p.vy * dt;
-      }
+      if (def.blocks) this.pushOutOfObstacle(p, o);
       if (def.slowMult && p.dashTimer <= 0) {
         p.x -= p.vx * dt * (1 - def.slowMult);
         p.y -= p.vy * dt * (1 - def.slowMult);
       }
     }
+  }
+
+  private pushOutOfObstacle(p: PlayerState, o: WorldObstacle) {
+    const hw = o.width / 2;
+    const hh = o.height / 2;
+    const cx = clamp(p.x, o.x - hw, o.x + hw);
+    const cy = clamp(p.y, o.y - hh, o.y + hh);
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const d = Math.hypot(dx, dy);
+    if (d > 0) {
+      p.x = cx + (dx / d) * p.radius;
+      p.y = cy + (dy / d) * p.radius;
+      return;
+    }
+    const left = p.x - (o.x - hw);
+    const right = o.x + hw - p.x;
+    const top = p.y - (o.y - hh);
+    const bottom = o.y + hh - p.y;
+    const nearest = Math.min(left, right, top, bottom);
+    if (nearest === left) p.x = o.x - hw - p.radius;
+    else if (nearest === right) p.x = o.x + hw + p.radius;
+    else if (nearest === top) p.y = o.y - hh - p.radius;
+    else p.y = o.y + hh + p.radius;
   }
 
   private pruneBuffs() {
@@ -670,6 +737,21 @@ export class Game {
       flash: 0,
       wobble: 0,
     });
+  }
+
+  debugSetTime(seconds: number) {
+    this.elapsed = seconds;
+    this.bossesSpawned = BOSS_TIMES.filter((t) => t < seconds).length;
+  }
+
+  debugSpawnBoss(kind: EnemyKind) {
+    this.spawnBoss(kind);
+  }
+
+  debugPlayCutscene(id: CutsceneId) {
+    const back = this.phase;
+    this.setPhase("cutscene");
+    this.cutscene.play(id, () => this.setPhase(back === "menu" ? "menu" : "playing"));
   }
 
   private updateYield(dt: number) {

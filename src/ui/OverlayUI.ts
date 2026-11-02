@@ -69,9 +69,10 @@ export class OverlayUI {
   }
 
   onHudUpdate(data: HudData) {
+    if (this.game.phase !== "playing" && this.game.phase !== "paused") return;
     this.ensureHud();
     if (!this.hudEl) return;
-    const hpPct = (data.hp / data.maxHp) * 100;
+    const hpPct = Math.max(0, (data.hp / data.maxHp) * 100);
     const xpPct = (data.xp / data.xpToNext) * 100;
     const weaponLines = data.weapons
       .map((w: { name: string; level: number; rarity: string }) =>
@@ -86,7 +87,7 @@ export class OverlayUI {
       <div class="wordmark">Exploit<span>.run</span></div>
       <div class="hud-block">
         <strong>HP</strong>
-        ${Math.ceil(data.hp)} / ${data.maxHp}
+        ${Math.max(0, Math.ceil(data.hp))} / ${data.maxHp}
         <div class="bar"><div class="bar-fill hp" style="width:${hpPct}%"></div></div>
       </div>
       <div class="hud-block">
@@ -151,9 +152,9 @@ export class OverlayUI {
           Damage dealt: ${Math.floor(s.damageDealt).toLocaleString()}
         </p>
         <div class="btn-row">
-          <button type="button" class="btn btn-primary" id="again-btn">PLAY AGAIN</button>
+          <button type="button" class="btn btn-primary" id="again-btn">PLAY AGAIN [R]</button>
           <button type="button" class="btn btn-secondary" id="menu-btn">TITLE</button>
-          <button type="button" class="btn btn-secondary" id="wallet-btn">SUBMIT SCORE (WALLET)</button>
+          ${won ? '<button type="button" class="btn btn-secondary" id="wallet-btn">SUBMIT SCORE (WALLET)</button>' : ""}
         </div>
         <p class="controls-hint" id="wallet-status"></p>
       </div>
@@ -161,15 +162,11 @@ export class OverlayUI {
     this.overlay.appendChild(panel);
     panel.querySelector("#again-btn")!.addEventListener("click", () => this.game.requestStartRun());
     panel.querySelector("#menu-btn")!.addEventListener("click", () => this.game.setPhase("menu"));
-    panel.querySelector("#wallet-btn")!.addEventListener("click", () => void this.submitWalletScore(won, panel));
+    panel.querySelector("#wallet-btn")?.addEventListener("click", () => void this.submitWalletScore(panel));
   }
 
-  private async submitWalletScore(won: boolean, panel: HTMLElement) {
+  private async submitWalletScore(panel: HTMLElement) {
     const status = panel.querySelector("#wallet-status") as HTMLElement;
-    if (!won) {
-      status.textContent = "Wallet submit requires a survived run (FUNDS SAFU).";
-      return;
-    }
     status.textContent = "Signing…";
     const { submitScoreWithWallet } = await import("../web3/submitScore");
     const payload = this.game.recorder.build(
@@ -178,7 +175,7 @@ export class OverlayUI {
       this.game.stats.timeSurvived,
       this.game.stats.kills
     );
-    const apiBase = window.location.origin.includes("localhost") ? "http://localhost:8787" : window.location.origin;
+    const apiBase = /localhost|127\.0\.0\.1/.test(window.location.origin) ? "http://localhost:8787" : window.location.origin;
     const result = await submitScoreWithWallet(payload, apiBase);
     status.textContent = result.message;
   }
@@ -188,7 +185,7 @@ export class OverlayUI {
     if (show && !badge) {
       badge = document.createElement("div");
       badge.className = "pause-badge";
-      badge.textContent = "PAUSED · Tap to resume";
+      badge.textContent = "PAUSED · Esc or click to resume";
       this.overlay.appendChild(badge);
     } else if (!show && badge) {
       badge.remove();

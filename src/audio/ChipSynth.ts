@@ -66,16 +66,7 @@ export class MusicDirector {
     this.synth.resume();
   }
 
-  regionForPosition(x: number, y: number): MusicRegion {
-    if (x < 1600 && y < 1600) return "wasteland";
-    if (x >= 3200) return "cex";
-    if (y >= 3200) return "defi";
-    if (x >= 1600 && y >= 1600 && x < 3200 && y < 3200) return "apt";
-    return "wasteland";
-  }
-
-  updateRegion(x: number, y: number) {
-    const next = this.regionForPosition(x, y);
+  updateRegion(next: MusicRegion) {
     if (next === this.region) return;
     const prev = this.region;
     this.region = next;
