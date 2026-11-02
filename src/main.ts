@@ -11,6 +11,9 @@ import { applyCanvasBackingStore, applyCanvasSize, readViewport } from "./render
 import { OverlayUI } from "./ui/OverlayUI";
 import { bootProgress, finishBoot } from "./ui/bootScreen";
 import { drawCinematic } from "./ui/cinematicOverlay";
+import { bindMute } from "./ui/muteButton";
+import { mountTouchControls, syncTouchVisible } from "./ui/touchControls";
+import { CAMEOS } from "./data/cameos";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const uiCanvas = document.createElement("canvas");
@@ -45,6 +48,7 @@ const uiBridge: { overlay: OverlayUI | null } = { overlay: null };
 const game = new Game(canvas, input, {
   onPhaseChange: (phase) => {
     uiBridge.overlay?.onPhaseChange(phase);
+    syncTouchVisible(phase);
   },
   onLevelUpChoices: (choices) => uiBridge.overlay?.onLevelUpChoices(choices),
   onHudUpdate: (data) => uiBridge.overlay?.onHudUpdate(data),
@@ -53,6 +57,8 @@ const game = new Game(canvas, input, {
 const overlay = new OverlayUI(game);
 uiBridge.overlay = overlay;
 overlay.init();
+bindMute(game.audio);
+mountTouchControls(input);
 
 const SIM_STEP = 1 / 60;
 const MAX_SIM_STEPS = 8;
@@ -62,7 +68,7 @@ let last = performance.now();
 let loopStarted = false;
 
 function isWorldVisible() {
-  return game.phase === "menu" || game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "won" || game.phase === "lost" || game.phase === "cinematic";
+  return game.phase === "menu" || game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "lost" || game.phase === "cinematic";
 }
 
 function drawUiOverlay() {
@@ -74,7 +80,7 @@ function drawUiOverlay() {
     return;
   }
   if (isWorldVisible() && game.player) {
-    if (game.phase !== "won" && game.phase !== "lost" && game.phase !== "menu") drawRunChrome(vp.width, vp.height);
+    if (game.phase !== "lost" && game.phase !== "menu") drawRunChrome(vp.width, vp.height);
     return;
   }
 
@@ -116,12 +122,13 @@ function drawEnemyTags(w: number, h: number) {
   uiCtx.textAlign = "center";
   uiCtx.font = `700 11px ${FONT_MONO}`;
   for (const e of game.enemies) {
-    if (e.kind !== "insider" && !e.feedNode && !e.implant && !e.carried) continue;
+    if (e.kind !== "insider" && !e.feedNode && !e.implant && !e.carried && !e.elite) continue;
     const s = pixelEngine?.worldToScreen(e.x, e.y - e.radius * 3.6, w, h);
     if (!s || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue;
     let text = "";
     let color = "#2ee6c7";
-    if (e.kind === "insider" && !e.revealed) text = "STAFF ✓";
+    if (e.elite) { text = e.bounty ? "BOUNTY" : "WHALE"; color = "#ffc23d"; }
+    else if (e.kind === "insider" && !e.revealed) text = "STAFF ✓";
     else if (e.implant) { text = "IMPLANT"; color = "#ff5c48"; }
     else if (e.feedNode) { text = "PRICE FEED"; color = "#79c0ff"; }
     else if (e.carried) { text = `-$${(e.carried / 1e6).toFixed(1)}M`; color = "#ff5c48"; }
@@ -135,25 +142,91 @@ function drawEnemyTags(w: number, h: number) {
 
 function drawOffscreenPointers(w: number, h: number) {
   for (const e of game.enemies) {
-    if (e.kind !== "bridge-drainer" && !ENEMIES[e.kind].isBoss) continue;
-    const s = pixelEngine?.worldToScreen(e.x, e.y, w, h);
-    if (!s || (s.x > 0 && s.y > 0 && s.x < w && s.y < h)) continue;
-    const a = Math.atan2(s.y - h / 2, s.x - w / 2);
-    const rx = w / 2 - 34;
-    const ry = h / 2 - 54;
-    const k = Math.min(rx / Math.max(Math.abs(Math.cos(a)), 1e-3), ry / Math.max(Math.abs(Math.sin(a)), 1e-3));
-    uiCtx.save();
-    uiCtx.translate(w / 2 + Math.cos(a) * k, h / 2 + Math.sin(a) * k);
-    uiCtx.rotate(a);
-    uiCtx.fillStyle = ENEMIES[e.kind].isBoss ? "#ff5c48" : "#b58cff";
-    uiCtx.beginPath();
-    uiCtx.moveTo(14, 0);
-    uiCtx.lineTo(-8, -9);
-    uiCtx.lineTo(-8, 9);
-    uiCtx.fill();
-    uiCtx.restore();
+    if (e.kind !== "bridge-drainer" && !e.bounty && !ENEMIES[e.kind].isBoss) continue;
+    drawPointer(e.x, e.y, ENEMIES[e.kind].isBoss ? "#ff5c48" : e.bounty ? "#ffc23d" : "#b58cff", w, h);
+  }
+  for (const item of game.interactables) {
+    if (item.used) continue;
+    if (item.kind === "cameo") drawPointer(item.x, item.y, CAMEOS[item.cameo!].color, w, h);
+    if (item.kind === "airdrop") drawPointer(item.x, item.y, "#f4f3ee", w, h);
   }
 }
+
+function drawPointer(x: number, y: number, color: string, w: number, h: number) {
+  const s = pixelEngine?.worldToScreen(x, y, w, h);
+  if (!s || (s.x > 0 && s.y > 0 && s.x < w && s.y < h)) return;
+  const a = Math.atan2(s.y - h / 2, s.x - w / 2);
+  const rx = w / 2 - 34;
+  const ry = h / 2 - 54;
+  const k = Math.min(rx / Math.max(Math.abs(Math.cos(a)), 1e-3), ry / Math.max(Math.abs(Math.sin(a)), 1e-3));
+  uiCtx.save();
+  uiCtx.translate(w / 2 + Math.cos(a) * k, h / 2 + Math.sin(a) * k);
+  uiCtx.rotate(a);
+  uiCtx.fillStyle = color;
+  uiCtx.beginPath();
+  uiCtx.moveTo(14, 0);
+  uiCtx.lineTo(-8, -9);
+  uiCtx.lineTo(-8, 9);
+  uiCtx.fill();
+  uiCtx.restore();
+}
+
+const RADAR_RANGE = 1500;
+
+function drawRadar(w: number) {
+  const size = w < 640 ? 76 : 108;
+  const x = w - size - 12;
+  const y = w < 640 ? 62 : 72;
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const p = game.player;
+  const dot = (wx: number, wy: number, color: string, r: number) => {
+    const dx = ((wx - p.x) / RADAR_RANGE) * (size / 2);
+    const dy = ((wy - p.y) / RADAR_RANGE) * (size / 2);
+    if (Math.abs(dx) > size / 2 - 2 || Math.abs(dy) > size / 2 - 2) return;
+    uiCtx.fillStyle = color;
+    uiCtx.fillRect(Math.round(cx + dx - r / 2), Math.round(cy + dy - r / 2), r, r);
+  };
+  uiCtx.fillStyle = "rgba(4,6,12,0.72)";
+  uiCtx.fillRect(x, y, size, size);
+  uiCtx.strokeStyle = "rgba(255,255,255,0.14)";
+  uiCtx.lineWidth = 1;
+  uiCtx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+  for (const well of game.wells) if (!well.used) dot(well.x, well.y, "#6cb6ff", 3);
+  for (const chest of game.chests) if (!chest.opened) dot(chest.x, chest.y, "#f0c14d", 3);
+  for (const item of game.interactables) {
+    if (item.used) continue;
+    if (item.kind === "cameo") dot(item.x, item.y, CAMEOS[item.cameo!].color, 5);
+    else if (item.kind === "airdrop") dot(item.x, item.y, "#ffffff", 4);
+    else dot(item.x, item.y, "#2ee6c7", 2);
+  }
+  for (const e of game.enemies) if (ENEMIES[e.kind].isBoss || e.elite) dot(e.x, e.y, "#ff5c48", 5);
+  uiCtx.fillStyle = "#ffffff";
+  uiCtx.fillRect(cx - 1, cy - 1, 3, 3);
+}
+
+function drawStick() {
+  const origin = input.stickOrigin;
+  if (!origin) return;
+  uiCtx.strokeStyle = "rgba(255,255,255,0.35)";
+  uiCtx.lineWidth = 2;
+  uiCtx.beginPath();
+  uiCtx.arc(origin.x, origin.y, 52, 0, Math.PI * 2);
+  uiCtx.stroke();
+  uiCtx.fillStyle = "rgba(46,230,199,0.55)";
+  uiCtx.beginPath();
+  uiCtx.arc(origin.x + input.touchMove.x * 52, origin.y + input.touchMove.y * 52, 20, 0, Math.PI * 2);
+  uiCtx.fill();
+}
+
+const ITEM_PROMPT: Record<string, string> = {
+  faucet: "Faucet · free $SAFU",
+  "lp-pool": "Liquidity pool · stand to heal",
+  "bridge-gate": "Bridge · jump across the map",
+  "exploit-charge": "Exploit charge · step on, run away",
+  "bounty-board": "Bounty board · post a whale hunt",
+  airdrop: "Airdrop · free loot",
+};
 
 function drawRunChrome(w: number, h: number) {
   const p = game.player;
@@ -161,6 +234,8 @@ function drawRunChrome(w: number, h: number) {
   drawFeetBars(w, h);
   drawEnemyTags(w, h);
   drawOffscreenPointers(w, h);
+  drawRadar(w);
+  drawStick();
 
   for (const f of game.floaters) {
     const s = pixelEngine?.worldToScreen(f.x, f.y, w, h);
@@ -200,14 +275,20 @@ function drawRunChrome(w: number, h: number) {
     const d = Math.hypot(p.x - c.x, p.y - c.y);
     if (d < best) {
       best = d;
-      const cost = game.priceLieTimer > 0 ? 1 + Math.floor(Math.abs(Math.sin(performance.now() / 70)) * 9000) : c.coinCost;
-      prompt = p.coins >= c.coinCost ? `Step in · ${CHESTS[c.kind].name} · ${cost} SAFU` : `Need ${cost} SAFU`;
+      const realCost = game.chestCost(c.coinCost);
+      const cost = game.priceLieTimer > 0 ? 1 + Math.floor(Math.abs(Math.sin(performance.now() / 70)) * 9000) : realCost;
+      prompt = p.coins >= realCost ? `Step in · ${CHESTS[c.kind].name} · ${cost} SAFU` : `Need ${cost} SAFU`;
     }
   }
   for (const well of game.wells) {
     if (well.used) continue;
     const d = Math.hypot(p.x - well.x, p.y - well.y);
     if (d < well.radius + 28) prompt = `Step in — ${WELL_STATS[well.stat].title}`;
+  }
+  for (const item of game.interactables) {
+    if (item.used || game.elapsed < item.readyAt) continue;
+    if (Math.hypot(p.x - item.x, p.y - item.y) > item.radius + 70) continue;
+    prompt = item.cameo ? `${CAMEOS[item.cameo].name} · ${CAMEOS[item.cameo].deal}` : ITEM_PROMPT[item.kind] ?? "";
   }
   if (prompt) {
     const s = pixelEngine?.worldToScreen(p.x, p.y - 60, w, h);
@@ -226,7 +307,7 @@ function drawRunChrome(w: number, h: number) {
 function loop(now: number) {
   const frameDt = Math.min(0.25, (now - last) / 1000);
   last = now;
-  accumulator += frameDt;
+  if (game.windowActive) accumulator += frameDt;
   let steps = 0;
   while (accumulator >= SIM_STEP && steps < MAX_SIM_STEPS) {
     game.update(SIM_STEP);
@@ -252,11 +333,17 @@ createThreePixelEngine(canvas).then((engine) => {
   }
 });
 
-window.addEventListener("pointerdown", () => game.audio.unlock());
-window.addEventListener("keydown", () => game.audio.unlock());
-window.addEventListener("blur", () => game.autoPause());
+function wake() {
+  game.setWindowActive(true);
+  game.audio.unlock();
+}
+
+window.addEventListener("pointerdown", wake);
+window.addEventListener("keydown", wake);
+window.addEventListener("focus", () => game.setWindowActive(true));
+window.addEventListener("blur", () => game.setWindowActive(false));
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) game.autoPause();
+  game.setWindowActive(!document.hidden);
 });
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("debug")) {

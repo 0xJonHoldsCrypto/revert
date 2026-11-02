@@ -1,7 +1,5 @@
 export const WORLD = { width: 4800, height: 4800 };
 
-export const WIN_TIME_SEC = 20 * 60;
-
 export const TILE = 64;
 
 export const COLORS = {
@@ -25,13 +23,31 @@ export const PLAYER_RADIUS = 18;
 
 export const MAX_ENEMIES = 500;
 
-export const BOSS_TIMES = [4 * 60, 7 * 60, 10 * 60, 13 * 60, 16 * 60, 19 * 60];
+export const SECOND_WALLET_TIME_SEC = 20 * 60;
 
+export const BOSS_TIMES = [120, 210, 300, 390, 480, 570, 660, 750, 840];
+const ENDLESS_BOSS_GAP_SEC = 105;
 export const BOSS_KINDS = [
+  "boss-shill",
+  "boss-rug-baron",
   "boss-mev-king",
+  "boss-gas-golem",
   "boss-unit-414",
   "boss-phish-king",
   "boss-oracle",
   "boss-nightdesk",
   "boss-grandmaster",
 ] as const;
+
+export function bossTimeAt(index: number): number {
+  const last = BOSS_TIMES.length - 1;
+  return index <= last ? BOSS_TIMES[index]! : BOSS_TIMES[last]! + (index - last) * ENDLESS_BOSS_GAP_SEC;
+}
+
+export function bossKindAt(index: number) {
+  return BOSS_KINDS[index % BOSS_KINDS.length]!;
+}
+
+export function bossTierAt(index: number): number {
+  return Math.floor(index / BOSS_KINDS.length);
+}

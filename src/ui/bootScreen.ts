@@ -14,6 +14,8 @@ const TIPS = [
   "Green badge. Friendly face. Do not let the Insider get close.",
   "Multisig only saves you while two signers are online.",
   "Flash loans must be repaid. With kills.",
+  "When a big name posts on-chain, go find them. Every deal has a catch.",
+  "That shiny coin sitting perfectly still? Honeypot.",
 ];
 const MIN_MS = 1700;
 const BLOCKS = 28;
@@ -103,7 +105,7 @@ export function mountBootScreen() {
       if (line.tone) el.className = line.tone;
       log.appendChild(el);
     }
-    const step = Math.floor(now / 130) % 2;
+    const step = Math.floor(now / 180) % 2;
     heroes.forEach((h, f) => (h.style.display = f === step ? "block" : "none"));
     chasers.forEach((h, f) => (h.style.display = f === step ? "block" : "none"));
     runner.style.left = `calc(${shown * 100}% - 18px)`;

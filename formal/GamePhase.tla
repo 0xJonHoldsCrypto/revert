@@ -1,85 +1,65 @@
 ---- MODULE GamePhase ----
 EXTENDS Naturals
 
-VARIABLES phase, hp, elapsed
+CONSTANT MaxPopups
 
-Phases == {"menu", "playing", "levelup", "paused", "won", "lost"}
+VARIABLES phase, focused, popups, audio
+
+Phases == {"menu", "cutscene", "cinematic", "playing", "levelup", "paused", "lost"}
+vars == <<phase, focused, popups, audio>>
+
+AudioFor(p) == IF p \in {"paused", "levelup"} THEN "silent" ELSE "on"
 
 TypeOK ==
-  /\\ phase \\in Phases
-  /\\ hp \\in Nat
-  /\\ elapsed \\in Nat
+  /\ phase \in Phases
+  /\ focused \in BOOLEAN
+  /\ popups \in 0..MaxPopups
+  /\ audio \in {"on", "silent"}
 
 Init ==
-  /\\ phase = "menu"
-  /\\ hp = 100
-  /\\ elapsed = 0
+  /\ phase = "menu"
+  /\ focused = TRUE
+  /\ popups = 0
+  /\ audio = "on"
 
-StartRun ==
-  /\\ phase = "menu"
-  /\\ phase' = "playing"
-  /\\ hp' = 100
-  /\\ elapsed' = 0
-  /\\ UNCHANGED <<>>
+Go(p) == phase' = p /\ audio' = AudioFor(p)
 
-Pause ==
-  /\\ phase = "playing"
-  /\\ phase' = "paused"
-  /\\ UNCHANGED <<hp, elapsed>>
+StartFromTitle == focused /\ phase = "menu" /\ Go("cutscene") /\ popups' = 0 /\ UNCHANGED focused
+IntroEnds == focused /\ phase = "cutscene" /\ Go("cinematic") /\ UNCHANGED <<focused, popups>>
+Landed == focused /\ phase = "cinematic" /\ Go("playing") /\ UNCHANGED <<focused, popups>>
+BossEntrance == focused /\ phase = "playing" /\ Go("cinematic") /\ UNCHANGED <<focused, popups>>
+SecondWallet == focused /\ phase = "playing" /\ Go("cutscene") /\ UNCHANGED <<focused, popups>>
+SecondWalletEnds == focused /\ phase = "cutscene" /\ Go("playing") /\ UNCHANGED <<focused, popups>>
+Pause == focused /\ phase = "playing" /\ Go("paused") /\ UNCHANGED <<focused, popups>>
+Resume == phase = "paused" /\ Go("playing") /\ focused' = TRUE /\ UNCHANGED popups
+LevelUp == focused /\ phase = "playing" /\ Go("levelup") /\ UNCHANGED <<focused, popups>>
+QueuePopup == focused /\ phase = "playing" /\ popups < MaxPopups /\ popups' = popups + 1 /\ UNCHANGED <<phase, focused, audio>>
+OpenPopup == focused /\ phase = "playing" /\ popups > 0 /\ popups' = popups - 1 /\ Go("levelup") /\ UNCHANGED focused
+PickCard == phase = "levelup" /\ Go("playing") /\ focused' = TRUE /\ UNCHANGED popups
+Die == focused /\ phase = "playing" /\ Go("lost") /\ UNCHANGED <<focused, popups>>
+Restart == phase = "lost" /\ Go("cinematic") /\ popups' = 0 /\ focused' = TRUE
+QuitToTitle == phase \in {"paused", "lost"} /\ Go("menu") /\ popups' = 0 /\ focused' = TRUE
 
-Unpause ==
-  /\\ phase = "paused"
-  /\\ phase' = "playing"
-  /\\ UNCHANGED <<hp, elapsed>>
+Blur ==
+  /\ focused
+  /\ focused' = FALSE
+  /\ phase' = IF phase = "playing" THEN "paused" ELSE phase
+  /\ audio' = AudioFor(phase')
+  /\ UNCHANGED popups
 
-LevelUp ==
-  /\\ phase = "playing"
-  /\\ phase' = "levelup"
-  /\\ UNCHANGED <<hp, elapsed>>
-
-ResumeFromLevelUp ==
-  /\\ phase = "levelup"
-  /\\ phase' = "playing"
-  /\\ UNCHANGED <<hp, elapsed>>
-
-Tick ==
-  /\\ phase = "playing"
-  /\\ elapsed' = elapsed + 1
-  /\\ UNCHANGED <<phase, hp>>
-
-Damage ==
-  /\\ phase = "playing"
-  /\\ hp > 0
-  /\\ hp' = hp - 1
-  /\\ UNCHANGED <<phase, elapsed>>
-
-Death ==
-  /\\ phase = "playing"
-  /\\ hp = 0
-  /\\ phase' = "lost"
-  /\\ UNCHANGED <<elapsed>>
-
-Win ==
-  /\\ phase = "playing"
-  /\\ elapsed = 1200
-  /\\ phase' = "won"
-  /\\ UNCHANGED <<hp>>
+Focus == ~focused /\ focused' = TRUE /\ UNCHANGED <<phase, popups, audio>>
 
 Next ==
-  \\/ StartRun
-  \\/ Pause
-  \\/ Unpause
-  \\/ LevelUp
-  \\/ ResumeFromLevelUp
-  \\/ Tick
-  \\/ Damage
-  \\/ Death
-  \\/ Win
+  \/ StartFromTitle \/ IntroEnds \/ Landed \/ BossEntrance \/ SecondWallet \/ SecondWalletEnds
+  \/ Pause \/ Resume \/ LevelUp \/ QueuePopup \/ OpenPopup \/ PickCard
+  \/ Die \/ Restart \/ QuitToTitle \/ Blur \/ Focus
 
-Spec == Init /\\ [][Next]_<<phase, hp, elapsed>>
+Spec == Init /\ [][Next]_vars /\ WF_vars(Focus) /\ WF_vars(PickCard) /\ WF_vars(OpenPopup)
 
-NoMenuPlaying ==
-  ~(phase = "menu" /\\ elapsed > 0)
+SilentWhileFrozen == phase \in {"paused", "levelup"} => audio = "silent"
+NeverPlayingUnfocused == phase = "playing" => focused
+NoPopupsOnTitle == phase = "menu" => popups = 0
 
-THEOREM Spec => []TypeOK
+PopupAlwaysCloses == phase = "levelup" ~> phase # "levelup"
+FocusReturns == ~focused ~> focused
 ====

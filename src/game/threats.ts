@@ -13,10 +13,19 @@ export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
   "sim-swapper": "One hit swaps your controls for a moment.",
   insider: "Green badge, friendly face. Turns on you up close.",
   "shadow-op": "Keeps its distance and shoots. Flanks in groups.",
+  "airdrop-farmer": "Weak, fast and never alone. Here for the points.",
+  sybil: "One wallet, many wallets. Splits when it dies.",
+  liquidator: "Slow until you are hurt. The lower your HP, the faster it comes.",
+  "gas-guzzler": "Leaves toxic gas where it walks. Bursts when it dies.",
+  "flash-bot": "Draws a line, then blinks down it. Sidestep the line.",
+  "pump-bot": "Grows until it dumps on you. Kill it while it is small.",
+  "wash-trader": "Heals everything near it. Priority target.",
+  "honeypot-mimic": "That shiny coin is a trap. It bites when you get close.",
 };
 
 const DRAIN_PER_SEC = 900_000;
 const DRAIN_CAP = 70_000_000;
+const MAX_HAZARDS = 48;
 
 function steer(e: Enemy, tx: number, ty: number, speed: number, dt: number) {
   const a = angleBetween(e.x, e.y, tx, ty);
@@ -25,7 +34,7 @@ function steer(e: Enemy, tx: number, ty: number, speed: number, dt: number) {
 }
 
 export function isHiddenFromWeapons(e: Enemy): boolean {
-  return (e.kind === "phishing-bot" || e.kind === "insider") && !e.revealed;
+  return (e.kind === "phishing-bot" || e.kind === "insider" || e.kind === "honeypot-mimic") && !e.revealed;
 }
 
 export function fireEnemyBullet(game: Game, x: number, y: number, angle: number, speed: number, damage: number, color: string, source: EnemyKind) {
@@ -148,6 +157,79 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
       }
       return;
     }
+    case "liquidator": {
+      steer(e, p.x, p.y, speed * (1 + 2.4 * (1 - p.hp / p.maxHp)), dt);
+      return;
+    }
+    case "gas-guzzler": {
+      steer(e, p.x, p.y, speed, dt);
+      if ((e.aiTimer ?? 0) <= 0) {
+        e.aiTimer = 2.4;
+        gasCloud(game, e.x, e.y, 58, e.damage * 0.5, e.kind);
+      }
+      return;
+    }
+    case "flash-bot": {
+      if (e.charge) {
+        e.charge.t -= dt;
+        if (e.charge.t <= 0) e.charge = undefined;
+        else if (e.charge.t < e.charge.dash) {
+          e.x += Math.cos(e.charge.angle) * 1100 * dt;
+          e.y += Math.sin(e.charge.angle) * 1100 * dt;
+        }
+        return;
+      }
+      steer(e, p.x, p.y, speed, dt);
+      if ((e.aiTimer ?? 2) <= 0 && d < 520) {
+        const angle = angleBetween(e.x, e.y, p.x, p.y);
+        e.aiTimer = 3.6;
+        e.charge = { t: 0.95, dash: 0.3, angle };
+        game.addHazard({ shape: "beam", x: e.x, y: e.y, angle, length: 330, windup: 0.65, active: 0.01, damage: e.damage, color: "#6ff7ff", source: e.kind, knock: 0 });
+      }
+      return;
+    }
+    case "pump-bot": {
+      steer(e, p.x, p.y, speed, dt);
+      e.age = (e.age ?? 0) + dt;
+      e.scale = 1 + Math.min(1, e.age / 9) * 0.9;
+      if (e.age >= 9) {
+        e.dead = true;
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2;
+          fireEnemyBullet(game, e.x, e.y, a, 220, e.damage * 0.7, "#ff5c48", e.kind);
+        }
+        game.addFloater(e.x, e.y - 40, "DUMPED", "#ff5c48");
+        game.audio.play("liquidation");
+      }
+      return;
+    }
+    case "wash-trader": {
+      if (d > 240) steer(e, p.x, p.y, speed, dt);
+      else if (d < 190) steer(e, e.x + (e.x - p.x), e.y + (e.y - p.y), speed, dt);
+      if ((e.aiTimer ?? 0) <= 0) {
+        e.aiTimer = 3;
+        for (const other of game.enemies) {
+          if (other === e || other.dead || ENEMIES[other.kind].isBoss) continue;
+          if (dist(e.x, e.y, other.x, other.y) < 210) other.hp = Math.min(other.maxHp, other.hp + other.maxHp * 0.2);
+        }
+        game.shockwaves.push({ x: e.x, y: e.y, radius: 210, life: 0.4, maxLife: 0.4, color: "#8fd6ff" });
+      }
+      return;
+    }
+    case "honeypot-mimic": {
+      if (!e.revealed) {
+        if (d < 120) {
+          e.revealed = true;
+          e.aiTimer = 0.75;
+          game.addHazard({ shape: "circle", x: e.x, y: e.y, r: 120, windup: 0.75, active: 0, damage: e.damage, color: "#ffc23d", source: e.kind, knock: 260, label: "HONEYPOT" });
+          game.addFloater(e.x, e.y - 40, "IT'S A TRAP", "#ffc23d");
+          game.audio.play("sting");
+        }
+        return;
+      }
+      if ((e.aiTimer ?? 0) <= 0) steer(e, p.x, p.y, 140, dt);
+      return;
+    }
     default: {
       if (ENEMIES[e.kind].isBoss) {
         updateBoss(game, e, dt, speed);
@@ -156,6 +238,11 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
       steer(e, p.x, p.y, speed, dt);
     }
   }
+}
+
+export function gasCloud(game: Game, x: number, y: number, r: number, damage: number, source: EnemyKind) {
+  if (game.hazards.length >= MAX_HAZARDS) return;
+  game.addHazard({ shape: "circle", x, y, r, windup: 0.5, active: 3, damage, color: "#b7e04b", source, knock: 0, label: "GAS" });
 }
 
 function telegraphCircle(game: Game, boss: Enemy, x: number, y: number, r: number, windup: number, scale = 1, label?: string) {
@@ -206,6 +293,46 @@ function updateBoss(game: Game, boss: Enemy, dt: number, speed: number) {
   const cadence = phaseTwo ? 0.72 : 1;
   const step = boss.attackIndex = (boss.attackIndex ?? 0) + 1;
   switch (boss.kind) {
+    case "boss-shill": {
+      boss.aiTimer = 4.4 * cadence;
+      if (step % 2 === 1) {
+        radialBullets(game, boss, phaseTwo ? 12 : 8, step * 0.35, 150, "#ff8bd1");
+        game.pushFeed("The Shill posted a 40-tweet thread");
+      } else {
+        spawnMinions(game, boss, "airdrop-farmer", phaseTwo ? 8 : 5, 120);
+      }
+      break;
+    }
+    case "boss-rug-baron": {
+      boss.aiTimer = 4.2 * cadence;
+      if (step % 2 === 1) {
+        for (let i = 0; i < (phaseTwo ? 4 : 3); i++) {
+          telegraphCircle(game, boss, p.x + randRange(-110, 110), p.y + randRange(-80, 80), 92, 0.85 + i * 0.25, 1, "RUG");
+        }
+        game.audio.play("rugPull");
+      } else {
+        const angle = angleBetween(boss.x, boss.y, p.x, p.y);
+        boss.charge = { t: 1.2, dash: 0.42, angle };
+        game.addHazard({ shape: "beam", x: boss.x, y: boss.y, angle, length: 300, windup: 0.78, active: 0.01, damage: boss.damage * 0.5, color: "#f778ba", source: boss.kind, knock: 240 });
+      }
+      break;
+    }
+    case "boss-gas-golem": {
+      boss.aiTimer = 4.8 * cadence;
+      if (step % 3 === 1) {
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + step;
+          gasCloud(game, p.x + Math.cos(a) * 170, p.y + Math.sin(a) * 130, 84, boss.damage * 0.3, boss.kind);
+        }
+      } else if (step % 3 === 2) {
+        radialBullets(game, boss, phaseTwo ? 18 : 12, step * 0.3, 185, "#b7e04b");
+      } else {
+        game.gasUntil = game.elapsed + 6;
+        spawnMinions(game, boss, "gas-guzzler", phaseTwo ? 4 : 2, 190);
+        game.audio.play("gasSpike");
+      }
+      break;
+    }
     case "boss-mev-king": {
       boss.aiTimer = 4 * cadence;
       if (step % 2 === 1) {

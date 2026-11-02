@@ -1,13 +1,13 @@
 # Formal verification
 
-`GamePhase.tla` models menu / playing / levelup / pause / win / lose transitions and checks type invariants.
+`GamePhase.tla` models the phase machine in `Game.setPhase`: popups, pause, window focus and audio silence.
 
-`CutsceneFlow.tla` models boss intro banners and end-state cutscenes.
+`CutsceneFlow.tla` models the intro, repeating boss entrances and the one-time second-wallet scene in an endless run.
 
-Run with the TLA+ Toolbox or CLI:
+These specs are hand-written models. TLC proves properties of the model, not of the TypeScript, so change them whenever the phase logic changes.
 
 ```bash
-java -cp tla2tools.jar tlc2.TLC formal/GamePhase.tla
+npm run formal
 ```
 
-These specs are meant to stay aligned with `Game.setPhase` and boss scheduling in `src/game/Game.ts`.
+The script needs Java (`brew install openjdk`) and downloads `tools/tla2tools.jar` on first run.

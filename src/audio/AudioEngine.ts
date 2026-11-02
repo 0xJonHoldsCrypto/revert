@@ -12,11 +12,13 @@ const CATEGORY: Partial<Record<SfxId, Category>> = {
   hit: "combat", crit: "combat", kill: "combat", enemyShot: "combat", pulse: "combat",
   xp: "pickup", coin: "pickup", type: "pickup", blip: "pickup",
 };
-const MIN_GAP: Record<Category, number> = { combat: 1 / 9, pickup: 1 / 14, free: 0 };
+const MIN_GAP: Record<Category, number> = { combat: 1 / 5, pickup: 1 / 9, free: 0 };
+const FROZEN_ALLOWED = new Set<SfxId>(["ui", "cardSelect", "levelUp", "jackpot", "evolve"]);
+const MUSIC_TRIM = 0.55;
 const LOOKAHEAD_SEC = 0.3;
 const SCHEDULE_MS = 30;
 const CROSSFADE_BARS = 2;
-const MASTER_GAIN = 1.5;
+const MASTER_GAIN = 0.9;
 const STORAGE_KEY = "revert.audio.v1";
 
 type ActiveTrack = {
@@ -47,7 +49,9 @@ export class AudioEngine {
   private xpComboAt = 0;
   private wantedTrack: MusicTrackId | null = null;
   muted = false;
+  onMuteChange: ((muted: boolean) => void) | null = null;
   silenced = false;
+  private frozen = false;
   musicVolume = 1;
   sfxVolume = 1;
 
@@ -72,12 +76,20 @@ export class AudioEngine {
     this.muted = !this.muted;
     this.applyVolumes();
     this.persist();
+    this.onMuteChange?.(this.muted);
   }
 
   duck(on: boolean) {
+    this.frozen = on;
     if (!this.ctx || !this.musicBus) return;
-    const target = on ? this.musicVolume * 0.25 : this.musicVolume;
-    this.musicBus.gain.setTargetAtTime(target, this.ctx.currentTime, on ? 0.12 : 0.2);
+    const target = on ? 0 : this.musicVolume * MUSIC_TRIM;
+    this.musicBus.gain.setTargetAtTime(target, this.ctx.currentTime, on ? 0.04 : 0.2);
+  }
+
+  setWindowActive(active: boolean) {
+    if (!this.ctx) return;
+    if (active && this.ctx.state === "suspended") void this.ctx.resume();
+    if (!active && this.ctx.state === "running") void this.ctx.suspend();
   }
 
   private persist() {
@@ -105,7 +117,7 @@ export class AudioEngine {
     this.master.gain.value = this.muted ? 0 : MASTER_GAIN;
     this.master.connect(comp);
     this.musicBus = ctx.createGain();
-    this.musicBus.gain.value = this.musicVolume;
+    this.musicBus.gain.value = this.frozen ? 0 : this.musicVolume * MUSIC_TRIM;
     this.musicBus.connect(this.master);
     this.sfxBus = ctx.createGain();
     this.sfxBus.gain.value = this.sfxVolume;
@@ -279,6 +291,7 @@ export class AudioEngine {
   play(id: SfxId) {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== "running" || !this.sfxBus || this.silenced) return;
+    if (this.frozen && !FROZEN_ALLOWED.has(id)) return;
     const now = ctx.currentTime;
     const category = CATEGORY[id] ?? "free";
     if (category !== "free") {
@@ -287,14 +300,14 @@ export class AudioEngine {
     }
     const bus = this.sfxBus;
     switch (id) {
-      case "hit": this.noiseHit(bus, now, 0.04, 0.09, 2600 + Math.random() * 900, "bandpass"); this.sweep(now, 300, 140, 0.05, "square", 0.05); break;
+      case "hit": this.noiseHit(bus, now, 0.04, 0.05, 2600 + Math.random() * 900, "bandpass"); this.sweep(now, 300, 140, 0.05, "square", 0.025); break;
       case "crit": this.sweep(now, 1100, 300, 0.09, "square", 0.1); this.noiseHit(bus, now, 0.07, 0.14, 3800, "highpass"); break;
-      case "kill": this.sweep(now, 520, 90, 0.1, "square", 0.08); this.noiseHit(bus, now, 0.09, 0.1, 1200, "bandpass"); break;
-      case "coin": this.seq(now, [1320, 1760], 0.05, 0.1, "square", 0.05); break;
+      case "kill": this.sweep(now, 520, 90, 0.1, "square", 0.045); this.noiseHit(bus, now, 0.09, 0.055, 1200, "bandpass"); break;
+      case "coin": this.seq(now, [1320, 1760], 0.05, 0.1, "square", 0.03); break;
       case "xp": {
         this.xpCombo = now - this.xpComboAt < 0.6 ? Math.min(this.xpCombo + 1, 12) : 0;
         this.xpComboAt = now;
-        this.tone(bus, 880 * Math.pow(2, this.xpCombo / 12), now, 0.07, "triangle", 0.09, 0, 0);
+        this.tone(bus, 880 * Math.pow(2, this.xpCombo / 12), now, 0.07, "triangle", 0.05, 0, 0);
         break;
       }
       case "hurt": this.sweep(now, 240, 60, 0.2, "sawtooth", 0.2); this.noiseHit(bus, now, 0.14, 0.18, 900, "lowpass"); break;
@@ -306,13 +319,13 @@ export class AudioEngine {
       case "evolve": this.sweep(now, 200, 1800, 0.5, "sawtooth", 0.09); this.seq(now + 0.5, [1047, 1319, 1568, 2093], 0.07, 0.3, "square", 0.08); break;
       case "bossSpawn": this.sweep(now, 180, 30, 0.7, "sawtooth", 0.3); this.noiseHit(bus, now, 0.5, 0.3, 500, "lowpass"); break;
       case "bossDeath": this.sweep(now, 700, 25, 1.1, "sawtooth", 0.26); this.noiseHit(bus, now, 1.2, 0.34, 2200, "lowpass", 90); break;
-      case "enemyShot": this.sweep(now, 820, 360, 0.09, "square", 0.05); break;
+      case "enemyShot": this.sweep(now, 820, 360, 0.09, "square", 0.025); break;
       case "nearMiss": this.noiseHit(bus, now, 0.12, 0.06, 5000, "highpass"); break;
       case "ui": this.tone(bus, 740, now, 0.05, "square", 0.06, 0, 0); break;
       case "blip": this.tone(bus, 520 + Math.random() * 80, now, 0.03, "square", 0.04, 0, 0); break;
       case "pager": for (let i = 0; i < 4; i++) this.tone(bus, 2200, now + i * 0.11, 0.07, "square", 0.08, 0, 0); this.sweep(now, 90, 80, 0.46, "sawtooth", 0.14); break;
       case "type": this.noiseHit(bus, now, 0.02, 0.08, 3400, "bandpass"); break;
-      case "alarm": for (let i = 0; i < 3; i++) this.sweep(now + i * 0.3, 900, 550, 0.27, "square", 0.08); break;
+      case "alarm": for (let i = 0; i < 3; i++) this.sweep(now + i * 0.3, 900, 550, 0.27, "square", 0.045); break;
       case "txConfirmed": this.seq(now, [988, 1319], 0.08, 0.24, "triangle", 0.14); break;
       case "liquidation": this.seq(now, [622, 523, 415, 311], 0.08, 0.18, "sawtooth", 0.09); break;
       case "gasSpike": this.sweep(now, 110, 1500, 0.6, "sawtooth", 0.08); break;
@@ -327,7 +340,7 @@ export class AudioEngine {
       case "impact": this.sweep(now, 130, 28, 0.42, "sine", 0.6); this.noiseHit(bus, now, 0.25, 0.42, 2600, "lowpass", 200); break;
       case "snore": this.sweep(now, 80, 130, 0.5, "sawtooth", 0.08); this.sweep(now + 0.55, 150, 70, 0.4, "triangle", 0.1); break;
       case "death": this.sweep(now, 480, 36, 0.9, "square", 0.2); this.noiseHit(bus, now, 0.5, 0.3, 1200, "lowpass"); break;
-      case "pulse": this.sweep(now, 80, 240, 0.16, "sine", 0.24); this.noiseHit(bus, now, 0.16, 0.08, 700, "bandpass"); break;
+      case "pulse": this.sweep(now, 80, 240, 0.16, "sine", 0.1); this.noiseHit(bus, now, 0.16, 0.035, 700, "bandpass"); break;
     }
   }
 

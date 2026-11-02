@@ -1,43 +1,55 @@
 ---- MODULE CutsceneFlow ----
 EXTENDS Naturals
 
-VARIABLES cutscene, bossIndex, bannerShown
+CONSTANT BossCycle
 
-Cutscenes == {"none", "boss_intro", "victory", "defeat"}
+VARIABLES scene, bossIndex, secondWalletShown, alive
+
+vars == <<scene, bossIndex, secondWalletShown, alive>>
+
+TypeOK ==
+  /\ scene \in {"none", "intro", "boss", "second_wallet"}
+  /\ bossIndex \in 0..BossCycle
+  /\ secondWalletShown \in BOOLEAN
+  /\ alive \in BOOLEAN
 
 Init ==
-  /\\ cutscene = "none"
-  /\\ bossIndex = 0
-  /\\ bannerShown = FALSE
+  /\ scene = "intro"
+  /\ bossIndex = 0
+  /\ secondWalletShown = FALSE
+  /\ alive = TRUE
 
-ShowBossIntro ==
-  /\\ cutscene = "none"
-  /\\ bossIndex < 4
-  /\\ cutscene' = "boss_intro"
-  /\\ bannerShown' = TRUE
-  /\\ bossIndex' = bossIndex + 1
-  /\\ UNCHANGED <<>>
+IntroEnds == scene = "intro" /\ scene' = "none" /\ UNCHANGED <<bossIndex, secondWalletShown, alive>>
 
-ClearIntro ==
-  /\\ cutscene = "boss_intro"
-  /\\ cutscene' = "none"
-  /\\ UNCHANGED <<bossIndex, bannerShown>>
+BossEnters ==
+  /\ scene = "none" /\ alive
+  /\ scene' = "boss"
+  /\ bossIndex' = (bossIndex + 1) % BossCycle
+  /\ UNCHANGED <<secondWalletShown, alive>>
 
-Victory ==
-  /\\ cutscene = "none"
-  /\\ cutscene' = "victory"
-  /\\ UNCHANGED <<bossIndex, bannerShown>>
+BossSettled == scene = "boss" /\ scene' = "none" /\ UNCHANGED <<bossIndex, secondWalletShown, alive>>
 
-Defeat ==
-  /\\ cutscene = "none"
-  /\\ cutscene' = "defeat"
-  /\\ UNCHANGED <<bossIndex, bannerShown>>
+SecondWalletPlays ==
+  /\ scene = "none" /\ alive /\ ~secondWalletShown
+  /\ scene' = "second_wallet"
+  /\ secondWalletShown' = TRUE
+  /\ UNCHANGED <<bossIndex, alive>>
 
-Next ==
-  \\/ ShowBossIntro
-  \\/ ClearIntro
-  \\/ Victory
-  \\/ Defeat
+SecondWalletEnds == scene = "second_wallet" /\ scene' = "none" /\ UNCHANGED <<bossIndex, secondWalletShown, alive>>
 
-Spec == Init /\\ [][Next]_<<cutscene, bossIndex, bannerShown>>
+Die == scene = "none" /\ alive /\ alive' = FALSE /\ UNCHANGED <<scene, bossIndex, secondWalletShown>>
+
+NewRun ==
+  /\ ~alive
+  /\ alive' = TRUE
+  /\ scene' = "intro"
+  /\ bossIndex' = 0
+  /\ secondWalletShown' = FALSE
+
+Next == IntroEnds \/ BossEnters \/ BossSettled \/ SecondWalletPlays \/ SecondWalletEnds \/ Die \/ NewRun
+
+Spec == Init /\ [][Next]_vars /\ WF_vars(IntroEnds) /\ WF_vars(BossSettled) /\ WF_vars(SecondWalletEnds)
+
+NoSceneWhileDead == ~alive => scene = "none"
+EveryCutsceneEnds == scene # "none" ~> scene = "none"
 ====

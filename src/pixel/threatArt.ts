@@ -50,6 +50,76 @@ const SKIN = "#dfa985";
 const SKIN_D = "#b77e60";
 
 const ENEMY_ART: Partial<Record<EnemyKind, () => HTMLCanvasElement>> = {
+  "boss-shill": () =>
+    sprite("boss-shill", 104, 128, (c) => {
+      r(c, "#1e1f33", 34, 94, 14, 28);
+      r(c, "#1e1f33", 58, 94, 14, 28);
+      r(c, "#0e0f1c", 30, 118, 20, 8);
+      r(c, "#0e0f1c", 56, 118, 20, 8);
+      r(c, "#c43f8f", 26, 48, 54, 50);
+      r(c, "#ff8bd1", 26, 48, 54, 7);
+      r(c, "#f4f3ee", 44, 48, 18, 22);
+      r(c, "#ffc23d", 50, 54, 6, 28);
+      r(c, SKIN, 34, 14, 38, 34);
+      r(c, SKIN_D, 34, 40, 38, 8);
+      r(c, "#ffc23d", 30, 4, 46, 14);
+      r(c, "#ffc23d", 26, 12, 10, 14);
+      r(c, "#101018", 40, 24, 10, 8);
+      r(c, "#101018", 56, 24, 10, 8);
+      r(c, "#ffffff", 42, 25, 3, 3);
+      r(c, "#ffffff", 58, 25, 3, 3);
+      r(c, "#ffffff", 44, 36, 18, 5);
+      r(c, "#c43f8f", 80, 52, 12, 24);
+      r(c, "#2c2f44", 84, 28, 18, 28);
+      r(c, "#ff5c48", 88, 22, 10, 8);
+      r(c, "#c43f8f", 14, 52, 12, 34);
+      r(c, "#3cf07c", 0, 70, 24, 6);
+      r(c, "#3cf07c", 16, 60, 6, 12);
+    }),
+  "boss-rug-baron": () =>
+    sprite("boss-rug-baron", 120, 134, (c) => {
+      r(c, "#b83a6d", 2, 104, 116, 26);
+      for (let i = 0; i < 9; i++) r(c, i % 2 ? "#ffc23d" : "#f778ba", 6 + i * 12, 110, 10, 14);
+      for (let i = 0; i < 14; i++) r(c, "#ffe08a", 4 + i * 8, 130, 3, 4);
+      r(c, "#201428", 36, 84, 18, 24);
+      r(c, "#201428", 66, 84, 18, 24);
+      r(c, "#3d1f4f", 26, 40, 68, 50);
+      r(c, "#6a3a86", 26, 40, 68, 7);
+      r(c, "#f4f3ee", 52, 40, 16, 24);
+      r(c, "#ff3a44", 57, 44, 6, 22);
+      r(c, SKIN, 40, 8, 40, 32);
+      r(c, "#111018", 32, 2, 56, 8);
+      r(c, "#111018", 42, 0, 36, 4);
+      r(c, "#ffc23d", 42, 8, 36, 4);
+      r(c, "#101018", 48, 20, 8, 6);
+      r(c, "#101018", 66, 20, 8, 6);
+      r(c, "#101018", 50, 32, 22, 3);
+      r(c, "#3d1f4f", 12, 46, 14, 30);
+      r(c, "#3d1f4f", 94, 46, 14, 30);
+    }),
+  "boss-gas-golem": () =>
+    sprite("boss-gas-golem", 130, 150, (c) => {
+      r(c, "#37401f", 30, 112, 28, 36);
+      r(c, "#37401f", 72, 112, 28, 36);
+      r(c, "#1e2412", 26, 140, 36, 10);
+      r(c, "#1e2412", 68, 140, 36, 10);
+      r(c, "#5f7a24", 22, 40, 86, 80);
+      r(c, "#b7e04b", 22, 40, 86, 9);
+      r(c, "#3e5018", 22, 108, 86, 12);
+      r(c, "#14161f", 40, 56, 50, 34);
+      r(c, "#e0ff87", 46, 62, 38, 4);
+      r(c, "#ff5c48", 46, 72, 22, 10);
+      r(c, "#ffc23d", 72, 72, 12, 10);
+      r(c, "#5f7a24", 2, 50, 20, 46);
+      r(c, "#37401f", 0, 92, 24, 18);
+      r(c, "#5f7a24", 108, 50, 20, 46);
+      r(c, "#37401f", 106, 92, 24, 18);
+      r(c, "#37401f", 44, 18, 42, 24);
+      r(c, "#e0ff87", 52, 26, 8, 6);
+      r(c, "#e0ff87", 70, 26, 8, 6);
+      r(c, "#b7e04b", 56, 2, 8, 12);
+      r(c, "#e0ff87", 70, 8, 6, 8);
+    }),
   "boss-mev-king": () =>
     sprite("boss-mev-king", 110, 130, (c) => {
       r(c, "#2c2f44", 34, 96, 14, 28);
@@ -178,6 +248,77 @@ export function getThreatSprite(kind: EnemyKind): HTMLCanvasElement {
 }
 
 export type ZoneProp = { key: string; height: number; art: () => HTMLCanvasElement };
+
+const candles: ZoneProp = {
+  key: "candle-chart",
+  height: 96,
+  art: () =>
+    sprite("candle-chart", 58, 86, (c) => {
+      const heights = [22, 34, 18, 46, 30, 60];
+      heights.forEach((h, i) => {
+        const up = i % 3 !== 2;
+        r(c, up ? "#7dffb0" : "#ff9a8a", 6 + i * 9, 80 - h - 8, 2, h + 14);
+        r(c, up ? "#29c76f" : "#e0303c", 3 + i * 9, 80 - h, 8, h);
+      });
+      r(c, "#2a2f3e", 0, 80, 58, 6);
+    }),
+};
+const neonSign = (key: string, text: string, color: string): ZoneProp => ({
+  key,
+  height: 92,
+  art: () =>
+    sprite(key, 74, 84, (c) => {
+      r(c, "#3a3e50", 12, 40, 5, 44);
+      r(c, "#3a3e50", 57, 40, 5, 44);
+      r(c, "#10121c", 0, 2, 74, 42);
+      r(c, color, 0, 2, 74, 3);
+      r(c, color, 0, 41, 74, 3);
+      c.fillStyle = color;
+      c.font = "700 19px monospace";
+      c.textAlign = "center";
+      c.fillText(text, 37, 31);
+      c.textAlign = "left";
+    }),
+});
+const miningRig: ZoneProp = {
+  key: "mining-rig",
+  height: 62,
+  art: () =>
+    sprite("mining-rig", 62, 52, (c) => {
+      r(c, "#2a2f3e", 2, 4, 58, 46);
+      for (let i = 0; i < 4; i++) {
+        r(c, "#10121c", 7 + i * 13, 10, 10, 34);
+        r(c, "#ffc23d", 9 + i * 13, 14, 6, 6);
+        r(c, "#2ee6c7", 9 + i * 13, 26, 6, 2);
+        r(c, "#2ee6c7", 9 + i * 13, 32, 6, 2);
+      }
+    }),
+};
+const coinPile: ZoneProp = {
+  key: "dead-coins",
+  height: 30,
+  art: () =>
+    sprite("dead-coins", 50, 26, (c) => {
+      [[4, 16], [16, 12], [28, 16], [10, 4], [24, 2], [36, 8]].forEach(([x, y]) => {
+        r(c, "#a87b18", x!, y!, 12, 10);
+        r(c, "#f0c14d", x! + 1, y! + 1, 10, 3);
+      });
+    }),
+};
+const whaleBones: ZoneProp = {
+  key: "whale-bones",
+  height: 64,
+  art: () =>
+    sprite("whale-bones", 110, 54, (c) => {
+      r(c, "#c9cdb8", 0, 40, 110, 6);
+      for (let i = 0; i < 8; i++) {
+        const h = 34 - Math.abs(i - 3) * 5;
+        r(c, "#dfe3cf", 8 + i * 12, 40 - h, 4, h);
+      }
+      r(c, "#dfe3cf", 88, 24, 20, 18);
+      r(c, "#10121c", 96, 30, 4, 4);
+    }),
+};
 
 export const ZONE_PROPS: Record<BiomeId, ZoneProp[]> = {
   mempool: [
@@ -345,6 +486,66 @@ export type Landmark = { key: string; biome: BiomeId; height: number; art: () =>
 
 export const LANDMARKS: Landmark[] = [
   {
+    key: "green-candle",
+    biome: "mempool",
+    height: 340,
+    art: () =>
+      sprite("green-candle", 60, 190, (c) => {
+        r(c, "#7dffb0", 27, 0, 6, 190);
+        r(c, "#29c76f", 8, 26, 44, 130);
+        r(c, "#7dffb0", 8, 26, 6, 130);
+        r(c, "#14803f", 44, 26, 8, 130);
+      }),
+  },
+  {
+    key: "red-candle",
+    biome: "vault",
+    height: 340,
+    art: () =>
+      sprite("red-candle", 60, 190, (c) => {
+        r(c, "#ff9a8a", 27, 0, 6, 190);
+        r(c, "#e0303c", 8, 40, 44, 130);
+        r(c, "#ff9a8a", 8, 40, 6, 130);
+        r(c, "#8c1c26", 44, 40, 8, 130);
+      }),
+  },
+  {
+    key: "wagmi-billboard",
+    biome: "bridge",
+    height: 280,
+    art: () =>
+      sprite("wagmi-billboard", 170, 120, (c) => {
+        r(c, "#3a3e50", 30, 60, 10, 60);
+        r(c, "#3a3e50", 130, 60, 10, 60);
+        r(c, "#10121c", 0, 0, 170, 72);
+        r(c, "#2ee6c7", 0, 0, 170, 4);
+        r(c, "#2ee6c7", 0, 68, 170, 4);
+        c.fillStyle = "#2ee6c7";
+        c.font = "700 34px monospace";
+        c.textAlign = "center";
+        c.fillText("WAGMI", 85, 48);
+        c.textAlign = "left";
+      }),
+  },
+  {
+    key: "ngmi-billboard",
+    biome: "forest",
+    height: 280,
+    art: () =>
+      sprite("ngmi-billboard", 170, 120, (c) => {
+        r(c, "#3a3e50", 30, 60, 10, 60);
+        r(c, "#3a3e50", 130, 60, 10, 60);
+        r(c, "#10121c", 0, 0, 170, 72);
+        r(c, "#ff5c48", 0, 0, 170, 4);
+        r(c, "#ff5c48", 0, 68, 170, 4);
+        c.fillStyle = "#ff5c48";
+        c.font = "700 34px monospace";
+        c.textAlign = "center";
+        c.fillText("NGMI", 85, 48);
+        c.textAlign = "left";
+      }),
+  },
+  {
     key: "mempool-gate",
     biome: "mempool",
     height: 300,
@@ -422,3 +623,8 @@ export const LANDMARKS: Landmark[] = [
       }),
   },
 ];
+
+ZONE_PROPS.mempool.push(candles, neonSign("gm-sign", "GM", "#2ee6c7"), coinPile);
+ZONE_PROPS.vault.push(miningRig, neonSign("safu-sign", "SAFU", "#f0c14d"), coinPile);
+ZONE_PROPS.bridge.push(candles, neonSign("hodl-sign", "HODL", "#b58cff"), whaleBones);
+ZONE_PROPS.forest.push(whaleBones, neonSign("rekt-sign", "REKT", "#ff5c48"), miningRig);

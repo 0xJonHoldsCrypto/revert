@@ -1,4 +1,3 @@
-import { WORLD } from "../constants";
 import type { ChestKind, EnvObstacleKind, WeaponKind } from "../types";
 import type { WeaponRarity } from "./rarity";
 
@@ -160,9 +159,57 @@ export const CHEST_WEAPON_POOL: WeaponKind[] = [
   "nonce-shard",
 ];
 
+export const FLOOR_CELL = 768;
+const REGION = 2600;
+const SPAWN_SAFE_CELLS = 2;
+const BIOMES: BiomeId[] = ["mempool", "vault", "bridge", "forest"];
+
+let biomeSeed = 0;
+const biomeCache = new Map<number, BiomeId>();
+
+export function setBiomeSeed(seed: number) {
+  biomeSeed = seed | 0;
+  biomeCache.clear();
+}
+
+function scramble(x: number, y: number, salt: number): number {
+  let n = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(salt + biomeSeed, 1442695041);
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+}
+
+function biomeOfCell(cx: number, cy: number): BiomeId {
+  if (Math.abs(cx) < SPAWN_SAFE_CELLS && Math.abs(cy) < SPAWN_SAFE_CELLS) return "mempool";
+  const wx = (cx + 0.5) * FLOOR_CELL;
+  const wy = (cy + 0.5) * FLOOR_CELL;
+  const rx = Math.floor(wx / REGION);
+  const ry = Math.floor(wy / REGION);
+  let best = Infinity;
+  let biome: BiomeId = "mempool";
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oy = -1; oy <= 1; oy++) {
+      const sx = (rx + ox + scramble(rx + ox, ry + oy, 1)) * REGION;
+      const sy = (ry + oy + scramble(rx + ox, ry + oy, 2)) * REGION;
+      const d = (sx - wx) ** 2 + (sy - wy) ** 2;
+      if (d < best) {
+        best = d;
+        biome = BIOMES[Math.floor(scramble(rx + ox, ry + oy, 3) * BIOMES.length)]!;
+      }
+    }
+  }
+  return biome;
+}
+
+export function biomeOfFloorCell(cx: number, cy: number): BiomeId {
+  const key = (cx + 32768) * 65536 + (cy + 32768);
+  let biome = biomeCache.get(key);
+  if (!biome) {
+    biome = biomeOfCell(cx, cy);
+    biomeCache.set(key, biome);
+  }
+  return biome;
+}
+
 export function biomeAt(x: number, y: number): BiomeId {
-  const east = x >= WORLD.width / 2;
-  const south = y >= WORLD.height / 2;
-  if (east) return south ? "forest" : "vault";
-  return south ? "bridge" : "mempool";
+  return biomeOfFloorCell(Math.floor(x / FLOOR_CELL), Math.floor(y / FLOOR_CELL));
 }

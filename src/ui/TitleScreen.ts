@@ -63,8 +63,6 @@ export class TitleScreen {
     });
     const blurb = this.el.querySelector(".t-diff-blurb");
     if (blurb) blurb.textContent = DIFF_BLURB[this.game.runDifficulty];
-    const mute = this.el.querySelector(".t-mute");
-    if (mute) mute.textContent = this.game.audio.muted ? "SOUND OFF [M]" : "SOUND ON [M]";
   }
 
   mount(parent: HTMLElement) {
@@ -77,7 +75,6 @@ export class TitleScreen {
         <span class="t-live"><b></b>LIVE INCIDENT</span>
         <span>OUTFLOW <strong class="t-outflow">$1.20B</strong></span>
         <span>BLOCK <strong class="t-block">20,999,999</strong></span>
-        <button type="button" class="t-mute"></button>
       </div>
       <div class="t-brand"><div class="t-logo"></div><p>execution reverted: <em>not on my watch</em></p></div>
       <div class="t-dock">
@@ -86,7 +83,7 @@ export class TitleScreen {
           <div class="t-diff">${DIFFICULTY_ORDER.map((d) => `<button type="button" data-id="${d}">${DIFFICULTY_LABEL[d]}</button>`).join("")}</div>
           <p class="t-diff-blurb"></p>
           <button type="button" class="t-start"><span>SIGN &amp; REVERT</span><kbd>ENTER</kbd></button>
-          <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>ESC</kbd> pause</p>
+          <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>ESC</kbd> pause</p>
         </div>
       </div>
     `;
@@ -120,11 +117,6 @@ export class TitleScreen {
       b.addEventListener("click", () => this.pickDifficulty(b.dataset.id as DifficultyId));
     });
     el.querySelector(".t-start")!.addEventListener("click", () => this.game.requestStartRun(true));
-    el.querySelector(".t-mute")!.addEventListener("click", () => {
-      this.game.audio.unlock();
-      this.game.audio.toggleMute();
-      this.sync();
-    });
     parent.appendChild(el);
     this.el = el;
     this.sync();

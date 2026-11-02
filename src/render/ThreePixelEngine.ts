@@ -4,13 +4,15 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { WORLD } from "../constants";
-import { biomeAt, CHESTS, ENV_OBSTACLES, type BiomeId } from "../data/environment";
+import { biomeAt, biomeOfFloorCell, CHESTS, ENV_OBSTACLES, FLOOR_CELL, type BiomeId } from "../data/environment";
 import { ENEMIES } from "../data/enemies";
 import { CutscenePlayer } from "../cutscene/CutscenePlayer";
 import type { Game } from "../game/Game";
 import { makeFloorCanvases } from "../pixel/floorTiles";
 import { LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
+import { CAMEOS } from "../data/cameos";
+import { CHANNEL_SEC } from "../game/interact";
+import type { InteractableKind } from "../types";
 import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
 import { GradeShader } from "./gradeShader";
@@ -45,12 +47,22 @@ const ORBITER_COLOR: Partial<Record<WeaponKind, string>> = {
   "validator-seal": "#9b8cff",
 };
 
-const QUADRANTS: { biome: BiomeId; x: number; z: number }[] = [
-  { biome: "mempool", x: WORLD.width / 4, z: WORLD.height / 4 },
-  { biome: "vault", x: (WORLD.width * 3) / 4, z: WORLD.height / 4 },
-  { biome: "bridge", x: WORLD.width / 4, z: (WORLD.height * 3) / 4 },
-  { biome: "forest", x: (WORLD.width * 3) / 4, z: (WORLD.height * 3) / 4 },
-];
+const FLOOR_BIOMES: BiomeId[] = ["mempool", "vault", "bridge", "forest"];
+const FLOOR_RADIUS_CELLS = 2;
+const FLOOR_CELL_COUNT = (FLOOR_RADIUS_CELLS * 2 + 1) ** 2;
+const MOTE_COUNT = 34;
+const LP_POOL_CHARGE = 70;
+const ITEM_RING: Record<InteractableKind, string> = {
+  faucet: "#6cb6ff",
+  "lp-pool": "#2ee6c7",
+  "bridge-gate": "#b58cff",
+  "exploit-charge": "#ff5c48",
+  "bounty-board": "#ffc23d",
+  airdrop: "#f4f3ee",
+  cameo: "#ffffff",
+};
+const BIOME_MOTE: Record<BiomeId, string> = { mempool: "#2ee6c7", vault: "#ffc23d", bridge: "#7ee0ff", forest: "#b58cff" };
+const LANDMARK_HEIGHT = new Map(LANDMARKS.map((m) => [m.key, m.height]));
 
 const colorCache = new Map<string, THREE.Color>();
 function cachedColor(style: string): THREE.Color {
@@ -129,33 +141,51 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     pointColor: Array.from({ length: MAX_POINT_LIGHTS }, () => new THREE.Color(0, 0, 0)),
   };
 
-  const under = new THREE.Mesh(
-    new THREE.PlaneGeometry(WORLD.width * 3, WORLD.height * 3),
-    new THREE.MeshBasicMaterial({ color: 0x04060b })
-  );
-  under.rotation.x = -Math.PI / 2;
-  under.position.set(WORLD.width / 2, -6, WORLD.height / 2);
-  scene.add(under);
-
-  QUADRANTS.forEach((q, i) => {
-    const floor = makeFloorCanvases(q.biome, 4100 + i * 97);
-    const repeat = WORLD.width / 2 / TILE_WORLD_SIZE;
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(WORLD.width / 2, WORLD.height / 2),
+  const floorGeometry = new THREE.PlaneGeometry(FLOOR_CELL, FLOOR_CELL);
+  floorGeometry.rotateX(-Math.PI / 2);
+  const floorRepeat = FLOOR_CELL / TILE_WORLD_SIZE;
+  const floorMeshes = new Map<BiomeId, THREE.InstancedMesh>();
+  FLOOR_BIOMES.forEach((biome, i) => {
+    const floor = makeFloorCanvases(biome, 4100 + i * 97);
+    const mesh = new THREE.InstancedMesh(
+      floorGeometry,
       new THREE.MeshStandardMaterial({
-        map: canvasTexture(floor.albedo, true, repeat),
-        emissiveMap: canvasTexture(floor.emissive, true, repeat),
+        map: canvasTexture(floor.albedo, true, floorRepeat),
+        emissiveMap: canvasTexture(floor.emissive, true, floorRepeat),
         emissive: 0xffffff,
         emissiveIntensity: 1.5,
         roughness: 1,
         metalness: 0,
-      })
+      }),
+      FLOOR_CELL_COUNT
     );
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(q.x, 0, q.z);
     mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
     scene.add(mesh);
+    floorMeshes.set(biome, mesh);
   });
+  let floorCellX = NaN;
+  let floorCellY = NaN;
+  let floorStream: unknown = null;
+  const floorMatrix = new THREE.Matrix4();
+
+  function syncFloor(game: Game) {
+    const cx = Math.floor(camX / FLOOR_CELL);
+    const cy = Math.floor(camZ / FLOOR_CELL);
+    if (cx === floorCellX && cy === floorCellY && floorStream === game.stream) return;
+    floorCellX = cx;
+    floorCellY = cy;
+    floorStream = game.stream;
+    for (const mesh of floorMeshes.values()) mesh.count = 0;
+    for (let ox = -FLOOR_RADIUS_CELLS; ox <= FLOOR_RADIUS_CELLS; ox++) {
+      for (let oy = -FLOOR_RADIUS_CELLS; oy <= FLOOR_RADIUS_CELLS; oy++) {
+        const mesh = floorMeshes.get(biomeOfFloorCell(cx + ox, cy + oy))!;
+        floorMatrix.makeTranslation((cx + ox + 0.5) * FLOOR_CELL, 0, (cy + oy + 0.5) * FLOOR_CELL);
+        mesh.setMatrixAt(mesh.count++, floorMatrix);
+      }
+    }
+    for (const mesh of floorMeshes.values()) mesh.instanceMatrix.needsUpdate = true;
+  }
 
   const atlas = new SpriteAtlas();
   const sprites = new SpriteBatch(SPRITE_CAPACITY, atlas.texture, spriteLights);
@@ -165,11 +195,25 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
 
   const obstacleGroup = new THREE.Group();
   scene.add(obstacleGroup);
-  let obstacleSeed = -1;
+  let obstacleStream: unknown = null;
+  let obstacleVersion = -1;
+  const obstacleBox = new THREE.BoxGeometry(1, 1, 1);
+  const obstaclePlane = new THREE.PlaneGeometry(1, 1);
+  const obstacleMaterials = new Map<string, THREE.Material>();
+  function obstacleMaterial(color: string, blocks: boolean): THREE.Material {
+    let material = obstacleMaterials.get(color);
+    if (!material) {
+      material = blocks
+        ? new THREE.MeshStandardMaterial({ color: 0x2a3142, roughness: 0.55, metalness: 0.5, emissive: new THREE.Color(color), emissiveIntensity: 0.32 })
+        : new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(1.5), transparent: true, opacity: 0.3, depthWrite: false });
+      obstacleMaterials.set(color, material);
+    }
+    return material;
+  }
 
   const camera = new THREE.PerspectiveCamera(VIEW.fovDeg, 1, 200, 5000);
-  let camX = WORLD.width / 4;
-  let camZ = WORLD.height / 4;
+  let camX = 0;
+  let camZ = 0;
   let leadX = 0;
   let leadZ = 0;
   let shakeTime = 0;
@@ -218,42 +262,23 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   }
 
   function syncObstacles(game: Game) {
-    if (obstacleSeed === game.worldSeed) return;
-    obstacleSeed = game.worldSeed;
-    for (const child of [...obstacleGroup.children]) {
-      const mesh = child as THREE.Mesh;
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-      obstacleGroup.remove(mesh);
-    }
+    if (obstacleStream === game.stream && obstacleVersion === game.stream.version) return;
+    obstacleStream = game.stream;
+    obstacleVersion = game.stream.version;
+    obstacleGroup.clear();
     for (const o of game.obstacles) {
       const def = ENV_OBSTACLES[o.kind];
       if (def.blocks) {
         const height = 44;
-        const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(o.width, height, o.height),
-          new THREE.MeshStandardMaterial({
-            color: 0x2a3142,
-            roughness: 0.55,
-            metalness: 0.5,
-            emissive: new THREE.Color(def.color),
-            emissiveIntensity: 0.32,
-          })
-        );
+        const mesh = new THREE.Mesh(obstacleBox, obstacleMaterial(def.color, true));
+        mesh.scale.set(o.width, height, o.height);
         mesh.position.set(o.x, height / 2, o.y);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         obstacleGroup.add(mesh);
       } else {
-        const mesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(o.width, o.height),
-          new THREE.MeshBasicMaterial({
-            color: new THREE.Color(def.color).multiplyScalar(1.5),
-            transparent: true,
-            opacity: 0.3,
-            depthWrite: false,
-          })
-        );
+        const mesh = new THREE.Mesh(obstaclePlane, obstacleMaterial(def.color, false));
+        mesh.scale.set(o.width, o.height, 1);
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.set(o.x, 0.5, o.y);
         mesh.renderOrder = 1;
@@ -301,14 +326,13 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     const y0 = Math.floor(top / step) * step;
     for (let gx = x0; gx < right; gx += step) {
       for (let gy = y0; gy < bottom; gy += step) {
-        if (hash(gx, gy) < 0.58) continue;
+        if (hash(gx, gy) < 0.46) continue;
         const cx = gx + (hash(gx + 5, gy) - 0.5) * 120;
         const cy = gy + (hash(gx, gy + 7) - 0.5) * 120;
         const count = 1 + Math.floor(hash(gx + 1, gy + 2) * 3);
         for (let i = 0; i < count; i++) {
           const px = cx + (hash(gx + 20 + i, gy) - 0.5) * 58;
           const py = cy + (hash(gx, gy + 30 + i) - 0.5) * 44;
-          if (px < 20 || py < 20 || px > WORLD.width - 20 || py > WORLD.height - 20) continue;
           const props = ZONE_PROPS[biomeAt(px, py)];
           const prop = props[Math.floor(hash(gx + i * 13, gy + i) * props.length)]!;
           const frame = atlas.frame(`prop:${prop.key}`);
@@ -316,6 +340,41 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
           sprites.push(frame, px, py, 0.5, prop.height, hash(gx + i, gy + 40) > 0.5);
         }
       }
+    }
+  }
+
+  function emitBiomeSeams(left: number, right: number, top: number, bottom: number) {
+    const x0 = Math.floor(left / FLOOR_CELL);
+    const x1 = Math.floor(right / FLOOR_CELL);
+    const y0 = Math.floor(top / FLOOR_CELL);
+    const y1 = Math.floor(bottom / FLOOR_CELL);
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const here = biomeOfFloorCell(cx, cy);
+        const wx = cx * FLOOR_CELL;
+        const wy = cy * FLOOR_CELL;
+        const glow = cachedColor(BIOME_MOTE[here]);
+        if (biomeOfFloorCell(cx + 1, cy) !== here) {
+          decals.push(wx + FLOOR_CELL, wy + FLOOR_CELL / 2, 20, FLOOR_CELL / 2, DECAL_RECT, 1, BLACK, 0.72);
+          decals.push(wx + FLOOR_CELL, wy + FLOOR_CELL / 2, 2.5, FLOOR_CELL / 2, DECAL_RECT, 1, glow, 0.75);
+        }
+        if (biomeOfFloorCell(cx, cy + 1) !== here) {
+          decals.push(wx + FLOOR_CELL / 2, wy + FLOOR_CELL, FLOOR_CELL / 2, 20, DECAL_RECT, 1, BLACK, 0.72);
+          decals.push(wx + FLOOR_CELL / 2, wy + FLOOR_CELL, FLOOR_CELL / 2, 2.5, DECAL_RECT, 1, glow, 0.75);
+        }
+      }
+    }
+  }
+
+  function emitMotes(left: number, right: number, top: number, bottom: number) {
+    const spanX = right - left;
+    const spanY = bottom - top;
+    for (let i = 0; i < MOTE_COUNT; i++) {
+      const drift = elapsed * (6 + hash(i, 3) * 14);
+      const wx = left + ((hash(i, 1) * 4000 + drift) % spanX);
+      const wy = top + ((hash(i, 2) * 4000 - drift * 0.6 + 8000) % spanY);
+      const color = cachedColor(BIOME_MOTE[biomeAt(wx, wy)]);
+      fx.push(wx, wy, 26 + hash(i, 4) * 90, 5, 5, 0, color, 0.8 + Math.sin(elapsed * 2 + i) * 0.4, 0.55);
     }
   }
 
@@ -358,6 +417,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     const py = lerpPos(p.py, p.y, alpha);
     syncObstacles(game);
     updateCamera(game, px, py, dt);
+    syncFloor(game);
 
     const { halfW, halfH } = groundHalfExtents(aspect);
     const margin = 200;
@@ -374,21 +434,21 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     scratchLights.push({ x: px, y: py, h: 64, color: PLAYER_LIGHT, power: 1 });
 
     emitProps(left, right, top, bottom);
-    for (const mark of LANDMARKS) {
-      const q = QUADRANTS.find((v) => v.biome === mark.biome)!;
-      const mx = q.x + 90;
-      const my = q.z - 460;
-      if (!inView(mx, my)) continue;
+    emitBiomeSeams(left, right, top, bottom);
+    emitMotes(left, right, top, bottom);
+    for (const mark of game.landmarks) {
+      if (!inView(mark.x, mark.y)) continue;
+      const height = LANDMARK_HEIGHT.get(mark.key) ?? 280;
       const frame = atlas.frame(`landmark:${mark.key}`);
-      decals.push(mx, my + 2, mark.height * frame.aspect * 0.6, mark.height * 0.22, DECAL_BLOB, 0, BLACK, 0.6);
-      sprites.push(frame, mx, my, 0.5, mark.height, false, 0, 0.15);
+      decals.push(mark.x, mark.y + 2, height * frame.aspect * 0.6, height * 0.22, DECAL_BLOB, 0, BLACK, 0.6);
+      sprites.push(frame, mark.x, mark.y, 0.5, height, false, 0, 0.15);
     }
 
     const anim = elapsed;
     for (const c of game.chests) {
       if (c.opened || !inView(c.x, c.y)) continue;
       const def = CHESTS[c.kind];
-      const live = p.coins >= c.coinCost;
+      const live = p.coins >= game.chestCost(c.coinCost);
       const ringColor = cachedColor(def.color);
       decals.push(c.x, c.y, c.radius, c.radius, DECAL_RING, c.openProgress / def.openTime, live ? ringColor : WHITE, live ? 0.95 : 0.35);
       decals.push(c.x, c.y + 1, 24, 12, DECAL_BLOB, 0, BLACK, 0.55);
@@ -402,6 +462,19 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       decals.push(w.x, w.y + 1, 26, 12, DECAL_BLOB, 0, BLACK, 0.5);
       const wellFrame = atlas.frame("well");
       sprites.push(wellFrame, w.x, w.y, 0.5, wellFrame.px * PIXEL_SIZE, false, 0, 0.3);
+    }
+
+    for (const item of game.interactables) {
+      if (item.used || !inView(item.x, item.y)) continue;
+      const ready = game.elapsed >= item.readyAt;
+      const ringColor = item.cameo ? cachedColor(CAMEOS[item.cameo].color) : cachedColor(ITEM_RING[item.kind]);
+      const filled = item.kind === "lp-pool" ? 1 - (item.charge ?? 0) / LP_POOL_CHARGE : item.progress / CHANNEL_SEC[item.kind];
+      decals.push(item.x, item.y, item.radius, item.radius, DECAL_RING, filled, ready ? ringColor : WHITE, ready ? 0.95 : 0.25);
+      decals.push(item.x, item.y + 1, 26, 12, DECAL_BLOB, 0, BLACK, 0.5);
+      const itemFrame = atlas.frame(item.cameo ? `cameo:${item.cameo}` : `item:${item.kind}`);
+      const bob = item.cameo ? Math.abs(Math.sin(elapsed * 3)) * 3 : 0;
+      sprites.push(itemFrame, item.x, item.y, 0.5 + bob + (item.lift ?? 0), itemFrame.px * PIXEL_SIZE, false, 0, ready ? 0.3 : 0);
+      if (item.cameo && scratchLights.length < MAX_POINT_LIGHTS - 1) scratchLights.push({ x: item.x, y: item.y, h: 60, color: ringColor, power: 1 });
     }
 
     for (const pk of game.pickups) {
@@ -434,8 +507,16 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         fx.push(x, y, hover + 6, 13, 13, 0, flicker ? PHISH_TELL : XP_COLOR, 0.45);
         continue;
       }
+      if (e.kind === "honeypot-mimic" && !e.revealed) {
+        const coin = atlas.frame("pickup:coin");
+        decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
+        sprites.push(coin, x, y, 6 + Math.sin(anim * 4 + e.id) * 2, coin.px * 1.9, false, 0, 0.9);
+        fx.push(x, y, 12, 13, 13, 0, COIN_COLOR, 0.45);
+        continue;
+      }
       const frame = atlas.frame(`enemy:${e.kind}:${Math.floor(e.wobble * 1.6) % 2}`);
-      const height = enemyHeight(frame.px, def.isBoss);
+      const height = enemyHeight(frame.px, def.isBoss) * (e.scale ?? 1);
+      if (e.elite) decals.push(x, y, e.radius * 1.5, e.radius * 1.5, DECAL_RING, 1, COIN_COLOR, 0.9);
       const width = height * frame.aspect;
       if (e.kind === "bridge-drainer" && e.tether !== undefined) {
         const cos = Math.cos(e.tether);
@@ -447,7 +528,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       }
       const lift = e.lift ?? 0;
       decals.push(x, y + 1, width * 0.5 * (lift > 0 ? 0.6 : 1), width * 0.24 * (lift > 0 ? 0.6 : 1), DECAL_BLOB, 0, BLACK, lift > 0 ? 0.3 : 0.55);
-      sprites.push(frame, x, y, 0.5 + hop + lift, height * squash, p.x < e.x, e.flash > 0 ? 1 : 0);
+      const frozen = game.elapsed < (e.frozenUntil ?? 0);
+      sprites.push(frame, x, y, frozen ? 0.5 + lift : 0.5 + hop + lift, height * squash, p.x < e.x, e.flash > 0 ? 1 : frozen ? 0.45 : 0, e.elite ? 0.25 : 0);
       if (def.isBoss && !bossLightSet) {
         bossLightSet = true;
         scratchLights.splice(1, 0, { x, y: y + 20, h: 130, color: BOSS_LIGHT, power: 1.4 });
@@ -501,11 +583,18 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const color = scratchColor.copy(cachedColor(wave.color)).multiplyScalar(2.2);
       const radius = wave.radius * (0.35 + 0.65 * eased);
       if (wave.arc !== undefined) {
-        decals.push(wave.x, wave.y, radius, radius, DECAL_ARC, Math.atan2(Math.sin(wave.arc), Math.cos(wave.arc)), color, 1 - f * 0.8);
+        decals.push(wave.x, wave.y, radius, radius, DECAL_ARC, Math.atan2(Math.sin(wave.arc), Math.cos(wave.arc)), color, (1 - f * 0.8) * 0.5);
       } else {
         decals.push(wave.x, wave.y, radius, radius, DECAL_DISC, 0, color, (1 - f) * 0.9);
       }
     }
+
+    for (const s of game.strikes) {
+      if (!inView(s.x, s.y)) continue;
+      const left = Math.max(0, s.at - game.elapsed);
+      decals.push(s.x, s.y, s.r, s.r, DECAL_RING, 1 - Math.min(1, left / 1), cachedColor(s.color), 0.7);
+    }
+    if (game.elapsed < p.shieldUntil) decals.push(px, py, 42, 42, DECAL_RING, 1, cachedColor("#b58cff"), 0.9);
 
     const moving = Math.hypot(p.vx, p.vy) > 20;
     const step = moving ? Math.floor(anim * 6.5) % 2 : 0;

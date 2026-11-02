@@ -3,6 +3,7 @@ import { ENEMIES } from "../data/enemies";
 import { SIDEKICKS } from "../data/sidekicks";
 import { chestSprite, enemyFrame, hasHandEnemy, heroFrame, PICKUP_ART, pickupSprite, rigSprite, wellSprite } from "../pixel/handArt";
 import { getThreatSprite, LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
+import { CAMEO_KINDS, cameoSprite, interactableSprite, ITEM_KINDS } from "../pixel/worldArt";
 import { CHESTS } from "../data/environment";
 import type { CharacterId, ChestKind, EnemyKind, SidekickKind } from "../types";
 
@@ -61,6 +62,8 @@ export class SpriteAtlas {
     for (const mark of LANDMARKS) this.add(`landmark:${mark.key}`, mark.art());
     for (const kind of Object.keys(CHESTS) as ChestKind[]) this.add(`chest:${kind}`, chestSprite(kind));
     this.add("well", wellSprite());
+    for (const kind of ITEM_KINDS) this.add(`item:${kind}`, interactableSprite(kind));
+    for (const id of CAMEO_KINDS) this.add(`cameo:${id}`, cameoSprite(id));
     for (const kind of Object.keys(PICKUP_ART)) this.add(`pickup:${kind}`, pickupSprite(kind));
 
     this.texture = new THREE.CanvasTexture(this.canvas);

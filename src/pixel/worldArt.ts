@@ -1,0 +1,246 @@
+import type { CameoId } from "../data/cameos";
+import type { InteractableKind } from "../types";
+import { paintGrid } from "./handArt";
+
+const LEGS = ["...kbbkkbbk...", "...kbbkkbbk...", "...kffkkffk...", "...kkkkkkkk..."];
+
+const CAMEO_ART: Record<CameoId, { rows: string[]; palette: Record<string, string> }> = {
+  "elon-tusk": {
+    palette: { h: "#2a2320", t: "#14141c", T: "#2c2c3a", x: "#f4f3ee", b: "#23252e", f: "#0d0d14", w: "#fff7e0" },
+    rows: [
+      "....kkkkkk....",
+      "...khhhhhhk...",
+      "...khhhhhhk...",
+      "...ksseessk...",
+      "...kssssssk...",
+      "...kwskkswk...",
+      "...kwssssk....",
+      "..kkkkkkkkkk..",
+      ".ktTTTTTTTTtk.",
+      ".kttxtttxtttk.",
+      ".ktttxtxttttk.",
+      ".kttttxtttttk.",
+      ".ktttxtxttttk.",
+      ".kkkkkkkkkkkk.",
+      ...LEGS,
+    ],
+  },
+  "cz-four": {
+    palette: { h: "#15131a", t: "#1c1c26", T: "#34343f", y: "#f0c14d", b: "#23252e", f: "#0d0d14" },
+    rows: [
+      "....kkkkkk....",
+      "...khhhhhhk...",
+      "...khhhhhhk...",
+      "...kseesesk...",
+      "...kssssssk...",
+      "...ksskkssk...",
+      "....kssssk....",
+      "..kkkkkkkkkk..",
+      ".ktTTTTTTTTtk.",
+      ".kttyttytttk..",
+      ".kttyttytttk..",
+      ".kttyyyytttk..",
+      ".kttttytttttk.",
+      ".kkkkkkkkkkkk.",
+      ...LEGS,
+    ],
+  },
+  "donald-pump": {
+    palette: { h: "#ffcf4a", H: "#fff09a", u: "#1d2a52", U: "#30437a", r: "#e0303c", w: "#f4f3ee", s: "#f0a86a", n: "#c97f48", b: "#1d2a52", f: "#0d0d14" },
+    rows: [
+      "..kkkkkkkkkk..",
+      ".kHHHHHHHHHhk.",
+      ".khhhhhhhhhhhk",
+      "..kkssssssk...",
+      "...kseesesk...",
+      "...kssssssk...",
+      "...kskkkksk...",
+      "..kkkkkkkkkk..",
+      ".kuUUwrrwUUuk.",
+      ".kuuuwrrwuuuk.",
+      ".kuuuurruuuuk.",
+      ".kuuuurruuuuk.",
+      ".kuuuurruuuuk.",
+      ".kkkkkkkkkkkk.",
+      ...LEGS,
+    ],
+  },
+  "vitalik-butterin": {
+    palette: { h: "#3a2c24", s: "#f2cfb2", t: "#f4f3ee", T: "#d6d6e8", p: "#b58cff", g: "#ffd166", b: "#3b3f55", f: "#14141c" },
+    rows: [
+      "....kkkkkk....",
+      "...khhhhhhk...",
+      "...khsssshk...",
+      "...ksseessk...",
+      "...kssssssk...",
+      "....kskksk....",
+      "....kssssk....",
+      "...kkkkkkkk...",
+      "..kTTTTTTTTk..",
+      "..kttgppttttk.",
+      "..kttppppttk..",
+      "..kttpttpttk..",
+      "..kttttttttk..",
+      "..kkkkkkkkkk..",
+      ...LEGS,
+    ],
+  },
+  "michael-sailor": {
+    palette: { w: "#f4f3ee", a: "#16233f", A: "#2a3d6b", r: "#ff2a2a", y: "#f0c14d", b: "#16233f", f: "#0d0d14" },
+    rows: [
+      "...kkkkkkkk...",
+      "..kwwwwwwwwk..",
+      "..kaaayyaaak..",
+      "...kkkkkkkk...",
+      "...krrssrrk...",
+      "rrrrrkssrrrrr.",
+      "...kskkkksk...",
+      "...kkssssk....",
+      ".kkkkkkkkkkkk.",
+      ".kaAAwyywAAak.",
+      ".kaaawwwwaaak.",
+      ".kaaaawwaaaak.",
+      ".kaaaaaaaaaak.",
+      ".kkkkkkkkkkkk.",
+      ...LEGS,
+    ],
+  },
+  satoshi: {
+    palette: { c: "#1a1a24", C: "#2e2e3e", y: "#f7931a", Y: "#ffd28a", b: "#15151e", f: "#0a0a10" },
+    rows: [
+      "....kkkkkk....",
+      "...kCCCCCCk...",
+      "..kCccccccCk..",
+      "..kcckkkkcck..",
+      "..kckyyyykck..",
+      "..kckkkkkkck..",
+      "..kcckkkkcck..",
+      ".kkcccccccckk.",
+      ".kCccYyYyccck.",
+      ".kcccyccYcccck",
+      ".kcccYYycccck.",
+      ".kcccycYcccck.",
+      ".kcccYyYccccck",
+      ".kkkkkkkkkkkk.",
+      ...LEGS,
+    ],
+  },
+};
+
+const ITEM_ART: Record<Exclude<InteractableKind, "cameo">, { rows: string[]; palette: Record<string, string> }> = {
+  faucet: {
+    palette: { m: "#8a8f9e", M: "#c8ccd8", d: "#3a3e50", b: "#6cb6ff", B: "#c8e8ff", y: "#ffc23d" },
+    rows: [
+      "......kkkk......",
+      ".....kyyyyk.....",
+      "......kMMk......",
+      "..kkkkkMMkkkkk..",
+      ".kMMMMMMMMMMMMk.",
+      ".kmmmmmmmmmmmmk.",
+      ".kkkkkkkkkkmmmk.",
+      "..........kmmk..",
+      "..........kkkk..",
+      "...........bB...",
+      "...........bb...",
+      "..........kkkk..",
+      ".kkkkkkkkkkddkk.",
+      "kddddddddddddddk",
+      "kkkkkkkkkkkkkkkk",
+    ],
+  },
+  "lp-pool": {
+    palette: { a: "#2ee6c7", A: "#a8ffee", d: "#10695e", s: "#3a3e50" },
+    rows: [
+      "...kkkkkkkkkkkkkk...",
+      ".kksssssssssssssskk.",
+      "ksaAaaaaaAAaaaaaaask",
+      "ksaaaAAaaaaaaAAaaask",
+      "ksdaaaaaaAAaaaaaadsk",
+      ".kksssssssssssssskk.",
+      "...kkkkkkkkkkkkkk...",
+    ],
+  },
+  "bridge-gate": {
+    palette: { s: "#3f5a64", S: "#7a9aa6", p: "#b58cff", P: "#efe0ff", c: "#2ee6c7" },
+    rows: [
+      ".....kkkkkkkkkk.....",
+      "...kkSSSSSSSSSSkk...",
+      "..kSSkkkkkkkkkkSSk..",
+      ".kSSkPpppppppPkkSSk.",
+      ".kSkPpppPPpppppPkSk.",
+      "kSSkpppPPPPpppppkSSk",
+      "kSkPpppPPPPPppppPkSk",
+      "kSkpppPPPPPPPppppkSk",
+      "kSkpppPPPPPPPppppkSk",
+      "kSkPppPPPPPPpppppkSk",
+      "kSkPpppPPPPpppppPkSk",
+      "kSkPppppPPpppppPkkSk",
+      "kskkkkkkkkkkkkkkkksk",
+      "kcccccccccccccccccck",
+      "kkkkkkkkkkkkkkkkkkkk",
+    ],
+  },
+  "exploit-charge": {
+    palette: { r: "#ff3a2e", R: "#ff9a8a", d: "#2a2f3e", D: "#4a5166", y: "#ffc23d" },
+    rows: [
+      ".....y..y.....",
+      "......yy......",
+      "....kkkkkk....",
+      "...kDDDDDDk...",
+      "..kDddddddDk..",
+      "..kddrRrrddk..",
+      "..kddrrrrddk..",
+      "..kdddddddDk..",
+      "...kddddddk...",
+      "....kkkkkk....",
+    ],
+  },
+  "bounty-board": {
+    palette: { w: "#6d431c", W: "#94632f", p: "#f2e8c9", r: "#ff3a2e", t: "#14161f" },
+    rows: [
+      "kkkkkkkkkkkkkkkkkk",
+      "kWWWWWWWWWWWWWWWWk",
+      "kwppppppwwppppppwk",
+      "kwptttppwwprrrppwk",
+      "kwppppppwwprrrppwk",
+      "kwprrrppwwppppppwk",
+      "kwppppppwwptttppwk",
+      "kwwwwwwwwwwwwwwwwk",
+      "kkkkkkkwwwwkkkkkkk",
+      "......kwwwwk......",
+      "......kwwwwk......",
+      "......kwwwwk......",
+      ".....kkkkkkkk.....",
+    ],
+  },
+  airdrop: {
+    palette: { w: "#f4f3ee", r: "#ff5c48", b: "#6d431c", B: "#94632f", y: "#ffc23d" },
+    rows: [
+      "...kkkkkkkkkkkk...",
+      ".kkwrwrwrwrwrwrkk.",
+      "kwrwrwrwrwrwrwrwrk",
+      "kkkkkkkkkkkkkkkkkk",
+      ".k..k........k..k.",
+      "..k..k......k..k..",
+      "...k..k....k..k...",
+      "....kkkkkkkkkk....",
+      "....kBBBByBBBk....",
+      "....kbbbyyybbk....",
+      "....kbbbbybbbk....",
+      "....kkkkkkkkkk....",
+    ],
+  },
+};
+
+export function cameoSprite(id: CameoId): HTMLCanvasElement {
+  const art = CAMEO_ART[id];
+  return paintGrid(`cameo-${id}`, art.rows, art.palette);
+}
+
+export function interactableSprite(kind: Exclude<InteractableKind, "cameo">): HTMLCanvasElement {
+  const art = ITEM_ART[kind];
+  return paintGrid(`item-${kind}`, art.rows, art.palette);
+}
+
+export const ITEM_KINDS = Object.keys(ITEM_ART) as Exclude<InteractableKind, "cameo">[];
+export const CAMEO_KINDS = Object.keys(CAMEO_ART) as CameoId[];

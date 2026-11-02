@@ -267,6 +267,7 @@ export class DecalBatch {
     const material = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
+      side: THREE.DoubleSide,
       vertexShader: `
         attribute vec3 iPos;
         attribute vec4 iParams;
@@ -293,12 +294,11 @@ export class DecalBatch {
           if (vParams.z < 0.5) {
             a = smoothstep(1.0, 0.25, d);
           } else if (vParams.z < 1.5) {
-            float band = smoothstep(0.06, 0.03, abs(d - 0.94));
-            float angle = atan(vLocal.x, vLocal.y) / TAU + 0.5;
-            float dashes = step(0.45, fract(angle * 28.0));
+            float band = smoothstep(0.1, 0.07, abs(d - 0.9));
+            float angle = atan(-vLocal.x, vLocal.y) / TAU + 0.5;
             float filled = step(angle, vParams.w);
-            a = band * max(dashes * 0.55, filled);
-            color = mix(color, color * 2.2, filled);
+            a = band * max(0.28, filled);
+            color = mix(color * 0.7, color * 1.7, filled);
           } else if (vParams.z < 2.5) {
             a = smoothstep(1.0, 0.92, d) * (0.2 + 0.8 * smoothstep(0.55, 0.95, d));
           } else if (vParams.z > 3.5) {

@@ -3,7 +3,7 @@ import type { UpgradeDef } from "../types";
 export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   {
     id: "power-lp",
-    title: "Concentrated LP",
+    title: "Uniswap Concentrated LP",
     description: "Swap stats: +10% damage and +5% move speed.",
     rarity: "rare",
     maxTimes: 1,
@@ -15,7 +15,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-lending",
-    title: "Lending Vault",
+    title: "Aave Lending Vault",
     description: "Passive XP while staked. Any hit slashes it for 6 seconds.",
     rarity: "epic",
     maxTimes: 1,
@@ -26,7 +26,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-launchpool",
-    title: "Exchange Launchpool",
+    title: "Binance Launchpool",
     description: "Exchange liquidity: +18% weapon damage.",
     rarity: "rare",
     maxTimes: 1,
@@ -37,7 +37,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-bridge-guard",
-    title: "Bridge Guard",
+    title: "Wormhole Bridge Guard",
     description: "Bridge insurance: +12% armor and heal 15.",
     rarity: "legendary",
     maxTimes: 1,
@@ -49,7 +49,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-stable-pool",
-    title: "Stable Pool",
+    title: "Curve Stable Pool",
     description: "Stable depth. +8% armor and +8% pickup.",
     rarity: "uncommon",
     maxTimes: 1,
@@ -61,7 +61,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-restake",
-    title: "Liquid Restake",
+    title: "Lido Liquid Stake",
     description: "Passive XP (slashed for 6s by any hit) and +6% move speed.",
     rarity: "rare",
     maxTimes: 1,
@@ -73,7 +73,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-price-feed",
-    title: "Clean Price Feed",
+    title: "Chainlink Clean Feed",
     description: "A cleaner price. Weapon damage +14%.",
     rarity: "rare",
     maxTimes: 1,
@@ -84,7 +84,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-restaking",
-    title: "Restaking Layer",
+    title: "EigenLayer Restake",
     description: "Restake the same stake. +10% damage and +8% armor.",
     rarity: "epic",
     maxTimes: 1,
@@ -96,7 +96,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-private-relay",
-    title: "Private Relay",
+    title: "Flashbots Private Relay",
     description: "Skip the public mempool. Cooldowns -12%.",
     rarity: "epic",
     maxTimes: 1,
@@ -107,7 +107,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   },
   {
     id: "power-op-grant",
-    title: "Retroactive Grant",
+    title: "Optimism Retro Grant",
     description: "The foundation pays you back. Heal 28 and +10% XP radius.",
     rarity: "rare",
     maxTimes: 1,

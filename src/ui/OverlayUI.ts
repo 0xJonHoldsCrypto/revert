@@ -4,6 +4,7 @@ import type { UpgradeDef } from "../types";
 import type { GamePhase } from "../types";
 import { formatTime } from "../utils/math";
 import type { Game, HudData } from "../game/Game";
+import { syncTouchAbility } from "./touchControls";
 
 function formatFunds(value: number): string {
   return value >= 1e9 ? `$${(value / 1e9).toFixed(2)}B` : `$${(value / 1e6).toFixed(1)}M`;
@@ -41,7 +42,7 @@ export class OverlayUI {
   }
 
   onPhaseChange(phase: GamePhase) {
-    this.overlay.classList.toggle("interactive", phase === "levelup" || phase === "won" || phase === "lost" || phase === "paused" || phase === "menu");
+    this.overlay.classList.toggle("interactive", phase === "levelup" || phase === "lost" || phase === "paused" || phase === "menu");
     this.title.unmount();
     if (phase === "menu" || phase === "cutscene" || phase === "cinematic") {
       this.overlay.innerHTML = "";
@@ -50,8 +51,7 @@ export class OverlayUI {
     if (phase === "menu") {
       this.title.mount(this.overlay);
       this.showTitleReady();
-    } else if (phase === "won") this.showEnd(true);
-    else if (phase === "lost") this.showEnd(false);
+    } else if (phase === "lost") this.showEnd();
     else if (phase === "playing" || phase === "paused") {
       this.clearOverlay();
       this.ensureHud();
@@ -70,7 +70,7 @@ export class OverlayUI {
         <button type="button" class="btn btn-secondary" data-a="mute"></button>
         <button type="button" class="btn btn-secondary" data-a="restart">RESTART RUN</button>
         <button type="button" class="btn btn-secondary" data-a="quit">QUIT TO TITLE</button>
-        <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
+        <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
       </div>
     `;
     const label = () => {
@@ -98,14 +98,15 @@ export class OverlayUI {
     this.overlay.classList.add("interactive");
     const panel = document.createElement("div");
     panel.className = "overlay-panel levelup";
+    const gear = this.game.choiceMode === "popup";
     panel.innerHTML = `
       <div class="lv-wrap">
-        <h1>NEW BLOCK. SIGN ONE.</h1>
+        <h1>${gear ? this.game.popupTitle : "NEW BLOCK. SIGN ONE."}</h1>
         <div class="upgrade-grid" id="upgrade-grid"></div>
-        <div class="lv-actions">
+        ${gear ? "" : `<div class="lv-actions">
           <button type="button" class="btn btn-secondary" id="lv-reroll" ${this.game.rerolls <= 0 ? "disabled" : ""}>REORG (${this.game.rerolls}) <kbd>R</kbd></button>
           <button type="button" class="btn btn-secondary" id="lv-skip">SKIP, HEAL 15 <kbd>X</kbd></button>
-        </div>
+        </div>`}
       </div>
     `;
     this.overlay.appendChild(panel);
@@ -114,14 +115,14 @@ export class OverlayUI {
       const card = document.createElement("button");
       card.type = "button";
       const rarity = c.rarity ?? "common";
-      const kind = c.id.startsWith("weapon-") ? "NEW TOOL" : c.id.startsWith("upgrade-") ? "PATCH" : "PASSIVE";
+      const kind = c.id === "gear-equip" ? "GEAR" : c.id === "gear-sell" ? "SELL" : c.id === "loot-claim" ? "CLAIM" : c.id.startsWith("deal-") || c.id.startsWith("bounty-") ? "CHOICE" : c.id.startsWith("weapon-") ? "NEW TOOL" : c.id.startsWith("upgrade-") ? "PATCH" : "PASSIVE";
       card.className = `upgrade-card rarity-${rarity}`;
       card.innerHTML = `<kbd>${i + 1}</kbd><span class="rarity-tag">${kind} · ${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>`;
       card.addEventListener("click", () => this.game.pickUpgrade(i));
       grid.appendChild(card);
     });
-    panel.querySelector("#lv-reroll")!.addEventListener("click", () => this.game.rerollCards());
-    panel.querySelector("#lv-skip")!.addEventListener("click", () => this.game.skipCards());
+    panel.querySelector("#lv-reroll")?.addEventListener("click", () => this.game.rerollCards());
+    panel.querySelector("#lv-skip")?.addEventListener("click", () => this.game.skipCards());
   }
 
   onHudUpdate(data: HudData) {
@@ -133,10 +134,20 @@ export class OverlayUI {
     const weaponLines = data.weapons
       .map((w) => `<div class="hud-weapon rarity-${w.rarity}${w.jammed ? " jammed" : ""}"><span>${w.jammed ? "HIJACKED" : w.name}</span><b>${"▮".repeat(Math.min(w.level, 8))}</b></div>`)
       .join("");
+    const gearLines = data.gear
+      .filter((g) => g.name)
+      .map((g) => `<div class="hud-weapon rarity-${g.rarity}"><span>${g.name}</span><b>${g.slot[0]}</b></div>`)
+      .join("");
+    const abilityLine = data.ability
+      ? `<div class="hud-weapon hud-ability" style="color:${data.ability.color}"><span>${data.ability.name}</span><b>${data.ability.remaining > 0 ? `${Math.ceil(data.ability.remaining)}s` : "Q"}</b></div>`
+      : "";
+    syncTouchAbility(data.ability);
     const status = [
       data.signers > 0 ? `SIGNERS ${data.signers}/3` : "",
       data.leverage > 0 ? `LEV ${data.leverage}x` : "",
       data.flash ?? "",
+      data.shielded ? "LIQUIDITY LOCKED" : "",
+      data.neverSell ? "NEVER SELL · NO DASH" : "",
       ...data.buffs.map((b) => `${b.label} ${Math.ceil(b.remaining)}s`),
     ].filter(Boolean);
     const alert = data.swapped
@@ -154,7 +165,7 @@ export class OverlayUI {
       <div class="hud-block-clock${data.gas ? " gas" : ""}">
         <label>${data.gas ? "GAS 9,999 GWEI" : "BLOCK"}</label>
         <strong>${data.block.toLocaleString("en-US")}</strong>
-        <span>${formatTime(data.time)} / ${formatTime(20 * 60)}</span>
+        <span>${formatTime(data.time)} · BOSS ${formatTime(data.nextBoss)}</span>
       </div>
       <div class="hud-stats">
         <div><label>LV</label><strong>${data.level}</strong></div>
@@ -163,8 +174,9 @@ export class OverlayUI {
       </div>
       <div class="hud-zone">${data.biome}${data.sidekick ? ` · ${data.sidekick}` : ""}</div>
       <div class="hud-status">${status.map((t) => `<span>${t}</span>`).join("")}</div>
-      <div class="hud-loadout">${weaponLines}</div>
+      <div class="hud-loadout">${weaponLines}${gearLines}${abilityLine}</div>
       <div class="hud-feed">${data.feed.map((l) => `<div>${l}</div>`).join("")}</div>
+      <div class="hud-toasts">${data.toasts.map((t) => `<div style="border-color:${t.color};color:${t.color}">${t.text}</div>`).join("")}</div>
       ${alert}
     `;
   }
@@ -191,7 +203,7 @@ export class OverlayUI {
     }
   }
 
-  private showEnd(won: boolean) {
+  private showEnd() {
     this.overlay.innerHTML = "";
     this.overlay.classList.add("interactive");
     this.hudEl = null;
@@ -204,9 +216,9 @@ export class OverlayUI {
       <div class="postmortem">
         <header>
           <span>INCIDENT ${m.incident} · BLOCK ${m.block.toLocaleString("en-US")}</span>
-          <span class="${won ? "ok" : "bad"}">${won ? "RESOLVED" : insolvent ? "INSOLVENT" : "RESPONDER DOWN"}</span>
+          <span class="bad">${insolvent ? "INSOLVENT" : "RESPONDER DOWN"}</span>
         </header>
-        <h1>${won ? "Funds safu." : insolvent ? "The treasury is empty." : "Rekt."}</h1>
+        <h1>${insolvent ? "The treasury is empty." : "Rekt."}</h1>
         <div class="pm-hero">
           <label>FUNDS SAVED</label>
           <strong>${formatFunds(m.saved)}</strong>
@@ -216,10 +228,11 @@ export class OverlayUI {
           <section>
             <h2>Summary</h2>
             <dl>
-              <dt>Root cause</dt><dd>${won ? "Contained" : m.cause}</dd>
+              <dt>Score</dt><dd>${m.score.toLocaleString("en-US")} · best ${m.best.toLocaleString("en-US")}</dd>
+              <dt>Root cause</dt><dd>${m.cause}</dd>
               <dt>Time on-chain</dt><dd>${formatTime(m.time)}</dd>
               <dt>Exploits reverted</dt><dd>${m.kills}</dd>
-              <dt>Bosses contained</dt><dd>${m.bosses} / 6</dd>
+              <dt>Bosses contained</dt><dd>${m.bosses}</dd>
               <dt>Responder level</dt><dd>${m.level}</dd>
             </dl>
           </section>
@@ -235,7 +248,7 @@ export class OverlayUI {
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="again-btn">RESPOND AGAIN [R]</button>
           <button type="button" class="btn btn-secondary" id="menu-btn">TITLE</button>
-          ${won ? '<button type="button" class="btn btn-secondary" id="wallet-btn">SIGN SCORE (WALLET)</button>' : ""}
+          <button type="button" class="btn btn-secondary" id="wallet-btn">SIGN SCORE (WALLET)</button>
         </div>
         <p class="controls-hint" id="wallet-status"></p>
       </div>
@@ -252,7 +265,7 @@ export class OverlayUI {
     const { submitScoreWithWallet } = await import("../web3/submitScore");
     const payload = this.game.recorder.build(
       this.game.selectedCharacter,
-      Math.floor(this.game.stats.kills * 100 + this.game.stats.timeSurvived),
+      this.game.score(),
       this.game.stats.timeSurvived,
       this.game.stats.kills
     );

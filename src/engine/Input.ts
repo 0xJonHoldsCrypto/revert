@@ -10,10 +10,10 @@ export class Input {
   cardPick: number | null = null;
   touchMove = { x: 0, y: 0 };
   touchDash = false;
+  abilityPressed = false;
+  stickOrigin: { x: number; y: number } | null = null;
 
-  private stickOrigin: { x: number; y: number } | null = null;
   private stickId: number | null = null;
-  private dashPointerId: number | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     window.addEventListener("keydown", (e) => this.onKey(e, true));
@@ -38,11 +38,6 @@ export class Input {
           const r = canvas.getBoundingClientRect();
           const x = t.clientX - r.left;
           const y = t.clientY - r.top;
-          if (x > r.width * 0.45 && this.dashPointerId === null) {
-            this.dashPointerId = t.identifier;
-            this.touchDash = true;
-            continue;
-          }
           if (this.stickId === null) {
             this.stickId = t.identifier;
             this.stickOrigin = { x, y };
@@ -82,9 +77,6 @@ export class Input {
           this.touchMove.x = 0;
           this.touchMove.y = 0;
         }
-        if (t.identifier === this.dashPointerId) {
-          this.dashPointerId = null;
-        }
       }
     };
     canvas.addEventListener("touchend", endTouch);
@@ -107,6 +99,7 @@ export class Input {
       }
       if (k === "r") this.restartPressed = true;
       if (k === "m") this.mutePressed = true;
+      if (k === "q" || k === "e") this.abilityPressed = true;
       if (k === "1" || k === "2" || k === "3") this.cardPick = Number(k) - 1;
     } else {
       this.keys.delete(k);
@@ -117,6 +110,7 @@ export class Input {
   clearEdges() {
     this.dashPressed = false;
     this.touchDash = false;
+    this.abilityPressed = false;
     this.pausePressed = false;
     this.advanceHeld = false;
     this.confirmPressed = false;
@@ -160,6 +154,24 @@ export class Input {
     this.dashPressed = false;
     this.touchDash = false;
     return v;
+  }
+
+  consumeAbility(): boolean {
+    const v = this.abilityPressed;
+    this.abilityPressed = false;
+    return v;
+  }
+
+  pressDash() {
+    this.touchDash = true;
+  }
+
+  pressAbility() {
+    this.abilityPressed = true;
+  }
+
+  pressPause() {
+    this.pausePressed = true;
   }
 
   consumePause(): boolean {

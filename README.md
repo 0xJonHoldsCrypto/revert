@@ -21,11 +21,19 @@ npm run dev
 
 ## Goal
 
-Save the funds and survive **20 minutes**. Six bosses arrive between 4:00 and 19:00. Victory needs the clock at 20:00 and the Grandmaster dead. Collect XP gems, level up, stack weapons and upgrades.
+The run is endless and ends only when you die. The first boss arrives at 2:00, and bosses keep cycling and scaling after that. Collect XP, level up, open chests, take deals and post a high score.
 
-## X embed budget
+## X player card
 
-Build fails if any `embed*.js` chunk exceeds **124KB gzip** (see `scripts/embed-budget-plugin.ts`). Use `embed.html` for the X card; Three.js loads only on the full site.
+The build fails if the first load of `index.html` or `embed.html` exceeds **124KB gzip** (see `scripts/first-load-budget-plugin.ts`). That counts the HTML plus every script and stylesheet it loads without a dynamic import. Three.js loads afterwards.
+
+The card plays the full game from `/`. Build with your public https URL to add the tags:
+
+```bash
+PUBLIC_URL=https://revert.run npm run build
+```
+
+Production builds on Vercel use `vercel.json`, which sets this URL. Submit https://revert.run to X for player card approval.
 
 ## Replay + wallet scores
 

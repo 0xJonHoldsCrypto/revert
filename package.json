@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "formal:game": "echo 'Install TLA+ tools (tlc) and run: tlc formal/GamePhase.tla'",
+    "formal": "sh scripts/formal.sh",
     "server:replay": "node server/replay.mjs"
   },
   "dependencies": {

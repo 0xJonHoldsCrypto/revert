@@ -24,6 +24,9 @@ export const BOSS_TIMELINE = {
 export type BossGimmick = "rewind" | "salute" | "modal" | "prices" | "pdf" | "halt";
 
 export const BOSS_ENTRANCES: Partial<Record<EnemyKind, { title: string; line: string; gimmick: BossGimmick }>> = {
+  "boss-shill": { title: "Not Financial Advice", line: "Ser, this is the bottom. Smash that like. Buy my course.", gimmick: "prices" },
+  "boss-rug-baron": { title: "Liquidity Unlocked", line: "Team tokens are vested. The vest is in my car. Goodbye.", gimmick: "modal" },
+  "boss-gas-golem": { title: "Base Fee Incarnate", line: "Your transaction is important to me. That will be 4 ETH.", gimmick: "halt" },
   "boss-mev-king": { title: "The Block Builder", line: "I saw that coming. Literally. I am one slot ahead of you.", gimmick: "rewind" },
   "boss-unit-414": { title: "Withdrawal Division", line: "We mapped your withdrawal flow in March. Nobody read the ticket.", gimmick: "salute" },
   "boss-phish-king": { title: "Trusted Popup", line: "Relax. It only needs unlimited approval. Everybody signs.", gimmick: "modal" },

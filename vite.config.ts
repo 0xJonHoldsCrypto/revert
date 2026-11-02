@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
-import { embedBudgetPlugin } from "./scripts/embed-budget-plugin";
+import { firstLoadBudgetPlugin } from "./scripts/first-load-budget-plugin";
+import { xCardPlugin } from "./scripts/x-card-plugin";
 
 export default defineConfig({
   base: "./",
@@ -17,5 +18,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [embedBudgetPlugin()],
+  plugins: [xCardPlugin(), firstLoadBudgetPlugin()],
 });

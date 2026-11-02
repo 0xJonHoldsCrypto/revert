@@ -4,7 +4,7 @@ export type TimedBuffKind = import("./data/timedBuffs").TimedBuffKind;
 
 export type WellStatId = import("./data/wells").WellStatId;
 
-export type GamePhase = "menu" | "cutscene" | "cinematic" | "playing" | "levelup" | "paused" | "won" | "lost";
+export type GamePhase = "menu" | "cutscene" | "cinematic" | "playing" | "levelup" | "paused" | "lost";
 
 export type CharacterId = "keel" | "nyx" | "diff" | "trace";
 
@@ -18,6 +18,18 @@ export type EnemyKind =
   | "oracle-manipulator"
   | "sim-swapper"
   | "insider"
+  | "airdrop-farmer"
+  | "sybil"
+  | "sybil-mini"
+  | "liquidator"
+  | "gas-guzzler"
+  | "flash-bot"
+  | "pump-bot"
+  | "wash-trader"
+  | "honeypot-mimic"
+  | "boss-shill"
+  | "boss-rug-baron"
+  | "boss-gas-golem"
   | "boss-unit-414"
   | "boss-phish-king"
   | "boss-nightdesk"
@@ -69,6 +81,9 @@ export interface EnemyDef {
 }
 
 import type { WeaponRarity } from "./data/rarity";
+import type { GearId, GearSlot } from "./data/gear";
+import type { AbilityId } from "./data/abilities";
+import type { CameoId } from "./data/cameos";
 
 export type { WeaponRarity };
 
@@ -143,6 +158,11 @@ export interface PlayerState extends Entity {
   sidekick: SidekickKind | null;
   activeBuffs: { kind: TimedBuffKind; until: number }[];
   wellBonusArmor: number;
+  gear: Partial<Record<GearSlot, GearId>>;
+  ability: AbilityId | null;
+  abilityReadyAt: number;
+  shieldUntil: number;
+  neverSellUntil: number;
 }
 
 export interface Hazard {
@@ -185,6 +205,10 @@ export interface Enemy extends Entity {
   charge?: { t: number; dash: number; angle: number };
   feedNode?: boolean;
   implant?: boolean;
+  elite?: boolean;
+  bounty?: boolean;
+  scale?: number;
+  frozenUntil?: number;
   kind: EnemyKind;
   hp: number;
   maxHp: number;
@@ -296,6 +320,31 @@ export interface WorldWell {
   stat: WellStatId;
   used: boolean;
   channelProgress: number;
+}
+
+export type InteractableKind = "faucet" | "lp-pool" | "bridge-gate" | "exploit-charge" | "bounty-board" | "airdrop" | "cameo";
+
+export interface Interactable {
+  id: number;
+  kind: InteractableKind;
+  x: number;
+  y: number;
+  radius: number;
+  progress: number;
+  used: boolean;
+  readyAt: number;
+  charge?: number;
+  destX?: number;
+  destY?: number;
+  until?: number;
+  lift?: number;
+  cameo?: CameoId;
+}
+
+export interface WorldLandmark {
+  key: string;
+  x: number;
+  y: number;
 }
 
 export interface SidekickState {
