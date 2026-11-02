@@ -1,4 +1,5 @@
 import { RARITY_LABEL } from "../data/rarity";
+import { TitleScreen } from "./TitleScreen";
 import type { UpgradeDef } from "../types";
 import type { GamePhase } from "../types";
 import { formatTime } from "../utils/math";
@@ -21,15 +22,13 @@ function mempoolTicker(): string {
 
 export class OverlayUI {
   private overlay: HTMLElement;
+  private title: TitleScreen;
   private hudEl: HTMLElement | null = null;
   private hudDyn: HTMLElement | null = null;
 
   constructor(private game: Game) {
     this.overlay = document.getElementById("overlay")!;
-  }
-
-  handlePauseTap() {
-    if (this.game.phase === "paused") this.game.togglePause();
+    this.title = new TitleScreen(game);
   }
 
   init() {
@@ -37,38 +36,76 @@ export class OverlayUI {
     this.overlay.classList.remove("interactive");
   }
 
+  showTitleReady() {
+    this.overlay.querySelector(".title")?.classList.add("ready");
+  }
+
   onPhaseChange(phase: GamePhase) {
-    this.overlay.classList.toggle("interactive", phase === "levelup" || phase === "won" || phase === "lost");
+    this.overlay.classList.toggle("interactive", phase === "levelup" || phase === "won" || phase === "lost" || phase === "paused" || phase === "menu");
+    this.title.unmount();
     if (phase === "menu" || phase === "cutscene" || phase === "cinematic") {
       this.overlay.innerHTML = "";
       this.hudEl = null;
     }
-    if (phase === "levelup") {
-      void 0;
+    if (phase === "menu") {
+      this.title.mount(this.overlay);
+      this.showTitleReady();
     } else if (phase === "won") this.showEnd(true);
     else if (phase === "lost") this.showEnd(false);
-    else     if (phase === "playing" || phase === "paused") {
+    else if (phase === "playing" || phase === "paused") {
       this.clearOverlay();
       this.ensureHud();
     }
-    if (phase === "paused") {
-      this.overlay.classList.remove("interactive");
-      this.showPauseBadge(true);
-    } else if (phase === "playing") {
-      this.showPauseBadge(false);
-    }
+    if (phase === "paused") this.showPauseMenu();
+  }
+
+  private showPauseMenu() {
+    const panel = document.createElement("div");
+    panel.className = "overlay-panel pause-menu";
+    panel.innerHTML = `
+      <div class="menu-card">
+        <h1>TX PAUSED</h1>
+        <p>The attacker is not paused. Kidding. Take your time.</p>
+        <button type="button" class="btn btn-primary" data-a="resume">RESUME <kbd>ESC</kbd></button>
+        <button type="button" class="btn btn-secondary" data-a="mute"></button>
+        <button type="button" class="btn btn-secondary" data-a="restart">RESTART RUN</button>
+        <button type="button" class="btn btn-secondary" data-a="quit">QUIT TO TITLE</button>
+        <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
+      </div>
+    `;
+    const label = () => {
+      panel.querySelector('[data-a="mute"]')!.textContent = this.game.audio.muted ? "SOUND: OFF" : "SOUND: ON";
+    };
+    label();
+    panel.querySelectorAll<HTMLElement>("[data-a]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const action = b.dataset.a;
+        if (action === "resume") this.game.togglePause();
+        if (action === "restart") this.game.requestStartRun();
+        if (action === "quit") this.game.setPhase("menu");
+        if (action === "mute") {
+          this.game.audio.toggleMute();
+          label();
+        }
+      });
+    });
+    this.overlay.appendChild(panel);
   }
 
   onLevelUpChoices(choices: UpgradeDef[]) {
     this.overlay.innerHTML = "";
+    this.hudEl = null;
     this.overlay.classList.add("interactive");
     const panel = document.createElement("div");
-    panel.className = "overlay-panel";
+    panel.className = "overlay-panel levelup";
     panel.innerHTML = `
-      <div class="panel-card">
-        <h1>Level up</h1>
-        <p class="tagline">Exploit.run · pick a tool before the next block.</p>
+      <div class="lv-wrap">
+        <h1>NEW BLOCK. SIGN ONE.</h1>
         <div class="upgrade-grid" id="upgrade-grid"></div>
+        <div class="lv-actions">
+          <button type="button" class="btn btn-secondary" id="lv-reroll" ${this.game.rerolls <= 0 ? "disabled" : ""}>REORG (${this.game.rerolls}) <kbd>R</kbd></button>
+          <button type="button" class="btn btn-secondary" id="lv-skip">SKIP, HEAL 15 <kbd>X</kbd></button>
+        </div>
       </div>
     `;
     this.overlay.appendChild(panel);
@@ -77,11 +114,14 @@ export class OverlayUI {
       const card = document.createElement("button");
       card.type = "button";
       const rarity = c.rarity ?? "common";
+      const kind = c.id.startsWith("weapon-") ? "NEW TOOL" : c.id.startsWith("upgrade-") ? "PATCH" : "PASSIVE";
       card.className = `upgrade-card rarity-${rarity}`;
-      card.innerHTML = `<span class="rarity-tag">${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>`;
+      card.innerHTML = `<kbd>${i + 1}</kbd><span class="rarity-tag">${kind} · ${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>`;
       card.addEventListener("click", () => this.game.pickUpgrade(i));
       grid.appendChild(card);
     });
+    panel.querySelector("#lv-reroll")!.addEventListener("click", () => this.game.rerollCards());
+    panel.querySelector("#lv-skip")!.addEventListener("click", () => this.game.skipCards());
   }
 
   onHudUpdate(data: HudData) {
@@ -178,7 +218,7 @@ export class OverlayUI {
             <dl>
               <dt>Root cause</dt><dd>${won ? "Contained" : m.cause}</dd>
               <dt>Time on-chain</dt><dd>${formatTime(m.time)}</dd>
-              <dt>Attackers reverted</dt><dd>${m.kills}</dd>
+              <dt>Exploits reverted</dt><dd>${m.kills}</dd>
               <dt>Bosses contained</dt><dd>${m.bosses} / 6</dd>
               <dt>Responder level</dt><dd>${m.level}</dd>
             </dl>
@@ -219,17 +259,5 @@ export class OverlayUI {
     const apiBase = /localhost|127\.0\.0\.1/.test(window.location.origin) ? "http://localhost:8787" : window.location.origin;
     const result = await submitScoreWithWallet(payload, apiBase);
     status.textContent = result.message;
-  }
-
-  showPauseBadge(show: boolean) {
-    let badge = this.overlay.querySelector(".pause-badge");
-    if (show && !badge) {
-      badge = document.createElement("div");
-      badge.className = "pause-badge";
-      badge.textContent = "PAUSED · Esc or click to resume";
-      this.overlay.appendChild(badge);
-    } else if (!show && badge) {
-      badge.remove();
-    }
   }
 }

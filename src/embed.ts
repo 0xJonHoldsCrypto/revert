@@ -23,7 +23,6 @@ const uiBridge: { overlay: OverlayUI | null } = { overlay: null };
 const game = new Game(canvas, input, {
   onPhaseChange: (phase) => {
     uiBridge.overlay?.onPhaseChange(phase);
-    uiBridge.overlay?.showPauseBadge(phase === "paused");
   },
   onLevelUpChoices: (choices) => uiBridge.overlay?.onLevelUpChoices(choices),
   onHudUpdate: (data) => uiBridge.overlay?.onHudUpdate(data),

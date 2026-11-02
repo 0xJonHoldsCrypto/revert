@@ -17,7 +17,7 @@ const LOOKAHEAD_SEC = 0.3;
 const SCHEDULE_MS = 30;
 const CROSSFADE_BARS = 2;
 const MASTER_GAIN = 1.5;
-const STORAGE_KEY = "exploitrun.audio.v1";
+const STORAGE_KEY = "revert.audio.v1";
 
 type ActiveTrack = {
   id: MusicTrackId;
@@ -47,6 +47,7 @@ export class AudioEngine {
   private xpComboAt = 0;
   private wantedTrack: MusicTrackId | null = null;
   muted = false;
+  silenced = false;
   musicVolume = 1;
   sfxVolume = 1;
 
@@ -277,7 +278,7 @@ export class AudioEngine {
 
   play(id: SfxId) {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== "running" || !this.sfxBus) return;
+    if (!ctx || ctx.state !== "running" || !this.sfxBus || this.silenced) return;
     const now = ctx.currentTime;
     const category = CATEGORY[id] ?? "free";
     if (category !== "free") {

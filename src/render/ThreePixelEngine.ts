@@ -11,7 +11,7 @@ import { CutscenePlayer } from "../cutscene/CutscenePlayer";
 import type { Game } from "../game/Game";
 import { makeFloorCanvases } from "../pixel/floorTiles";
 import { LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
-import type { Enemy, WeaponKind } from "../types";
+import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
 import { GradeShader } from "./gradeShader";
 import { DynamicResolution, pickQualityTier, QUALITY } from "./quality";
@@ -26,8 +26,7 @@ export type PixelEngine = {
   dispose(): void;
 };
 
-const HERO_HEIGHT = 62;
-const ENEMY_HEIGHT_PER_RADIUS = 3.1;
+const PIXEL_SIZE = 2.25;
 const BOSS_HEIGHT = 196;
 const SPRITE_CAPACITY = 2200;
 const FX_CAPACITY = 900;
@@ -349,9 +348,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     }
   }
 
-  function enemyHeight(e: Enemy) {
-    const def = ENEMIES[e.kind];
-    return def.isBoss ? BOSS_HEIGHT : def.radius * ENEMY_HEIGHT_PER_RADIUS;
+  function enemyHeight(px: number, isBoss: boolean | undefined) {
+    return isBoss ? BOSS_HEIGHT : px * PIXEL_SIZE;
   }
 
   function renderWorld(game: Game, dt: number, alpha: number) {
@@ -394,14 +392,16 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const ringColor = cachedColor(def.color);
       decals.push(c.x, c.y, c.radius, c.radius, DECAL_RING, c.openProgress / def.openTime, live ? ringColor : WHITE, live ? 0.95 : 0.35);
       decals.push(c.x, c.y + 1, 24, 12, DECAL_BLOB, 0, BLACK, 0.55);
-      sprites.push(atlas.frame("chest"), c.x, c.y, 0.5, 34, false, 0, live ? 0.25 : 0);
+      const chestFrame = atlas.frame(`chest:${c.kind}`);
+      sprites.push(chestFrame, c.x, c.y, 0.5, chestFrame.px * PIXEL_SIZE, false, 0, live ? 0.25 : 0);
       if (live && scratchLights.length < MAX_POINT_LIGHTS - 1) scratchLights.push({ x: c.x, y: c.y, h: 50, color: CHEST_LIGHT, power: 0.75 });
     }
     for (const w of game.wells) {
       if (w.used || !inView(w.x, w.y)) continue;
       decals.push(w.x, w.y, w.radius, w.radius, DECAL_RING, w.channelProgress / 1.35, cachedColor("#6cb6ff"), 0.9);
       decals.push(w.x, w.y + 1, 26, 12, DECAL_BLOB, 0, BLACK, 0.5);
-      sprites.push(atlas.frame("well"), w.x, w.y, 0.5, 42, false, 0, 0.3);
+      const wellFrame = atlas.frame("well");
+      sprites.push(wellFrame, w.x, w.y, 0.5, wellFrame.px * PIXEL_SIZE, false, 0, 0.3);
     }
 
     for (const pk of game.pickups) {
@@ -411,7 +411,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const hover = 6 + Math.sin(anim * 4 + pk.id) * 2;
       decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
       const isXp = pk.kind === "xp";
-      sprites.push(atlas.frame(`pickup:${pk.kind}`), x, y, hover, isXp ? 13 : 15, false, 0, isXp ? 1.6 : 0.9);
+      const pickupFrame = atlas.frame(`pickup:${pk.kind}`);
+      sprites.push(pickupFrame, x, y, hover, pickupFrame.px * 1.9, false, 0, isXp ? 1.6 : 0.9);
       if (isXp || pk.kind === "coin") fx.push(x, y, hover + 6, 13, 13, 0, isXp ? XP_COLOR : COIN_COLOR, 0.45);
     }
 
@@ -422,18 +423,19 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const y = lerpPos(e.py, e.y, alpha);
       if (!inView(x, y)) continue;
       const def = ENEMIES[e.kind];
-      const height = enemyHeight(e);
       const hop = def.isBoss ? 0 : Math.abs(Math.sin(e.wobble * 2.4)) * 3;
       const squash = 1 + Math.sin(e.wobble * 4.8) * (def.isBoss ? 0.015 : 0.04);
       if (e.kind === "phishing-bot" && !e.revealed) {
         const hover = 6 + Math.sin(anim * 4 + e.id) * 2;
         const flicker = Math.floor(anim * 3 + e.id) % 7 === 0;
         decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
-        sprites.push(atlas.frame("pickup:xp"), x, y, hover, 13, false, flicker ? 0.25 : 0, 1.6);
+        const shard = atlas.frame("pickup:xp");
+        sprites.push(shard, x, y, hover, shard.px * 1.9, false, flicker ? 0.25 : 0, 1.6);
         fx.push(x, y, hover + 6, 13, 13, 0, flicker ? PHISH_TELL : XP_COLOR, 0.45);
         continue;
       }
-      const frame = atlas.frame(`enemy:${e.kind}`);
+      const frame = atlas.frame(`enemy:${e.kind}:${Math.floor(e.wobble * 1.6) % 2}`);
+      const height = enemyHeight(frame.px, def.isBoss);
       const width = height * frame.aspect;
       if (e.kind === "bridge-drainer" && e.tether !== undefined) {
         const cos = Math.cos(e.tether);
@@ -487,8 +489,9 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       if (!inView(c.x, c.y)) continue;
       const def = ENEMIES[c.kind];
       const f = c.life / c.maxLife;
-      const height = (def.isBoss ? BOSS_HEIGHT : def.radius * ENEMY_HEIGHT_PER_RADIUS) * f;
-      sprites.push(atlas.frame(`enemy:${c.kind}`), c.x, c.y, 0.5, height, c.flip, 1, 0, 1 + (1 - f) * 1.1);
+      const corpseFrame = atlas.frame(`enemy:${c.kind}:0`);
+      const height = enemyHeight(corpseFrame.px, def.isBoss) * f;
+      sprites.push(corpseFrame, c.x, c.y, 0.5, height, c.flip, 1, 0, 1 + (1 - f) * 1.1);
     }
 
     for (const wave of game.shockwaves) {
@@ -511,12 +514,14 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     if (!blink) {
       const bob = moving ? Math.abs(Math.sin(anim * 13)) * 2 : Math.sin(anim * 2.2) * 0.5;
       const dead = p.dead;
+      const heroSprite = atlas.frame(`hero:${p.characterId}:${step}`);
+      const heroHeight = heroSprite.px * PIXEL_SIZE;
       sprites.push(
-        atlas.frame(`hero:${p.characterId}:${step}`),
+        heroSprite,
         px,
         py,
         0.5 + bob + (p.lift ?? 0),
-        dead ? HERO_HEIGHT * 0.55 : HERO_HEIGHT,
+        dead ? heroHeight * 0.55 : heroHeight,
         Math.cos(p.facing) < 0,
         dead ? 0.35 : 0,
         0,
@@ -530,7 +535,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       dashTrail.shift();
     }
     for (const ghost of dashTrail) {
-      sprites.push(atlas.frame(ghost.frame), ghost.x, ghost.y, 0.5, HERO_HEIGHT, ghost.flip, 0.75);
+      const ghostFrame = atlas.frame(ghost.frame);
+      sprites.push(ghostFrame, ghost.x, ghost.y, 0.5, ghostFrame.px * PIXEL_SIZE, ghost.flip, 0.75);
     }
     if (p.dashTimer > 0) {
       const color = PLAYER_LIGHT;
@@ -540,7 +546,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     const sk = game.sidekickEntity;
     if (sk) {
       decals.push(sk.x, sk.y + 1, 11, 6, DECAL_BLOB, 0, BLACK, 0.45);
-      sprites.push(atlas.frame(`rig:${sk.kind}`), sk.x, sk.y, 6, 26, false);
+      const rigFrame = atlas.frame(`rig:${sk.kind}`);
+      sprites.push(rigFrame, sk.x, sk.y, 6, rigFrame.px * PIXEL_SIZE, false);
     }
 
     for (const pr of game.projectiles) {
@@ -568,7 +575,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       decals.push(o.x, o.y, o.radius, o.radius * 0.6, DECAL_BLOB, 0, BLACK, 0.35);
       if (o.weaponKind === "rug-coin") {
         const spin = Math.abs(Math.cos(anim * 7 + o.id));
-        sprites.push(atlas.frame("pickup:coin"), o.x, o.y, 18, 22, false, 0, 0.9, Math.max(0.18, spin));
+        sprites.push(atlas.frame("pickup:coin"), o.x, o.y, 18, 20, false, 0, 0.9, Math.max(0.18, spin));
         fx.push(o.x, o.y, 28, 26, 26, 0, color, 0.8);
       } else {
         fx.push(o.x, o.y, 26, o.radius * 3.2, o.radius * 3.2, 0, color, 2.2);

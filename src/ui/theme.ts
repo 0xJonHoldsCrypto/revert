@@ -1,5 +1,5 @@
-export const FONT_UI = '"IBM Plex Sans", system-ui, sans-serif';
-export const FONT_MONO = '"IBM Plex Mono", ui-monospace, monospace';
+export const FONT_UI = '"Pixelify Sans", ui-monospace, monospace';
+export const FONT_MONO = '"JetBrains Mono", ui-monospace, monospace';
 
 export const INK = {
   bg: "#070910",

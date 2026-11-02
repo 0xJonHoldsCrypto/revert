@@ -8,7 +8,7 @@ export async function submitScoreWithWallet(payload: ReplayPayload, apiBase: str
   const address = accounts[0];
   if (!address) return { ok: false, message: "Wallet connection rejected." };
 
-  const summary = `Exploit.run score=${payload.score} time=${payload.timeSurvived} kills=${payload.kills} seed=${payload.seed}`;
+  const summary = `REVERT score=${payload.score} time=${payload.timeSurvived} kills=${payload.kills} seed=${payload.seed}`;
   const sig = (await eth.request({
     method: "personal_sign",
     params: [summary, address],

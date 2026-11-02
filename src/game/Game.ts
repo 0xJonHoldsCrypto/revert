@@ -8,8 +8,7 @@ import {
   WIN_TIME_SEC,
   WORLD,
 } from "../constants";
-import { getCharacter } from "../data/characters";
-import { rollStarterCharacter } from "../pixel/portraits";
+import { CHARACTERS, getCharacter } from "../data/characters";
 import { ENEMIES, HORDE_WEIGHTS } from "../data/enemies";
 import { buildUpgradePool, MAX_WEAPON_SLOTS } from "../data/upgrades";
 import { ENV_OBSTACLES } from "../data/environment";
@@ -101,6 +100,35 @@ const KNOCKBACK_DECAY = 9;
 const MAX_PARTICLES = 420;
 const CUTSCENE_SKIP_HOLD_SEC = 1;
 
+const PREF_KEY = "revert.prefs.v1";
+const TUTORIAL: [number, string][] = [
+  [0.5, "gm. can you even move? WASD, responder."],
+  [6, "cute. SPACE dashes. you'll need it."],
+  [13, "your tools fire on their own. grab the blue shards."],
+  [24, "see the meter? that's $3.84B leaving. thx for the liquidity."],
+  [36, "chests cost $SAFU. stand in the ring. i'd never trick you."],
+];
+
+function loadPrefs(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}") as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function loadPref(key: string): string | undefined {
+  return loadPrefs()[key];
+}
+
+function savePref(key: string, value: string) {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({ ...loadPrefs(), [key]: value }));
+  } catch {
+    return;
+  }
+}
+
 let nextId = 1;
 function uid(): number {
   return nextId++;
@@ -141,7 +169,8 @@ export type HudData = {
 export class Game {
   phase: GamePhase = "menu";
   selectedCharacter: CharacterId = "keel";
-  menuHero: CharacterId = "keel";
+  attract = false;
+  rerolls = 2;
   runDifficulty: DifficultyId = "normal";
   player!: PlayerState;
   enemies: Enemy[] = [];
@@ -191,6 +220,8 @@ export class Game {
   timeline: { block: number; text: string }[] = [];
   rootCause: EnemyKind | "hazard" | "insolvent" | null = null;
   weaponDamage = new Map<string, number>();
+  private tutorialStep = 0;
+  private tutorialDone = loadPref("tutorial") === "done";
   private nextGasAt = 150;
   private seenKinds = new Set<EnemyKind>();
   private bannerQueue: { title: string; text: string; tone: string }[] = [];
@@ -226,21 +257,32 @@ export class Game {
   ) {
     this.cutscene.setAudio(this.audio);
     this.audio.setMusic("title");
+    const hero = loadPref("hero");
+    if (CHARACTERS.some((c) => c.id === hero)) this.selectedCharacter = hero as CharacterId;
+    const difficulty = loadPref("difficulty");
+    if (difficulty && difficulty in DIFFICULTY) this.runDifficulty = difficulty as DifficultyId;
   }
 
   selectCharacter(id: CharacterId) {
     this.selectedCharacter = id;
   }
 
-  rollMenuHero() {
-    this.menuHero = rollStarterCharacter();
-    this.selectedCharacter = this.menuHero;
+  chooseHero(id: CharacterId) {
+    this.selectCharacter(id);
+    if (this.attract && this.player) this.player.characterId = id;
+    savePref("hero", id);
+  }
+
+  chooseDifficulty(id: DifficultyId) {
+    this.runDifficulty = id;
+    savePref("difficulty", id);
   }
 
   requestStartRun(fromTitle = false) {
-    if (!fromTitle) this.rollMenuHero();
-    this.selectCharacter(this.menuHero);
+    this.attract = false;
+    this.audio.silenced = false;
     this.audio.unlock();
+    this.audio.play("cardSelect");
     if (fromTitle) {
       this.setPhase("cutscene");
       this.cutscene.play("intro", () => this.startRun());
@@ -250,6 +292,66 @@ export class Game {
   }
 
   startRun() {
+    this.attract = false;
+    this.audio.silenced = false;
+    this.resetRun();
+    this.tutorialStep = this.tutorialDone ? TUTORIAL.length : 0;
+    this.beginLanding();
+  }
+
+  beginAttract() {
+    this.attract = true;
+    this.audio.silenced = true;
+    this.resetRun();
+    this.elapsed = 300;
+    this.bossesSpawned = BOSS_TIMES.length;
+    this.nextGasAt = Infinity;
+    this.player.x = 1320;
+    this.player.y = 1060;
+    this.player.damageMult = 1.6;
+    const ctx = this.makeUpgradeContext();
+    (["finality-beam", "stable-shield", "memo-pulse"] as WeaponKind[]).forEach((k) => ctx.addWeapon(k));
+    this.weapons.forEach((w) => (w.level = 4));
+    this.syncOrbiters();
+    this.obstacles = [];
+    this.spawnBoss("boss-phish-king");
+    const boss = this.enemies[this.enemies.length - 1]!;
+    boss.x = this.player.x + 345;
+    boss.y = this.player.y + 30;
+    boss.hp = boss.maxHp = 1e9;
+    boss.speed = 0;
+    for (let i = 0; i < 40; i++) this.spawnHordeEnemy();
+    this.seenKinds.clear();
+    this.banner = null;
+    this.bannerQueue = [];
+  }
+
+  private attractMove(): { x: number; y: number } {
+    const a = this.simTick / 130;
+    const tx = 1320 + Math.cos(a) * 150;
+    const ty = 1060 + Math.sin(a * 1.3) * 90;
+    return { x: tx - this.player.x, y: ty - this.player.y };
+  }
+
+  private updateAttract(dt: number) {
+    this.snapshotPositions();
+    this.player.invuln = 9;
+    this.player.hp = this.player.maxHp;
+    this.hazards = [];
+    this.updatePlayer(dt);
+    this.updateSpawner(dt);
+    this.rebuildEnemySpatial();
+    this.updateEnemies(dt);
+    this.updateWeapons(dt);
+    this.updateProjectiles(dt);
+    this.updateOrbiters(dt);
+    this.updatePickups(dt);
+    this.updateParticles(dt);
+    this.shake = 0;
+    this.impactFrames = 0;
+  }
+
+  private resetRun() {
     const ch = getCharacter(this.selectedCharacter);
     this.player = {
       id: uid(),
@@ -338,9 +440,9 @@ export class Game {
     this.dying = 0;
     this.dashBuffer = 0;
     this.cameraFocus = null;
+    this.rerolls = 2;
     this.input.focus();
     this.syncOrbiters();
-    this.beginLanding();
   }
 
   setPhase(phase: GamePhase) {
@@ -348,8 +450,8 @@ export class Game {
     this.input.clearEdges();
     this.cutsceneHold = 0;
     if (phase === "menu") {
-      this.rollMenuHero();
       this.audio.setMusic("title");
+      this.beginAttract();
     }
     if (phase === "lost") this.audio.setMusic("gameOver", true);
     this.audio.duck(phase === "paused" || phase === "levelup");
@@ -382,6 +484,7 @@ export class Game {
     } else {
       up.apply(ctx);
     }
+    this.input.clearEdges();
     this.upgradeCounts.set(up.id, (this.upgradeCounts.get(up.id) ?? 0) + 1);
     this.audio.play(up.id.startsWith("upgrade-") && up.title.indexOf("·") < 0 ? "evolve" : "cardSelect");
     this.syncOrbiters();
@@ -437,10 +540,30 @@ export class Game {
     }
   }
 
-  triggerLevelUp() {
+  private rollChoices() {
     const ctx = this.makeUpgradeContext();
     const pool = buildUpgradePool(ctx).filter((u) => (this.upgradeCounts.get(u.id) ?? 0) < (u.maxTimes ?? 99));
     this.levelUpChoices = shuffle(pool).slice(0, 3);
+  }
+
+  rerollCards() {
+    if (this.phase !== "levelup" || this.rerolls <= 0) return;
+    this.rerolls--;
+    this.rollChoices();
+    this.audio.play("ui");
+    this.cb.onLevelUpChoices(this.levelUpChoices);
+  }
+
+  skipCards() {
+    if (this.phase !== "levelup") return;
+    this.player.hp = Math.min(this.player.maxHp, this.player.hp + 15);
+    this.audio.play("ui");
+    this.setPhase("playing");
+  }
+
+  triggerLevelUp() {
+    if (this.attract) return;
+    this.rollChoices();
     if (this.levelUpChoices.length === 0) {
       this.player.maxHp += 5;
       this.player.hp += 5;
@@ -458,7 +581,11 @@ export class Game {
     if (this.input.consumeMute()) this.audio.toggleMute();
 
     if (this.phase === "menu") {
-      if (this.input.consumeConfirm()) this.requestStartRun(true);
+      if (this.input.consumeConfirm()) {
+        this.requestStartRun(true);
+        return;
+      }
+      if (this.attract && this.player) this.updateAttract(dt);
       return;
     }
 
@@ -476,6 +603,8 @@ export class Game {
     if (this.phase === "levelup") {
       const pick = this.input.consumeCardPick();
       if (pick !== null) this.pickUpgrade(pick);
+      else if (this.input.consumeRestart()) this.rerollCards();
+      else if (this.input.keys.has("x")) this.skipCards();
       return;
     }
 
@@ -756,6 +885,14 @@ export class Game {
       this.performReorg();
     }
 
+    if (this.tutorialStep < TUTORIAL.length && this.elapsed >= TUTORIAL[this.tutorialStep]![0]) {
+      this.queueBanner("INBOUND TX · 0xdead…c0de", TUTORIAL[this.tutorialStep]![1], "#ff5c48");
+      this.tutorialStep++;
+      if (this.tutorialStep === TUTORIAL.length) {
+        this.tutorialDone = true;
+        savePref("tutorial", "done");
+      }
+    }
     if (this.banner && this.elapsed >= this.banner.until) this.banner = null;
     if (!this.banner && this.bannerQueue.length) {
       const next = this.bannerQueue.shift()!;
@@ -780,7 +917,7 @@ export class Game {
       .sort((a, b) => b[1] - a[1])
       .map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
     return {
-      incident: `EXR-${(this.worldSeed >>> 0).toString(16).slice(0, 6).toUpperCase()}`,
+      incident: `RVT-${(this.worldSeed >>> 0).toString(16).slice(0, 6).toUpperCase()}`,
       block: this.blockHeight,
       saved,
       lost: Math.max(0, FUNDS_TOTAL - saved),
@@ -967,7 +1104,7 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
     } else {
-      const mv = this.input.moveVector();
+      const mv = this.attract ? this.attractMove() : this.input.moveVector();
       const swap = this.swapTimer > 0 ? -1 : 1;
       const n = normalize(mv.x * swap, mv.y * swap);
       const spd = p.moveSpeed * this.buffMult("speed") * AREA_RULES[biomeAt(p.x, p.y)].speed;
@@ -977,7 +1114,7 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      if (this.input.consumeDash()) this.dashBuffer = DASH_BUFFER_SEC;
+      if (!this.attract && this.input.consumeDash()) this.dashBuffer = DASH_BUFFER_SEC;
       else if (this.dashBuffer > 0) this.dashBuffer -= dt;
       if (this.dashBuffer > 0 && p.dashCooldown <= 0) {
         this.dashBuffer = 0;
@@ -1196,6 +1333,9 @@ export class Game {
       this.addTrauma(0.4);
       const loot = rollChestLoot(def.minRarity, biomeAt(c.x, c.y));
       this.applyChestLoot(loot);
+      const got = loot.type === "weapon" ? WEAPONS[loot.kind].name : loot.type === "sidekick" ? `${SIDEKICKS[loot.kind].name} joined you` : `+${loot.stat === "maxHp" ? `${loot.amount} max HP` : `${Math.round(loot.amount * 100)}% ${loot.stat}`}`;
+      this.bannerQueue.unshift({ title: `${def.name.toUpperCase()} UNLOCKED`, text: got, tone: def.color });
+      this.banner = null;
       this.burstParticles(c.x, c.y, def.color, 14);
     }
   }

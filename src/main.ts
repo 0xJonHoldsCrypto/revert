@@ -1,16 +1,15 @@
 import "./styles.css";
 import { Input } from "./engine/Input";
 import { Game } from "./game/Game";
-import { TitleSceneRenderer } from "./render/TitleSceneRenderer";
 import { createThreePixelEngine, type PixelEngine } from "./render/ThreePixelEngine";
 import { getCharacter } from "./data/characters";
-import { difficultyFromClick } from "./data/difficulty";
 import { ENEMIES } from "./data/enemies";
 import { WELL_STATS } from "./data/wells";
 import { CHESTS } from "./data/environment";
 import { FONT_MONO, FONT_UI } from "./ui/theme";
 import { applyCanvasBackingStore, applyCanvasSize, readViewport } from "./render/viewport";
 import { OverlayUI } from "./ui/OverlayUI";
+import { bootProgress, finishBoot } from "./ui/bootScreen";
 import { drawCinematic } from "./ui/cinematicOverlay";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
@@ -40,18 +39,12 @@ window.addEventListener("resize", () => {
 });
 
 const input = new Input(canvas);
-const titleScene = new TitleSceneRenderer();
 
 const uiBridge: { overlay: OverlayUI | null } = { overlay: null };
 
 const game = new Game(canvas, input, {
   onPhaseChange: (phase) => {
     uiBridge.overlay?.onPhaseChange(phase);
-    uiBridge.overlay?.showPauseBadge(phase === "paused");
-    if (phase === "menu") {
-      titleScene.setHero(getCharacter(game.menuHero));
-      titleScene.setDifficulty(game.runDifficulty);
-    }
   },
   onLevelUpChoices: (choices) => uiBridge.overlay?.onLevelUpChoices(choices),
   onHudUpdate: (data) => uiBridge.overlay?.onHudUpdate(data),
@@ -60,9 +53,6 @@ const game = new Game(canvas, input, {
 const overlay = new OverlayUI(game);
 uiBridge.overlay = overlay;
 overlay.init();
-game.rollMenuHero();
-titleScene.setHero(getCharacter(game.menuHero));
-titleScene.setDifficulty(game.runDifficulty);
 
 const SIM_STEP = 1 / 60;
 const MAX_SIM_STEPS = 8;
@@ -72,7 +62,7 @@ let last = performance.now();
 let loopStarted = false;
 
 function isWorldVisible() {
-  return game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "won" || game.phase === "lost" || game.phase === "cinematic";
+  return game.phase === "menu" || game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "won" || game.phase === "lost" || game.phase === "cinematic";
 }
 
 function drawUiOverlay() {
@@ -84,14 +74,11 @@ function drawUiOverlay() {
     return;
   }
   if (isWorldVisible() && game.player) {
-    if (game.phase !== "won" && game.phase !== "lost") drawRunChrome(vp.width, vp.height);
+    if (game.phase !== "won" && game.phase !== "lost" && game.phase !== "menu") drawRunChrome(vp.width, vp.height);
     return;
   }
 
-  if (game.phase === "menu") {
-    titleScene.setHero(getCharacter(game.menuHero));
-    titleScene.drawOverlay(uiCtx, vp.width, vp.height);
-  } else if (game.phase === "cutscene") {
+  if (game.phase === "cutscene") {
     drawSkipHint(vp.width, vp.height);
   }
 }
@@ -248,15 +235,17 @@ function loop(now: number) {
   }
   if (steps === MAX_SIM_STEPS) accumulator = 0;
 
-  if (game.phase === "menu") titleScene.update(frameDt);
-
   if (isWorldVisible() || game.phase === "cutscene") pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
   drawUiOverlay();
   requestAnimationFrame(loop);
 }
 
+bootProgress(0.55);
 createThreePixelEngine(canvas).then((engine) => {
   pixelEngine = engine;
+  bootProgress(0.95);
+  game.setPhase("menu");
+  finishBoot(() => overlay.showTitleReady());
   if (!loopStarted) {
     loopStarted = true;
     requestAnimationFrame(loop);
@@ -274,24 +263,4 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has("debug")) {
   void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game, () => pixelEngine?.stats() ?? null));
 }
 
-canvas.addEventListener("click", (e) => {
-  input.focus();
-  const vp = readViewport(canvas);
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-
-  if (game.phase === "menu") {
-    if (titleScene.hitStart(mx, my, vp.width, vp.height)) {
-      game.requestStartRun(true);
-      return;
-    }
-    const diff = difficultyFromClick(mx, my, vp.width, vp.height);
-    if (diff) {
-      game.runDifficulty = diff;
-      titleScene.setDifficulty(diff);
-      return;
-    }
-  }
-  if (game.phase === "paused") game.togglePause();
-});
+canvas.addEventListener("click", () => input.focus());

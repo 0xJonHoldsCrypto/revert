@@ -1,5 +1,6 @@
 import type { BiomeId } from "../data/environment";
 import type { EnemyKind } from "../types";
+import { enemyFrame, hasHandEnemy } from "./handArt";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -45,147 +46,10 @@ function r(c: Ctx, color: string, x: number, y: number, w: number, h: number) {
   c.fillRect(x, y, w, h);
 }
 
-function legs(c: Ctx, x: number, y: number, gap: number, h: number, pants: string, shoe: string) {
-  r(c, pants, x, y, 5, h);
-  r(c, pants, x + gap, y, 5, h);
-  r(c, shoe, x - 1, y + h, 7, 3);
-  r(c, shoe, x + gap, y + h, 7, 3);
-}
-
 const SKIN = "#dfa985";
 const SKIN_D = "#b77e60";
 
 const ENEMY_ART: Partial<Record<EnemyKind, () => HTMLCanvasElement>> = {
-  "script-kiddie": () =>
-    sprite("script-kiddie", 34, 44, (c) => {
-      legs(c, 9, 31, 11, 9, "#2a2c3c", "#d8d8e0");
-      r(c, "#4c7a3f", 6, 14, 22, 18);
-      r(c, "#3a5f30", 6, 14, 5, 18);
-      r(c, "#67a053", 23, 15, 5, 16);
-      r(c, "#4c7a3f", 9, 1, 16, 16);
-      r(c, SKIN, 12, 6, 11, 9);
-      r(c, "#101014", 13, 9, 3, 2);
-      r(c, "#101014", 19, 9, 3, 2);
-      r(c, "#3a5f30", 9, 1, 16, 4);
-      r(c, "#2a2c38", 3, 22, 28, 12);
-      r(c, "#7ef0a0", 5, 24, 24, 8);
-      r(c, "#0f3a22", 7, 26, 11, 1);
-      r(c, "#0f3a22", 7, 29, 16, 1);
-    }),
-  "phishing-bot": () =>
-    sprite("phishing-bot", 44, 42, (c) => {
-      r(c, "#f2f4fa", 2, 2, 40, 28);
-      r(c, "#3b6cff", 2, 2, 40, 7);
-      r(c, "#ff5c48", 36, 3, 4, 4);
-      r(c, "#14161f", 7, 13, 30, 3);
-      r(c, "#8c93a6", 7, 18, 22, 2);
-      r(c, "#2ec27e", 12, 23, 20, 5);
-      r(c, "#7a4de0", 12, 30, 3, 8);
-      r(c, "#7a4de0", 28, 30, 3, 8);
-      r(c, "#7a4de0", 9, 37, 6, 3);
-      r(c, "#7a4de0", 28, 37, 6, 3);
-      r(c, "#c8ccd8", 42, 9, 2, 16);
-      r(c, "#c8ccd8", 39, 24, 5, 2);
-    }),
-  "mev-searcher": () =>
-    sprite("mev-searcher", 44, 28, (c) => {
-      r(c, "#e8bb33", 8, 8, 28, 13);
-      r(c, "#fff0a0", 10, 9, 22, 3);
-      r(c, "#8a6510", 8, 18, 28, 3);
-      r(c, "#16182a", 26, 11, 9, 6);
-      r(c, "#5de9ff", 28, 12, 6, 3);
-      r(c, "#7a8092", 0, 10, 9, 9);
-      r(c, "#ffb020", 0, 12, 3, 5);
-      r(c, "#3a3e50", 12, 2, 18, 3);
-      r(c, "#3a3e50", 20, 4, 2, 5);
-      r(c, "#3a3e50", 12, 22, 2, 5);
-      r(c, "#3a3e50", 28, 22, 2, 5);
-    }),
-  "bridge-drainer": () =>
-    sprite("bridge-drainer", 48, 36, (c) => {
-      r(c, "#2f3350", 6, 16, 34, 14);
-      r(c, "#51568a", 6, 16, 34, 3);
-      r(c, "#16182a", 3, 28, 42, 6);
-      for (let i = 0; i < 6; i++) r(c, "#3a3e58", 6 + i * 7, 30, 4, 2);
-      r(c, "#9a5cff", 10, 4, 18, 14);
-      r(c, "#d8b8ff", 12, 6, 5, 10);
-      r(c, "#5a34a8", 25, 4, 3, 14);
-      r(c, "#c8ccd8", 15, 1, 8, 3);
-      r(c, "#6a7088", 36, 8, 5, 12);
-      r(c, "#6a7088", 36, 6, 12, 5);
-      r(c, "#ff5c48", 34, 19, 4, 4);
-    }),
-  "rug-dev": () =>
-    sprite("rug-dev", 42, 52, (c) => {
-      legs(c, 11, 38, 11, 10, "#1b1e2c", "#0c0c10");
-      r(c, "#2a2f47", 8, 18, 24, 21);
-      r(c, "#f4f4f4", 17, 18, 6, 11);
-      r(c, "#c23c3c", 19, 19, 2, 10);
-      r(c, "#3a4060", 8, 18, 4, 21);
-      r(c, SKIN, 11, 3, 18, 16);
-      r(c, "#1a1214", 10, 1, 20, 6);
-      r(c, "#0c0c10", 13, 9, 14, 3);
-      r(c, "#8a2b1c", 14, 15, 11, 1);
-      r(c, "#c23c5a", 28, 12, 13, 26);
-      for (let i = 0; i < 5; i++) r(c, i % 2 ? "#f0c14d" : "#7a1f3a", 28, 14 + i * 5, 13, 2);
-      r(c, "#e8d9b8", 30, 10, 9, 3);
-    }),
-  "oracle-manipulator": () =>
-    sprite("oracle-manipulator", 44, 54, (c) => {
-      r(c, "#3a3e58", 20, 34, 4, 14);
-      r(c, "#3a3e58", 10, 48, 24, 3);
-      r(c, "#151827", 2, 2, 40, 33);
-      r(c, "#2b3a66", 2, 2, 40, 3);
-      r(c, "#08101e", 5, 7, 34, 25);
-      const heights = [6, 14, 4, 20, 9, 16, 3];
-      heights.forEach((v, i) => r(c, i % 2 ? "#ff5c48" : "#2ee6c7", 7 + i * 5, 30 - v, 3, v));
-      r(c, "#79c0ff", 18, 8, 8, 5);
-      r(c, "#0a0a12", 21, 9, 2, 3);
-    }),
-  "sim-swapper": () =>
-    sprite("sim-swapper", 36, 48, (c) => {
-      legs(c, 10, 35, 11, 10, "#242638", "#14141c");
-      r(c, "#22303f", 7, 16, 22, 20);
-      r(c, "#32485e", 22, 17, 7, 18);
-      r(c, "#22303f", 10, 2, 16, 17);
-      r(c, "#0c1016", 13, 7, 10, 9);
-      r(c, "#5df0a0", 14, 10, 3, 2);
-      r(c, "#5df0a0", 20, 10, 3, 2);
-      for (let i = 0; i < 4; i++) {
-        r(c, "#e8c24a", 0 + i * 2, 18 + i * 3, 7, 9);
-        r(c, "#8a6a18", 2 + i * 2, 21 + i * 3, 3, 3);
-      }
-      r(c, "#1a1c28", 29, 18, 7, 14);
-      r(c, "#7ef0ff", 30, 20, 5, 9);
-    }),
-  insider: () =>
-    sprite("insider", 34, 50, (c) => {
-      legs(c, 9, 36, 11, 10, "#3a3f58", "#1a1a22");
-      r(c, "#dfe4ee", 6, 17, 22, 20);
-      r(c, "#b8c0d0", 6, 17, 4, 20);
-      r(c, "#2ec27e", 14, 17, 2, 11);
-      r(c, "#2ec27e", 18, 17, 2, 11);
-      r(c, "#f4f6fb", 13, 27, 8, 9);
-      r(c, "#2ec27e", 13, 27, 8, 3);
-      r(c, SKIN, 9, 2, 16, 15);
-      r(c, SKIN_D, 9, 13, 16, 4);
-      r(c, "#6a4228", 8, 0, 18, 6);
-      r(c, "#101014", 12, 8, 3, 2);
-      r(c, "#101014", 19, 8, 3, 2);
-      r(c, "#7a2c28", 13, 13, 8, 1);
-    }),
-  "shadow-op": () =>
-    sprite("shadow-op", 40, 52, (c) => {
-      legs(c, 11, 38, 11, 11, "#14141e", "#08080c");
-      r(c, "#1c1e2c", 8, 16, 24, 23);
-      r(c, "#2a2d42", 10, 18, 20, 9);
-      r(c, "#3a0f14", 9, 30, 22, 3);
-      r(c, "#14141e", 11, 1, 18, 17);
-      r(c, "#ff3a44", 14, 8, 12, 3);
-      r(c, "#ffd0d0", 15, 9, 3, 1);
-      r(c, "#3c3f50", 28, 22, 12, 4);
-      r(c, "#14141e", 34, 22, 5, 9);
-    }),
   "boss-mev-king": () =>
     sprite("boss-mev-king", 110, 130, (c) => {
       r(c, "#2c2f44", 34, 96, 14, 28);
@@ -309,7 +173,8 @@ const ENEMY_ART: Partial<Record<EnemyKind, () => HTMLCanvasElement>> = {
 };
 
 export function getThreatSprite(kind: EnemyKind): HTMLCanvasElement {
-  return (ENEMY_ART[kind] ?? ENEMY_ART["script-kiddie"]!)();
+  if (hasHandEnemy(kind)) return enemyFrame(kind, 0);
+  return ENEMY_ART[kind]!();
 }
 
 export type ZoneProp = { key: string; height: number; art: () => HTMLCanvasElement };

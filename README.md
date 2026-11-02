@@ -1,4 +1,4 @@
-# Exploit.run
+# REVERT
 
 Browser **survivors-like** game (think [tibo.dog](https://tibo.dog)): move, dash, auto-firing crypto weapons, level-up picks, and 20-minute survival runs.
 
