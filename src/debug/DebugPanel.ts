@@ -26,7 +26,9 @@ function row(title: string, items: HTMLElement[]): HTMLElement {
   return el;
 }
 
-export function mountDebugPanel(game: Game) {
+type RenderStats = { calls: number; triangles: number; scale: number; tier: string };
+
+export function mountDebugPanel(game: Game, renderStats: () => RenderStats | null) {
   (window as unknown as { __game: Game }).__game = game;
   const panel = document.createElement("div");
   panel.style.cssText =
@@ -54,7 +56,8 @@ export function mountDebugPanel(game: Game) {
     frames++;
     if (now - windowStart >= 500) {
       const fps = Math.round((frames * 1000) / (now - windowStart));
-      stats.textContent = `fps ${fps} · enemies ${game.enemies.length} · t ${game.elapsed.toFixed(0)} · god ${game.god}`;
+      const r = renderStats();
+      stats.textContent = `fps ${fps} · enemies ${game.enemies.length} · t ${game.elapsed.toFixed(0)} · god ${game.god} · ${r?.tier} draws ${r?.calls} scale ${r?.scale.toFixed(2)}`;
       frames = 0;
       windowStart = now;
     }

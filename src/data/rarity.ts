@@ -1,3 +1,4 @@
+import { simRandom } from "../utils/math";
 export const BOF = {
   sky: "#4a6fc5",
   skyDark: "#2a3d7a",
@@ -45,7 +46,7 @@ export const RARITY_LABEL: Record<WeaponRarity, string> = {
 };
 
 export function rollRarity(bonus = 0): WeaponRarity {
-  const r = Math.random() + bonus;
+  const r = simRandom() + bonus;
   if (r > 0.97) return "legendary";
   if (r > 0.88) return "epic";
   if (r > 0.72) return "rare";

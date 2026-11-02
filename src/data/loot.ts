@@ -1,3 +1,4 @@
+import { simRandom } from "../utils/math";
 import { biomeAt, CHEST_WEAPON_POOL } from "./environment";
 import type { BiomeId } from "./environment";
 import type { ChestKind, SidekickKind, WeaponKind } from "../types";
@@ -15,7 +16,7 @@ export type ChestLoot =
   | { type: "sidekick"; kind: SidekickKind };
 
 export function rollChestLoot(minRarity: WeaponRarity, biome: BiomeId): ChestLoot {
-  const roll = Math.random();
+  const roll = simRandom();
   if (roll < 0.12) {
     const kinds = Object.keys(SIDEKICKS) as SidekickKind[];
     return { type: "sidekick", kind: pick(kinds) };

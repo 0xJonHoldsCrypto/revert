@@ -110,6 +110,8 @@ export interface Entity {
   id: number;
   x: number;
   y: number;
+  px?: number;
+  py?: number;
   vx: number;
   vy: number;
   radius: number;

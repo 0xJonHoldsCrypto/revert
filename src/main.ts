@@ -4,7 +4,6 @@ import { Game } from "./game/Game";
 import { TitleSceneRenderer } from "./render/TitleSceneRenderer";
 import { createThreePixelEngine, type PixelEngine } from "./render/ThreePixelEngine";
 import { getCharacter } from "./data/characters";
-import { drawGbcWorld, gbcToScreen } from "./render/GbcRenderer";
 import { difficultyFromClick } from "./data/difficulty";
 import { ENEMIES } from "./data/enemies";
 import { WELL_STATS } from "./data/wells";
@@ -64,19 +63,24 @@ game.rollMenuHero();
 titleScene.setHero(getCharacter(game.menuHero));
 titleScene.setDifficulty(game.runDifficulty);
 
+const SIM_STEP = 1 / 60;
+const MAX_SIM_STEPS = 8;
+let accumulator = 0;
 let pixelEngine: PixelEngine | null = null;
 let last = performance.now();
 let loopStarted = false;
 
+function isWorldVisible() {
+  return game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "won" || game.phase === "lost";
+}
+
 function drawUiOverlay() {
   const vp = readViewport(uiCanvas);
-  const playing = game.phase === "playing" || game.phase === "paused" || game.phase === "levelup";
-  if (playing && game.player) {
-    drawGbcWorld(uiCtx, game, vp.width, vp.height);
-    drawRunChrome(vp.width, vp.height);
+  uiCtx.clearRect(0, 0, vp.width, vp.height);
+  if (isWorldVisible() && game.player) {
+    if (game.phase !== "won" && game.phase !== "lost") drawRunChrome(vp.width, vp.height);
     return;
   }
-  uiCtx.clearRect(0, 0, vp.width, vp.height);
 
   if (game.phase === "menu") {
     titleScene.setHero(getCharacter(game.menuHero));
@@ -91,7 +95,7 @@ function drawRunChrome(w: number, h: number) {
   if (!p) return;
 
   for (const f of game.floaters) {
-    const s = gbcToScreen(game, f.x, f.y, w, h);
+    const s = pixelEngine?.worldToScreen(f.x, f.y, w, h);
     if (!s) continue;
     uiCtx.globalAlpha = Math.max(0, f.life / f.maxLife);
     uiCtx.fillStyle = f.color;
@@ -130,7 +134,7 @@ function drawRunChrome(w: number, h: number) {
     if (d < well.radius + 28) prompt = `Step in — ${WELL_STATS[well.stat].title}`;
   }
   if (prompt) {
-    const s = gbcToScreen(game, p.x, p.y - 28, w, h);
+    const s = pixelEngine?.worldToScreen(p.x, p.y - 60, w, h);
     if (s) {
       uiCtx.font = `500 13px ${FONT_UI}`;
       const pw = Math.ceil(uiCtx.measureText(prompt).width) + 28;
@@ -144,15 +148,21 @@ function drawRunChrome(w: number, h: number) {
 }
 
 function loop(now: number) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const frameDt = Math.min(0.25, (now - last) / 1000);
   last = now;
-  game.update(dt);
+  accumulator += frameDt;
+  let steps = 0;
+  while (accumulator >= SIM_STEP && steps < MAX_SIM_STEPS) {
+    game.update(SIM_STEP);
+    accumulator -= SIM_STEP;
+    steps++;
+  }
+  if (steps === MAX_SIM_STEPS) accumulator = 0;
   game.cutscene.skipProgress = game.cutsceneSkipProgress;
 
-  if (game.phase === "menu") titleScene.update(dt);
+  if (game.phase === "menu") titleScene.update(frameDt);
 
-  const playing = game.phase === "playing" || game.phase === "paused" || game.phase === "levelup";
-  if (!playing) pixelEngine?.render(game, dt);
+  if (isWorldVisible()) pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
   drawUiOverlay();
   requestAnimationFrame(loop);
 }
@@ -171,7 +181,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("debug")) {
-  void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game));
+  void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game, () => pixelEngine?.stats() ?? null));
 }
 
 canvas.addEventListener("click", (e) => {

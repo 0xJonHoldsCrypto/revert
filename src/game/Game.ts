@@ -30,6 +30,7 @@ import { SIDEKICKS } from "../data/sidekicks";
 import { TIMED_BUFFS, TIMED_BUFF_ORDER, type TimedBuffKind } from "../data/timedBuffs";
 import { WELL_STATS, type WellStatId } from "../data/wells";
 import { readViewport } from "../render/viewport";
+import { groundHalfExtents } from "../render/view";
 import type {
   CharacterId,
   Enemy,
@@ -58,9 +59,14 @@ import {
   normalize,
   randRange,
   rectsOverlap,
+  seedSim,
   shuffle,
+  simRandom,
 } from "../utils/math";
 
+const PLAYER_HIT_RADIUS = 11;
+const ENEMY_HIT_SCALE = 0.8;
+const HUD_TICKS = 6;
 const CUTSCENE_SKIP_HOLD_SEC = 1;
 const CUTSCENE_TAP_MAX_SEC = 0.35;
 
@@ -129,6 +135,7 @@ export class Game {
   private pendingBossKind: EnemyKind | null = null;
   private victoryPending = false;
   private cutsceneHold = 0;
+  private hudTick = 0;
   god = false;
   worldSeed = 0;
 
@@ -196,6 +203,7 @@ export class Game {
     this.weapons = [{ kind: ch.startWeapon, level: 1, timer: 0, rarity: WEAPONS[ch.startWeapon].rarity }];
     this.stats = { kills: 0, damageDealt: 0, timeSurvived: 0, bossesDefeated: 0 };
     this.worldSeed = (Math.random() * 2 ** 31) | 0;
+    seedSim(this.worldSeed);
     const world = generateWorld(this.worldSeed);
     this.chests = world.chests;
     this.obstacles = world.obstacles;
@@ -335,6 +343,7 @@ export class Game {
     if (this.input.consumePause()) this.togglePause();
     if (this.phase === "paused") return;
 
+    this.snapshotPositions();
     this.elapsed += dt;
     this.stats.timeSurvived = this.elapsed;
 
@@ -363,13 +372,31 @@ export class Game {
     this.recorder.sample(this.elapsed, mv.x, mv.y, false);
     this.checkBossSchedule();
     this.updateCamera();
-    this.pushHud();
+    if (++this.hudTick % HUD_TICKS === 0) this.pushHud();
 
     if (this.god) this.player.hp = this.player.maxHp;
     if (this.player.hp <= 0) {
       this.player.hp = 0;
       this.player.dead = true;
       this.setPhase("lost");
+    }
+  }
+
+  private snapshotPositions() {
+    const p = this.player;
+    p.px = p.x;
+    p.py = p.y;
+    for (const e of this.enemies) {
+      e.px = e.x;
+      e.py = e.y;
+    }
+    for (const pr of this.projectiles) {
+      pr.px = pr.x;
+      pr.py = pr.y;
+    }
+    for (const pk of this.pickups) {
+      pk.px = pk.x;
+      pk.py = pk.y;
     }
   }
 
@@ -656,8 +683,13 @@ export class Game {
 
   private spawnHordeEnemy() {
     const p = this.player;
+    const vp = readViewport(this.canvas);
+    const { halfW, halfH } = groundHalfExtents(vp.width / vp.height);
     const angle = randRange(0, Math.PI * 2);
-    const distSpawn = randRange(300, 460);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const edge = Math.min(halfW * 1.25 / Math.max(Math.abs(cos), 1e-3), halfH / Math.max(Math.abs(sin), 1e-3));
+    const distSpawn = edge + randRange(70, 170);
     const kind = this.pickHordeKind();
     const def = ENEMIES[kind];
     const dm = this.diffMult();
@@ -665,8 +697,8 @@ export class Game {
     this.enemies.push({
       id: uid(),
       kind,
-      x: clamp(p.x + Math.cos(angle) * distSpawn, 40, WORLD.width - 40),
-      y: clamp(p.y + Math.sin(angle) * distSpawn, 40, WORLD.height - 40),
+      x: clamp(p.x + cos * distSpawn, 40, WORLD.width - 40),
+      y: clamp(p.y + sin * distSpawn, 40, WORLD.height - 40),
       vx: 0,
       vy: 0,
       radius: def.radius,
@@ -690,7 +722,7 @@ export class Game {
       weight: w.weight * (bias[w.kind] ?? 1),
     }));
     const total = weighted.reduce((s, w) => s + w.weight, 0);
-    let r = Math.random() * total;
+    let r = simRandom() * total;
     for (const w of weighted) {
       r -= w.weight;
       if (r <= 0) return w.kind;
@@ -793,7 +825,7 @@ export class Game {
       if (!e || e.dead) continue;
       const def = ENEMIES[e.kind];
       if (p.invuln > 0 || e.contactCd > 0) continue;
-      if (!rectsOverlap(p.x, p.y, p.radius, e.x, e.y, e.radius)) continue;
+      if (!rectsOverlap(p.x, p.y, PLAYER_HIT_RADIUS, e.x, e.y, e.radius * ENEMY_HIT_SCALE)) continue;
       const dmg = e.damage * (1 - this.totalArmor()) * this.diffMult().playerDamageTakenMult * AREA_RULES[biomeAt(p.x, p.y)].damageTaken;
       p.hp -= dmg;
       p.invuln = 0.45;
@@ -899,7 +931,7 @@ export class Game {
       pierce: def.pierce ?? 0,
       fromPlayer: true,
       color: colors[kind] ?? "#58a6ff",
-      homing: kind === "audit-dart" && Math.random() < 0.3,
+      homing: kind === "audit-dart" && simRandom() < 0.3,
       targetId,
     });
   }
@@ -1025,15 +1057,15 @@ export class Game {
     const xpVal = def.xp * this.player.xpMult * area.xp;
     this.spawnPickup(e.x, e.y, "xp", xpVal);
     const coinChance = def.isBoss ? 1 : 0.38;
-    if (Math.random() < coinChance) {
+    if (simRandom() < coinChance) {
       const coins = (def.isBoss ? randRange(10, 18) : randRange(1, 3)) * area.coin;
       this.spawnPickup(e.x + randRange(-12, 12), e.y + randRange(-8, 8), "coin", Math.round(coins));
     }
-    if (Math.random() < (def.isBoss ? 0.55 : 0.07)) {
-      const kind = TIMED_BUFF_ORDER[Math.floor(Math.random() * TIMED_BUFF_ORDER.length)]!;
+    if (simRandom() < (def.isBoss ? 0.55 : 0.07)) {
+      const kind = TIMED_BUFF_ORDER[Math.floor(simRandom() * TIMED_BUFF_ORDER.length)]!;
       this.spawnBuffPickup(e.x, e.y, kind);
     }
-    if (Math.random() < (def.isBoss ? 1 : 0.04)) {
+    if (simRandom() < (def.isBoss ? 1 : 0.04)) {
       this.spawnPickup(e.x + randRange(-20, 20), e.y, "health", 25);
     }
   }
@@ -1158,8 +1190,8 @@ export class Game {
     const vp = readViewport(this.canvas);
     const w = vp.width;
     const h = vp.height;
-    const shakeX = this.shake > 0 ? randRange(-8, 8) * this.shake : 0;
-    const shakeY = this.shake > 0 ? randRange(-8, 8) * this.shake : 0;
+    const shakeX = this.shake > 0 ? (Math.random() - 0.5) * 16 * this.shake : 0;
+    const shakeY = this.shake > 0 ? (Math.random() - 0.5) * 16 * this.shake : 0;
     const maxX = Math.max(0, WORLD.width - w);
     const maxY = Math.max(0, WORLD.height - h);
     this.camera.x = clamp(p.x - w / 2 + shakeX, 0, maxX);

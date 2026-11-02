@@ -1,557 +1,491 @@
-import type * as THREE from "three";
-import type { Game } from "../game/Game";
+import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { WORLD } from "../constants";
-import { difficultyFromClick, type DifficultyId } from "../data/difficulty";
-import { ENV_OBSTACLES, CHESTS } from "../data/environment";
-import { biomeAt } from "../data/environment";
+import { CHESTS, ENV_OBSTACLES, type BiomeId } from "../data/environment";
 import { ENEMIES } from "../data/enemies";
 import { RARITY_COLORS } from "../data/rarity";
+import type { Game } from "../game/Game";
+import { makeFloorCanvases } from "../pixel/floorTiles";
+import type { Enemy } from "../types";
+import { DECAL_BLOB, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
+import { GradeShader } from "./gradeShader";
+import { DynamicResolution, pickQualityTier, QUALITY } from "./quality";
+import { PROP_KINDS, SpriteAtlas } from "./SpriteAtlas";
+import { cameraBasis, cameraDistance, groundHalfExtents, VIEW } from "./view";
 import { readViewport } from "./viewport";
-import { BODY_FRAMES } from "../pixel/bodies";
-import { getPropCanvas, makeFieldCanvas, type PropKind } from "../pixel/worldDress";
-import {
-  makeCoinTexture,
-  makeEnemyTexture,
-  makeSidekickTexture,
-  makeTitleGrassTexture,
-  makeWalkTexture,
-  canvasToPixelTexture,
-} from "./pixelTexture";
 
 export type PixelEngine = {
-  render(game: Game, dt: number): void;
-  hitTitle(mx: number, my: number, w: number, h: number): "start" | DifficultyId | null;
+  render(game: Game, dt: number, alpha: number): void;
   worldToScreen(x: number, y: number, w: number, h: number): { x: number; y: number } | null;
+  stats(): { calls: number; triangles: number; scale: number; tier: string };
   dispose(): void;
 };
 
-export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise<PixelEngine> {
-  const THREE = await import("three");
-  const { EffectComposer } = await import("three/examples/jsm/postprocessing/EffectComposer.js");
-  const { RenderPass } = await import("three/examples/jsm/postprocessing/RenderPass.js");
-  const { UnrealBloomPass } = await import("three/examples/jsm/postprocessing/UnrealBloomPass.js");
-  const { ShaderPass } = await import("three/examples/jsm/postprocessing/ShaderPass.js");
-  const { VignetteShader } = await import("three/examples/jsm/shaders/VignetteShader.js");
+const HERO_HEIGHT = 62;
+const ENEMY_HEIGHT_PER_RADIUS = 3.1;
+const BOSS_HEIGHT = 196;
+const PROP_HEIGHT: Record<string, number> = { rack: 78, spool: 30, fan: 38, cone: 24 };
+const SPRITE_CAPACITY = 2200;
+const FX_CAPACITY = 900;
+const DECAL_CAPACITY = 1400;
+const TILE_WORLD_SIZE = 256;
 
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: false,
-    alpha: false,
-    powerPreference: "high-performance",
-  });
-  renderer.shadowMap.enabled = true;
+const QUADRANTS: { biome: BiomeId; x: number; z: number }[] = [
+  { biome: "wasteland", x: WORLD.width / 4, z: WORLD.height / 4 },
+  { biome: "cex", x: (WORLD.width * 3) / 4, z: WORLD.height / 4 },
+  { biome: "defi", x: WORLD.width / 4, z: (WORLD.height * 3) / 4 },
+  { biome: "apt", x: (WORLD.width * 3) / 4, z: (WORLD.height * 3) / 4 },
+];
+
+const colorCache = new Map<string, THREE.Color>();
+function cachedColor(style: string): THREE.Color {
+  let c = colorCache.get(style);
+  if (!c) {
+    c = new THREE.Color(style);
+    colorCache.set(style, c);
+  }
+  return c;
+}
+
+function hash(x: number, y: number) {
+  let n = (Math.floor(x) * 374761393 + Math.floor(y) * 668265263) | 0;
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return (n >>> 0) / 4294967296;
+}
+
+function lerpPos(prev: number | undefined, now: number, alpha: number) {
+  return prev === undefined ? now : prev + (now - prev) * alpha;
+}
+
+function canvasTexture(canvas: HTMLCanvasElement, srgb: boolean, repeat: number) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.anisotropy = 8;
+  tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  return tex;
+}
+
+export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise<PixelEngine> {
+  const tierName = pickQualityTier();
+  const tier = QUALITY[tierName];
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: "high-performance" });
+  renderer.shadowMap.enabled = tier.shadowSize > 0;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = 1.1;
+  renderer.info.autoReset = false;
+  canvas.addEventListener("webglcontextlost", (e) => e.preventDefault());
 
-  const titleScene = new THREE.Scene();
-  titleScene.background = new THREE.Color(0x0a1a12);
-  const titleCam = new THREE.PerspectiveCamera(38, 1, 0.1, 120);
-  titleCam.position.set(0, 6.2, 9.5);
-  titleCam.lookAt(0, 0.5, 0);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070d);
 
-  const worldScene = new THREE.Scene();
-  worldScene.background = new THREE.Color(0x0d1810);
-  worldScene.fog = new THREE.Fog(0x0d1810, 500, 2200);
-
-  const titleGroundTex = makeTitleGrassTexture(THREE);
-  titleGroundTex.repeat.set(8, 8);
-  const titleGround = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ map: titleGroundTex, roughness: 1, metalness: 0 })
-  );
-  titleGround.rotation.x = -Math.PI / 2;
-  titleGround.receiveShadow = true;
-  titleScene.add(titleGround);
-
-  const titleSpot = new THREE.SpotLight(0xffe8b0, 32, 30, 0.42, 0.55, 1);
-  titleSpot.position.set(0, 12, 4);
-  titleSpot.castShadow = true;
-  titleSpot.target.position.set(0, 0, 0);
-  titleScene.add(titleSpot, titleSpot.target);
-  titleScene.add(new THREE.AmbientLight(0x3a5a48, 0.4));
-
-  const heroSprite = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.5, 2.15),
-    new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.08, depthWrite: false })
-  );
-  heroSprite.position.set(0, 1.35, 0);
-  titleScene.add(heroSprite);
-
-  const pedestal = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.35, 1.55, 0.35, 24),
-    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.85 })
-  );
-  pedestal.position.y = 0.18;
-  pedestal.receiveShadow = true;
-  titleScene.add(pedestal);
-
-  for (let i = 0; i < 16; i++) {
-    const prop = new THREE.Mesh(
-      new THREE.BoxGeometry(0.35 + Math.random() * 0.5, 0.12 + Math.random() * 0.35, 0.35 + Math.random() * 0.5),
-      new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL(0.28, 0.35, 0.22 + Math.random() * 0.12),
-        roughness: 1,
-      })
-    );
-    prop.position.set((Math.random() - 0.5) * 14, prop.scale.y * 0.5, (Math.random() - 0.5) * 10 + 2);
-    prop.castShadow = true;
-    titleScene.add(prop);
+  const ambient = new THREE.HemisphereLight(0x8f9cc8, 0x2a2430, 0.72);
+  const moon = new THREE.DirectionalLight(0xc4e4ff, 3.4);
+  moon.castShadow = tier.shadowSize > 0;
+  if (tier.shadowSize > 0) {
+    moon.shadow.mapSize.set(tier.shadowSize, tier.shadowSize);
+    const cam = moon.shadow.camera;
+    cam.left = -760;
+    cam.right = 760;
+    cam.top = 760;
+    cam.bottom = -760;
+    cam.near = 100;
+    cam.far = 2600;
+    moon.shadow.bias = -0.0006;
+    moon.shadow.radius = 3;
   }
+  scene.add(ambient, moon, moon.target);
+  const moonOffset = new THREE.Vector3(-620, 880, 500);
 
-  const fieldGroup = new THREE.Group();
-  worldScene.add(fieldGroup);
-  const quadrants: { biome: string; x: number; z: number }[] = [
-    { biome: "wasteland", x: 1200, z: 1200 },
-    { biome: "cex", x: 3600, z: 1600 },
-    { biome: "defi", x: 1600, z: 3600 },
-    { biome: "apt", x: 2400, z: 2400 },
-  ];
-  for (const q of quadrants) {
-    const tex = canvasToPixelTexture(THREE, makeFieldCanvas(q.biome), { repeat: true });
-    tex.repeat.set(6, 6);
+  const pointLights: THREE.PointLight[] = [];
+  for (let i = 0; i < tier.pointLights; i++) {
+    const light = new THREE.PointLight(0xffffff, 0, 340, 1.1);
+    scene.add(light);
+    pointLights.push(light);
+  }
+  const spriteLights: SpriteLights = {
+    ambient: new THREE.Color(0.62, 0.68, 0.92),
+    key: new THREE.Color(0.55, 0.72, 0.9),
+    pointPos: Array.from({ length: MAX_POINT_LIGHTS }, () => new THREE.Vector3(0, -9999, 0)),
+    pointColor: Array.from({ length: MAX_POINT_LIGHTS }, () => new THREE.Color(0, 0, 0)),
+  };
+
+  const under = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD.width * 3, WORLD.height * 3),
+    new THREE.MeshBasicMaterial({ color: 0x04060b })
+  );
+  under.rotation.x = -Math.PI / 2;
+  under.position.set(WORLD.width / 2, -6, WORLD.height / 2);
+  scene.add(under);
+
+  QUADRANTS.forEach((q, i) => {
+    const floor = makeFloorCanvases(q.biome, 4100 + i * 97);
+    const repeat = WORLD.width / 2 / TILE_WORLD_SIZE;
     const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2600, 2600),
-      new THREE.MeshStandardMaterial({ map: tex, roughness: 1 })
+      new THREE.PlaneGeometry(WORLD.width / 2, WORLD.height / 2),
+      new THREE.MeshStandardMaterial({
+        map: canvasTexture(floor.albedo, true, repeat),
+        emissiveMap: canvasTexture(floor.emissive, true, repeat),
+        emissive: 0xffffff,
+        emissiveIntensity: 1.5,
+        roughness: 0.82,
+        metalness: 0.1,
+      })
     );
     mesh.rotation.x = -Math.PI / 2;
     mesh.position.set(q.x, 0, q.z);
     mesh.receiveShadow = true;
-    fieldGroup.add(mesh);
-  }
+    scene.add(mesh);
+  });
 
-  const propGroup = new THREE.Group();
-  worldScene.add(propGroup);
-  const propKinds: PropKind[] = ["tree", "bush", "bush", "barrel", "fire"];
-  const propTex = new Map<PropKind, THREE.Texture>();
-  for (const kind of ["tree", "bush", "barrel", "fire"] as PropKind[]) {
-    const canvas = getPropCanvas(kind);
-    const tex = canvasToPixelTexture(THREE, canvas);
-    propTex.set(kind, tex);
-  }
-  let seed = 20261102;
-  const rnd = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-  for (let i = 0; i < 160; i++) {
-    const kind = propKinds[Math.floor(rnd() * propKinds.length)]!;
-    const tex = propTex.get(kind)!;
-    const h = kind === "tree" ? 54 : kind === "bush" ? 28 : 32;
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(h * 0.8, h),
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.2, depthWrite: false })
-    );
-    mesh.position.set(180 + rnd() * (WORLD.width - 360), h / 2, 180 + rnd() * (WORLD.height - 360));
-    mesh.userData.prop = true;
-    propGroup.add(mesh);
-  }
-
-  const hemi = new THREE.HemisphereLight(0xb8d4ff, 0x1a3020, 0.55);
-  const sun = new THREE.DirectionalLight(0xffe0a8, 1.4);
-  sun.position.set(400, 900, 200);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -900;
-  sun.shadow.camera.right = 900;
-  sun.shadow.camera.top = 900;
-  sun.shadow.camera.bottom = -900;
-  worldScene.add(hemi, sun);
-
-  const worldCam = new THREE.PerspectiveCamera(46, 1, 10, 6000);
-
-  const playerGroup = new THREE.Group();
-  worldScene.add(playerGroup);
-
-  const shadowBlob = new THREE.Mesh(
-    new THREE.CircleGeometry(18, 22),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38, depthWrite: false })
-  );
-  shadowBlob.rotation.x = -Math.PI / 2;
-  shadowBlob.position.y = 0.06;
-  playerGroup.add(shadowBlob);
-
-  const playerPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(42, 62),
-    new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.15, depthWrite: false })
-  );
-  playerPlane.position.y = 31;
-  playerGroup.add(playerPlane);
-
-  const enemyGeo = new THREE.PlaneGeometry(44, 44);
-  const enemyPool: THREE.Mesh[] = [];
-  for (let i = 0; i < 512; i++) {
-    const mat = new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.08 });
-    const m = new THREE.Mesh(enemyGeo, mat);
-    m.visible = false;
-    worldScene.add(m);
-    enemyPool.push(m);
-  }
-
-  const enemyTexCache = new Map<string, THREE.Texture>();
-  function enemyTexture(kind: import("../types").EnemyKind) {
-    const hit = enemyTexCache.get(kind);
-    if (hit) return hit;
-    const tex = makeEnemyTexture(THREE, kind);
-    enemyTexCache.set(kind, tex);
-    return tex;
-  }
-
-  const coinTex = makeCoinTexture(THREE);
-
-  const pickupGeo = new THREE.PlaneGeometry(16, 16);
-  const pickupPool: THREE.Mesh[] = [];
-  for (let i = 0; i < 120; i++) {
-    const m = new THREE.Mesh(
-      pickupGeo,
-      new THREE.MeshBasicMaterial({ color: 0xa371f7, transparent: true, opacity: 0.95, depthWrite: false })
-    );
-    m.visible = false;
-    worldScene.add(m);
-    pickupPool.push(m);
-  }
-
-  const projGeo = new THREE.PlaneGeometry(10, 10);
-  const projPool: THREE.Mesh[] = [];
-  for (let i = 0; i < 200; i++) {
-    const m = new THREE.Mesh(projGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.95 }));
-    m.visible = false;
-    worldScene.add(m);
-    projPool.push(m);
-  }
-
-  const orbGeo = new THREE.PlaneGeometry(14, 14);
-  const orbPool: THREE.Mesh[] = [];
-  for (let i = 0; i < 48; i++) {
-    const m = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 }));
-    m.visible = false;
-    worldScene.add(m);
-    orbPool.push(m);
-  }
-
-  const partGeo = new THREE.PlaneGeometry(6, 6);
-  const partPool: THREE.Mesh[] = [];
-  for (let i = 0; i < 180; i++) {
-    const m = new THREE.Mesh(partGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
-    m.visible = false;
-    worldScene.add(m);
-    partPool.push(m);
-  }
+  const atlas = new SpriteAtlas();
+  const sprites = new SpriteBatch(SPRITE_CAPACITY, atlas.texture, spriteLights);
+  const fx = new FxBatch(FX_CAPACITY);
+  const decals = new DecalBatch(DECAL_CAPACITY);
+  scene.add(sprites.mesh, decals.mesh, fx.mesh);
 
   const obstacleGroup = new THREE.Group();
-  const chestGroup = new THREE.Group();
-  const wellGroup = new THREE.Group();
-  worldScene.add(obstacleGroup, chestGroup, wellGroup);
+  scene.add(obstacleGroup);
   let obstacleSeed = -1;
-  let propsSeed = -1;
 
-  const border = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.BoxGeometry(WORLD.width, 8, WORLD.height)),
-    new THREE.LineBasicMaterial({ color: 0xffd56a, transparent: true, opacity: 0.25 })
+  const camera = new THREE.PerspectiveCamera(VIEW.fovDeg, 1, 200, 5000);
+  let camX = WORLD.width / 4;
+  let camZ = WORLD.height / 4;
+  let leadX = 0;
+  let leadZ = 0;
+  let shakeTime = 0;
+
+  const composer = new EffectComposer(
+    renderer,
+    new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 0 })
   );
-  border.position.set(WORLD.width / 2, 4, WORLD.height / 2);
-  worldScene.add(border);
+  composer.addPass(new RenderPass(scene, camera));
+  let bloom: UnrealBloomPass | null = null;
+  if (tier.bloom) {
+    bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.55, 1.0);
+    composer.addPass(bloom);
+  }
+  composer.addPass(new OutputPass());
+  const grade = new ShaderPass(GradeShader);
+  grade.uniforms.uTilt!.value = tier.tiltShift ? 1 : 0;
+  composer.addPass(grade);
 
-  const sidekickPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(36, 36),
-    new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.08 })
-  );
-  sidekickPlane.visible = false;
-  worldScene.add(sidekickPlane);
-
-  let activeScene: THREE.Scene = titleScene;
-  let activeCam: THREE.Camera = titleCam;
-
-  const composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(titleScene, titleCam);
-  composer.addPass(renderPass);
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), 0.24, 0.38, 0.12));
-  composer.addPass(new ShaderPass(VignetteShader));
-
-  let titleTime = 0;
-  let camX = WORLD.width / 2;
-  let camZ = WORLD.height / 2;
-  const ndc = new THREE.Vector3();
-  let walkTime = 0;
-  let currentWalkId: string | null = null;
-  const walkFrames = BODY_FRAMES;
+  const dynamicRes = new DynamicResolution();
   let lastW = 0;
   let lastH = 0;
-  let lastDpr = 1;
+  let lastPixelRatio = 0;
+  let elapsed = 0;
+  let aspect = 1;
 
-  function resizeIfNeeded(w: number, h: number, dpr: number) {
-    if (w === lastW && h === lastH && dpr === lastDpr) return;
+  function resizeIfNeeded(w: number, h: number) {
+    const pixelRatio = Math.min(readViewport(canvas).dpr, tier.maxDpr) * dynamicRes.scale;
+    if (w === lastW && h === lastH && pixelRatio === lastPixelRatio) return;
     lastW = w;
     lastH = h;
-    lastDpr = dpr;
-    renderer.setPixelRatio(dpr);
+    lastPixelRatio = pixelRatio;
+    renderer.setPixelRatio(pixelRatio);
     renderer.setSize(w, h, false);
-    titleCam.aspect = w / h;
-    titleCam.updateProjectionMatrix();
-    worldCam.aspect = w / h;
-    worldCam.updateProjectionMatrix();
-    composer.setSize(w * dpr, h * dpr);
-  }
-
-  function setActiveScene(scene: THREE.Scene, cam: THREE.Camera) {
-    if (activeScene === scene && activeCam === cam) return;
-    activeScene = scene;
-    activeCam = cam;
-    renderPass.scene = scene;
-    renderPass.camera = cam;
-  }
-
-  function setPlayerWalkTexture(id: string) {
-    if (currentWalkId === id) return;
-    currentWalkId = id;
-    const tex = makeWalkTexture(THREE, id as import("../types").CharacterId);
-    tex.repeat.set(1 / walkFrames, 1);
-    (playerPlane.material as THREE.MeshBasicMaterial).map = tex;
-    (playerPlane.material as THREE.MeshBasicMaterial).needsUpdate = true;
-  }
-
-  function syncChestsAndWells(game: Game) {
-    if (propsSeed === game.worldSeed) return;
-    propsSeed = game.worldSeed;
-    while (chestGroup.children.length) chestGroup.remove(chestGroup.children[0]!);
-    while (wellGroup.children.length) wellGroup.remove(wellGroup.children[0]!);
-    for (const c of game.chests) {
-      const def = CHESTS[c.kind];
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(28, 18, 22),
-        new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.9, metalness: 0.1 })
-      );
-      mesh.position.set(c.x, 9, c.y);
-      mesh.castShadow = true;
-      mesh.userData.chestId = c.id;
-      chestGroup.add(mesh);
-    }
-    for (const w of game.wells) {
-      const mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(22, 26, 8, 16),
-        new THREE.MeshStandardMaterial({ color: w.used ? 0x30363d : 0x1f6feb, roughness: 0.85 })
-      );
-      mesh.position.set(w.x, 4, w.y);
-      wellGroup.add(mesh);
-    }
+    composer.setPixelRatio(pixelRatio);
+    composer.setSize(w, h);
+    aspect = w / h;
+    camera.aspect = aspect;
+    camera.updateProjectionMatrix();
+    grade.uniforms.uTexel!.value = [1 / (w * pixelRatio), 1 / (h * pixelRatio)];
   }
 
   function syncObstacles(game: Game) {
-    if (game.obstacles.length === 0) {
-      if (obstacleGroup.children.length) {
-        while (obstacleGroup.children.length) obstacleGroup.remove(obstacleGroup.children[0]!);
-      }
-      obstacleSeed = -1;
-      return;
-    }
     if (obstacleSeed === game.worldSeed) return;
     obstacleSeed = game.worldSeed;
-    while (obstacleGroup.children.length) obstacleGroup.remove(obstacleGroup.children[0]!);
+    for (const child of [...obstacleGroup.children]) {
+      const mesh = child as THREE.Mesh;
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+      obstacleGroup.remove(mesh);
+    }
     for (const o of game.obstacles) {
       const def = ENV_OBSTACLES[o.kind];
-      const h = Math.max(14, o.height * 0.4);
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(o.width, h, o.height),
-        new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.95, metalness: 0.05 })
-      );
-      mesh.position.set(o.x + o.width / 2, h / 2, o.y + o.height / 2);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      obstacleGroup.add(mesh);
-    }
-  }
-
-  function faceCameraYaw(mesh: THREE.Object3D, x: number, z: number) {
-    const dx = worldCam.position.x - x;
-    const dz = worldCam.position.z - z;
-    mesh.rotation.set(0, Math.atan2(dx, dz), 0);
-  }
-
-  function renderTitle(_game: Game, dt: number) {
-    titleTime += dt;
-    heroSprite.visible = false;
-    pedestal.visible = false;
-    titleCam.position.x = Math.sin(titleTime * 0.15) * 0.15;
-    titleCam.lookAt(0, 0.2, 0);
-  }
-
-  function renderWorld(game: Game, dt: number) {
-    if (!game.player) return;
-    const p = game.player;
-    setPlayerWalkTexture(p.characterId);
-    syncObstacles(game);
-    syncChestsAndWells(game);
-    for (const child of propGroup.children) faceCameraYaw(child, child.position.x, child.position.z);
-
-    const speed = Math.hypot(p.vx, p.vy);
-    if (speed > 20) walkTime += dt * (0.85 + speed / 350);
-    const frame = Math.floor(walkTime * walkFrames) % walkFrames;
-    const map = (playerPlane.material as THREE.MeshBasicMaterial).map;
-    if (map) map.offset.x = frame / walkFrames;
-
-    playerGroup.position.set(p.x, 0, p.y);
-    faceCameraYaw(playerPlane, p.x, p.y);
-    const mirror = Math.cos(p.facing) < 0 ? -1 : 1;
-    playerPlane.scale.x = mirror;
-
-    const dist = 168;
-    const shake = game.shake;
-    const targetX = p.x + (shake > 0 ? (Math.random() - 0.5) * 18 * shake : 0);
-    const targetZ = p.y + dist + (shake > 0 ? (Math.random() - 0.5) * 18 * shake : 0);
-    camX += (targetX - camX) * Math.min(1, dt * 7);
-    camZ += (targetZ - camZ) * Math.min(1, dt * 7);
-    worldCam.position.set(camX, 196, camZ);
-    worldCam.lookAt(p.x, 8, p.y);
-
-    sun.position.set(p.x + 420, 920, p.y + 180);
-    sun.target.position.set(p.x, 0, p.y);
-    sun.target.updateMatrixWorld();
-
-    let ei = 0;
-    for (const e of game.enemies) {
-      if (ei >= enemyPool.length) break;
-      const mesh = enemyPool[ei]!;
-      const def = ENEMIES[e.kind];
-      mesh.visible = true;
-      const mat = mesh.material as THREE.MeshBasicMaterial;
-      mat.map = enemyTexture(e.kind);
-      mat.needsUpdate = true;
-      mesh.position.set(e.x, def.isBoss ? 40 : 26, e.y);
-      mesh.scale.setScalar(def.isBoss ? 1.65 : 1);
-      mat.color.setHex(e.flash > 0 ? 0xfff4d0 : 0xffffff);
-      faceCameraYaw(mesh, e.x, e.y);
-      ei++;
-    }
-    for (; ei < enemyPool.length; ei++) enemyPool[ei]!.visible = false;
-
-    let pi = 0;
-    for (const pk of game.pickups) {
-      if (pi >= pickupPool.length) break;
-      const mesh = pickupPool[pi]!;
-      mesh.visible = true;
-      mesh.position.set(pk.x, 12, pk.y);
-      mesh.rotation.x = -Math.PI / 2;
-      const mat = mesh.material as THREE.MeshBasicMaterial;
-      if (pk.kind === "coin") {
-        mat.map = coinTex;
-        mat.color.setHex(0xffffff);
-      } else if (pk.kind === "buff") {
-        mat.map = null;
-        mat.color.setHex(0xd2a8ff);
+      if (def.blocks) {
+        const height = 44;
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(o.width, height, o.height),
+          new THREE.MeshStandardMaterial({
+            color: 0x2a3142,
+            roughness: 0.55,
+            metalness: 0.5,
+            emissive: new THREE.Color(def.color),
+            emissiveIntensity: 0.32,
+          })
+        );
+        mesh.position.set(o.x, height / 2, o.y);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        obstacleGroup.add(mesh);
       } else {
-        mat.map = null;
-        mat.color.setHex(pk.kind === "xp" ? 0xa371f7 : 0x7ee787);
+        const mesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(o.width, o.height),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(def.color).multiplyScalar(1.5),
+            transparent: true,
+            opacity: 0.3,
+            depthWrite: false,
+          })
+        );
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(o.x, 0.5, o.y);
+        mesh.renderOrder = 1;
+        obstacleGroup.add(mesh);
       }
-      pi++;
     }
-    for (; pi < pickupPool.length; pi++) pickupPool[pi]!.visible = false;
+  }
 
-    let pri = 0;
-    for (const pr of game.projectiles) {
-      if (pri >= projPool.length) break;
-      const mesh = projPool[pri]!;
-      mesh.visible = true;
-      mesh.position.set(pr.x, 18, pr.y);
-      mesh.lookAt(worldCam.position);
-      (mesh.material as THREE.MeshBasicMaterial).color.setStyle(pr.color);
-      pri++;
+  function updateCamera(game: Game, x: number, y: number, dt: number) {
+    const p = game.player;
+    const targetLeadX = p.vx * 0.14;
+    const targetLeadZ = p.vy * 0.14;
+    const leadRate = Math.min(1, dt * 2.6);
+    leadX += (targetLeadX - leadX) * leadRate;
+    leadZ += (targetLeadZ - leadZ) * leadRate;
+    const follow = Math.min(1, dt * 9);
+    camX += (x + leadX - camX) * follow;
+    camZ += (y + leadZ - camZ) * follow;
+
+    shakeTime += dt;
+    const trauma = Math.max(0, Math.min(1, game.shake * 2));
+    const amount = trauma * trauma * 9;
+    const sx = amount ? Math.sin(shakeTime * 71) * amount : 0;
+    const sz = amount ? Math.sin(shakeTime * 89 + 1.3) * amount : 0;
+
+    const d = cameraDistance(aspect);
+    camera.position.set(camX + sx, cameraBasis.backY * d, camZ + sz + cameraBasis.backZ * d);
+    camera.lookAt(camX + sx, 0, camZ + sz);
+
+    if (tier.shadowSize > 0) {
+      const texel = (moon.shadow.camera.right * 2) / tier.shadowSize;
+      const anchorX = Math.round(x / (texel * 4)) * texel * 4;
+      const anchorZ = Math.round(y / (texel * 4)) * texel * 4;
+      moon.position.set(anchorX + moonOffset.x, moonOffset.y, anchorZ + moonOffset.z);
+      moon.target.position.set(anchorX, 0, anchorZ);
     }
-    for (; pri < projPool.length; pri++) projPool[pri]!.visible = false;
+  }
 
-    let oi = 0;
-    for (const o of game.orbiters) {
-      if (oi >= orbPool.length) break;
-      const mesh = orbPool[oi]!;
-      mesh.visible = true;
-      mesh.position.set(o.x, 22, o.y);
-      mesh.lookAt(worldCam.position);
-      const w = game.weapons.find((x) => x.kind === o.weaponKind);
-      (mesh.material as THREE.MeshBasicMaterial).color.setStyle(w ? RARITY_COLORS[w.rarity] : "#f0b429");
-      oi++;
+  function emitProps(left: number, right: number, top: number, bottom: number) {
+    const step = 240;
+    const x0 = Math.floor(left / step) * step;
+    const y0 = Math.floor(top / step) * step;
+    for (let gx = x0; gx < right; gx += step) {
+      for (let gy = y0; gy < bottom; gy += step) {
+        if (hash(gx, gy) < 0.58) continue;
+        const cx = gx + (hash(gx + 5, gy) - 0.5) * 120;
+        const cy = gy + (hash(gx, gy + 7) - 0.5) * 120;
+        const count = 1 + Math.floor(hash(gx + 1, gy + 2) * 3);
+        for (let i = 0; i < count; i++) {
+          const kind = PROP_KINDS[Math.floor(hash(gx + i * 13, gy + i) * PROP_KINDS.length)]!;
+          const px = cx + (hash(gx + 20 + i, gy) - 0.5) * 58;
+          const py = cy + (hash(gx, gy + 30 + i) - 0.5) * 44;
+          if (px < 20 || py < 20 || px > WORLD.width - 20 || py > WORLD.height - 20) continue;
+          const height = PROP_HEIGHT[kind]!;
+          decals.push(px, py + 1, height * 0.42, height * 0.2, DECAL_BLOB, 0, BLACK, 0.5);
+          sprites.push(atlas.frame(`prop:${kind}`), px, py, 0.5, height, hash(gx + i, gy + 40) > 0.5);
+        }
+      }
     }
-    for (; oi < orbPool.length; oi++) orbPool[oi]!.visible = false;
+  }
 
-    let pt = 0;
-    for (const part of game.particles) {
-      if (pt >= partPool.length) break;
-      const mesh = partPool[pt]!;
-      mesh.visible = true;
-      mesh.position.set(part.x, 14, part.y);
-      mesh.lookAt(worldCam.position);
-      const m = mesh.material as THREE.MeshBasicMaterial;
-      m.color.setStyle(part.color);
-      m.opacity = part.life / part.maxLife;
-      pt++;
+  const BLACK = new THREE.Color(0, 0, 0);
+  const WHITE = new THREE.Color(1, 1, 1);
+  const PLAYER_LIGHT = new THREE.Color(0.65, 0.95, 1);
+  const CHEST_LIGHT = new THREE.Color(1, 0.72, 0.28);
+  const BOSS_LIGHT = new THREE.Color(1, 0.16, 0.2);
+  const XP_COLOR = new THREE.Color(0.25, 0.85, 1);
+  const COIN_COLOR = new THREE.Color(1, 0.72, 0.16);
+  const scratchLights: { x: number; y: number; h: number; color: THREE.Color; power: number }[] = [];
+
+  function applyPointLights() {
+    for (let i = 0; i < MAX_POINT_LIGHTS; i++) {
+      const source = scratchLights[i];
+      const three = pointLights[i];
+      if (source && three) {
+        three.position.set(source.x, source.h, source.y);
+        three.color.copy(source.color);
+        three.intensity = source.power * 180;
+        spriteLights.pointPos[i]!.set(source.x, source.h, source.y);
+        spriteLights.pointColor[i]!.copy(source.color).multiplyScalar(source.power * 0.9);
+      } else {
+        if (three) three.intensity = 0;
+        spriteLights.pointColor[i]!.setRGB(0, 0, 0);
+      }
     }
-    for (; pt < partPool.length; pt++) partPool[pt]!.visible = false;
+  }
 
-    const biome = biomeAt(p.x, p.y);
-    if (biome === "defi") worldScene.fog!.color.setHex(0x0c4050);
-    else if (biome === "cex") worldScene.fog!.color.setHex(0x24243a);
-    else if (biome === "apt") worldScene.fog!.color.setHex(0x2a1434);
-    else worldScene.fog!.color.setHex(0x14301c);
-    for (const child of chestGroup.children) {
-      const id = child.userData.chestId as number | undefined;
-      const chest = game.chests.find((c) => c.id === id);
-      child.visible = !!chest && !chest.opened;
+  function enemyHeight(e: Enemy) {
+    const def = ENEMIES[e.kind];
+    return def.isBoss ? BOSS_HEIGHT : def.radius * ENEMY_HEIGHT_PER_RADIUS;
+  }
+
+  function renderWorld(game: Game, dt: number, alpha: number) {
+    const p = game.player;
+    const px = lerpPos(p.px, p.x, alpha);
+    const py = lerpPos(p.py, p.y, alpha);
+    syncObstacles(game);
+    updateCamera(game, px, py, dt);
+
+    const { halfW, halfH } = groundHalfExtents(aspect);
+    const margin = 200;
+    const left = camX - halfW * 1.3 - margin;
+    const right = camX + halfW * 1.3 + margin;
+    const top = camZ - halfH - margin;
+    const bottom = camZ + halfH + margin;
+    const inView = (x: number, y: number) => x > left && x < right && y > top && y < bottom;
+
+    sprites.begin();
+    fx.begin();
+    decals.begin();
+    scratchLights.length = 0;
+    scratchLights.push({ x: px, y: py, h: 64, color: PLAYER_LIGHT, power: 1 });
+
+    emitProps(left, right, top, bottom);
+
+    const anim = elapsed;
+    for (const c of game.chests) {
+      if (c.opened || !inView(c.x, c.y)) continue;
+      const def = CHESTS[c.kind];
+      const live = p.coins >= c.coinCost;
+      const ringColor = cachedColor(def.color);
+      decals.push(c.x, c.y, c.radius, c.radius, DECAL_RING, c.openProgress / def.openTime, live ? ringColor : WHITE, live ? 0.95 : 0.35);
+      decals.push(c.x, c.y + 1, 24, 12, DECAL_BLOB, 0, BLACK, 0.55);
+      sprites.push(atlas.frame("chest"), c.x, c.y, 0.5, 34, false, 0, live ? 0.25 : 0);
+      if (live && scratchLights.length < MAX_POINT_LIGHTS - 1) scratchLights.push({ x: c.x, y: c.y, h: 50, color: CHEST_LIGHT, power: 0.75 });
+    }
+    for (const w of game.wells) {
+      if (w.used || !inView(w.x, w.y)) continue;
+      decals.push(w.x, w.y, w.radius, w.radius, DECAL_RING, w.channelProgress / 1.35, cachedColor("#6cb6ff"), 0.9);
+      decals.push(w.x, w.y + 1, 26, 12, DECAL_BLOB, 0, BLACK, 0.5);
+      sprites.push(atlas.frame("well"), w.x, w.y, 0.5, 42, false, 0, 0.3);
+    }
+
+    for (const pk of game.pickups) {
+      const x = lerpPos(pk.px, pk.x, alpha);
+      const y = lerpPos(pk.py, pk.y, alpha);
+      if (!inView(x, y)) continue;
+      const hover = 6 + Math.sin(anim * 4 + pk.id) * 2;
+      decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
+      const isXp = pk.kind === "xp";
+      sprites.push(atlas.frame(`pickup:${pk.kind}`), x, y, hover, isXp ? 13 : 15, false, 0, isXp ? 1.6 : 0.9);
+      if (isXp || pk.kind === "coin") fx.push(x, y, hover + 6, 13, 13, 0, isXp ? XP_COLOR : COIN_COLOR, 0.45);
+    }
+
+    let bossLightSet = false;
+    for (const e of game.enemies) {
+      if (e.dead) continue;
+      const x = lerpPos(e.px, e.x, alpha);
+      const y = lerpPos(e.py, e.y, alpha);
+      if (!inView(x, y)) continue;
+      const def = ENEMIES[e.kind];
+      const height = enemyHeight(e);
+      const hop = def.isBoss ? 0 : Math.abs(Math.sin(e.wobble * 2.4)) * 3;
+      const squash = 1 + Math.sin(e.wobble * 4.8) * (def.isBoss ? 0.015 : 0.04);
+      const frame = atlas.frame(`enemy:${e.kind}`);
+      const width = height * frame.aspect;
+      decals.push(x, y + 1, width * 0.5, width * 0.24, DECAL_BLOB, 0, BLACK, 0.55);
+      sprites.push(frame, x, y, 0.5 + hop, height * squash, p.x < e.x, e.flash > 0 ? 1 : 0);
+      if (def.isBoss && !bossLightSet) {
+        bossLightSet = true;
+        scratchLights.splice(1, 0, { x, y: y + 20, h: 130, color: BOSS_LIGHT, power: 1.4 });
+      }
+    }
+
+    const moving = Math.hypot(p.vx, p.vy) > 20;
+    const step = moving ? Math.floor(anim * 6.5) % 2 : 0;
+    decals.push(px, py + 1, 19, 9, DECAL_BLOB, 0, BLACK, 0.65);
+    const blink = p.invuln > 0 && p.dashTimer <= 0 && Math.floor(p.invuln * 20) % 2 === 0;
+    if (!blink) {
+      const bob = moving ? Math.abs(Math.sin(anim * 13)) * 2 : Math.sin(anim * 2.2) * 0.5;
+      sprites.push(atlas.frame(`hero:${p.characterId}:${step}`), px, py, 0.5 + bob, HERO_HEIGHT, Math.cos(p.facing) < 0);
+    }
+    if (p.dashTimer > 0) {
+      const color = PLAYER_LIGHT;
+      fx.push(px, py, 26, 26, 60, Math.atan2(-p.vy * cameraBasis.backY, p.vx), color, 1.6, 0.8);
     }
 
     const sk = game.sidekickEntity;
     if (sk) {
-      sidekickPlane.visible = true;
-      const skMat = sidekickPlane.material as THREE.MeshBasicMaterial;
-      skMat.map = makeSidekickTexture(THREE, sk.kind);
-      sidekickPlane.position.set(sk.x, 24, sk.y);
-      faceCameraYaw(sidekickPlane, sk.x, sk.y);
-    } else {
-      sidekickPlane.visible = false;
+      decals.push(sk.x, sk.y + 1, 11, 6, DECAL_BLOB, 0, BLACK, 0.45);
+      sprites.push(atlas.frame(`rig:${sk.kind}`), sk.x, sk.y, 6, 26, false);
     }
+
+    for (const pr of game.projectiles) {
+      const x = lerpPos(pr.px, pr.x, alpha);
+      const y = lerpPos(pr.py, pr.y, alpha);
+      if (!inView(x, y)) continue;
+      const color = cachedColor(pr.color);
+      const angle = Math.atan2(-pr.vy * cameraBasis.backY, pr.vx);
+      fx.push(x, y, 26, pr.radius * 3.4, pr.radius * 8, angle, color, 2.6);
+    }
+
+    for (const o of game.orbiters) {
+      const w = game.weapons.find((v) => v.kind === o.weaponKind);
+      const color = cachedColor(w ? RARITY_COLORS[w.rarity] : "#f0b429");
+      fx.push(o.x, o.y, 26, o.radius * 3, o.radius * 3, 0, color, 2);
+      decals.push(o.x, o.y, o.radius, o.radius * 0.6, DECAL_BLOB, 0, BLACK, 0.3);
+    }
+
+    for (const part of game.particles) {
+      if (!inView(part.x, part.y)) continue;
+      const life = part.life / part.maxLife;
+      fx.push(part.x, part.y, 18, part.size * 2.6, part.size * 2.6, 0, cachedColor(part.color), 1.8, life);
+    }
+
+    applyPointLights();
+    sprites.commit();
+    fx.commit();
+    decals.commit();
   }
 
   return {
-    render(game: Game, dt: number) {
+    render(game: Game, dt: number, alpha: number) {
+      elapsed += dt;
       const vp = readViewport(canvas);
-      resizeIfNeeded(vp.width, vp.height, vp.dpr);
-
-      if (game.phase === "menu") {
-        renderTitle(game, dt);
-        setActiveScene(titleScene, titleCam);
-      } else if (game.phase === "cutscene") {
-        renderTitle(game, dt * 0.35);
-        setActiveScene(titleScene, titleCam);
-      } else if (game.player) {
-        renderWorld(game, dt);
-        setActiveScene(worldScene, worldCam);
+      if (dynamicRes.update(dt * 1000)) lastPixelRatio = 0;
+      resizeIfNeeded(vp.width, vp.height);
+      if (!game.player) return;
+      if (game.phase !== "paused" && game.phase !== "levelup") {
+        renderWorld(game, dt, alpha);
       } else {
-        setActiveScene(titleScene, titleCam);
+        renderWorld(game, 0, 1);
       }
-
-      composer.render();
-    },
-
-    hitTitle(mx: number, my: number, w: number, h: number) {
-      const lapW = Math.min(520, w * 0.72);
-      const lapH = lapW * 0.78;
-      const keyW = Math.min(220, lapW * 0.46);
-      const keyH = 36;
-      const keyX = w / 2 - keyW / 2;
-      const keyY = h * 0.18 + lapH - 58;
-      if (mx >= keyX && mx <= keyX + keyW && my >= keyY && my <= keyY + keyH) return "start" as const;
-      const diff = difficultyFromClick(mx, my, w, h);
-      if (diff) return diff;
-      return null;
+      grade.uniforms.uTime!.value = elapsed;
+      renderer.info.reset();
+      composer.render(dt);
     },
 
     worldToScreen(x: number, y: number, w: number, h: number) {
-      ndc.set(x, 18, y);
-      ndc.project(worldCam);
-      if (ndc.z > 1) return null;
-      return { x: (ndc.x * 0.5 + 0.5) * w, y: (-ndc.y * 0.5 + 0.5) * h };
+      const v = scratchProject.set(x, 18, y).project(camera);
+      if (v.z > 1) return null;
+      return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
+    },
+
+    stats() {
+      return {
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        scale: dynamicRes.scale,
+        tier: tierName,
+      };
     },
 
     dispose() {
-      renderer.dispose();
       composer.dispose();
+      renderer.dispose();
     },
   };
 }
+
+const scratchProject = new THREE.Vector3();
