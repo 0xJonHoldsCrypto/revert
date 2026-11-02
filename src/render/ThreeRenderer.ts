@@ -85,9 +85,9 @@ export async function createThreeRenderer(canvas: HTMLCanvasElement): Promise<Ga
 
       const p = game.player;
       const cx = p.x - v.width / 2;
-      const cz = p.y - v.height / 2;
-      camera.position.set(cx + v.width / 2, 420, cz + v.height / 2);
-      camera.lookAt(cx + v.width / 2, 0, cz + v.height / 2);
+      const keel = p.y - v.height / 2;
+      camera.position.set(cx + v.width / 2, 420, keel + v.height / 2);
+      camera.lookAt(cx + v.width / 2, 0, keel + v.height / 2);
 
       const ch = getCharacter(p.characterId);
       (playerMesh.material as import("three").MeshStandardMaterial).color.set(ch.color);

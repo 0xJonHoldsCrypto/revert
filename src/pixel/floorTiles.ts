@@ -5,10 +5,10 @@ export type FloorCanvases = { albedo: HTMLCanvasElement; emissive: HTMLCanvasEle
 type FloorStyle = { panel: string; panelAlt: string; seam: string; glow: string; density: number };
 
 const STYLES: Record<BiomeId, FloorStyle> = {
-  wasteland: { panel: "#4a4f58", panelAlt: "#42474f", seam: "#20242b", glow: "#2ee6c7", density: 0.28 },
-  cex: { panel: "#54494c", panelAlt: "#4a4043", seam: "#261e20", glow: "#ff6a3c", density: 0.24 },
-  defi: { panel: "#3c5558", panelAlt: "#344a4d", seam: "#172628", glow: "#6cb6ff", density: 0.3 },
-  apt: { panel: "#413a52", panelAlt: "#383247", seam: "#1b1726", glow: "#d05cff", density: 0.2 },
+  mempool: { panel: "#4a4f58", panelAlt: "#42474f", seam: "#20242b", glow: "#2ee6c7", density: 0.28 },
+  vault: { panel: "#54494c", panelAlt: "#4a4043", seam: "#261e20", glow: "#ff6a3c", density: 0.24 },
+  bridge: { panel: "#3c5558", panelAlt: "#344a4d", seam: "#172628", glow: "#6cb6ff", density: 0.3 },
+  forest: { panel: "#413a52", panelAlt: "#383247", seam: "#1b1726", glow: "#d05cff", density: 0.2 },
 };
 
 const SIZE = 256;

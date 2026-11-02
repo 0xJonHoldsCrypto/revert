@@ -73,15 +73,15 @@ export function makeBiomeTileTexture(
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
   const palettes: Record<string, [string, string]> = {
-    wasteland: ["#3d7a45", "#2f6236"],
-    cex: ["#4a4a6e", "#353552"],
-    defi: ["#1e6a78", "#14505c"],
-    apt: ["#5a3068", "#3a2048"],
+    mempool: ["#3d7a45", "#2f6236"],
+    vault: ["#4a4a6e", "#353552"],
+    bridge: ["#1e6a78", "#14505c"],
+    forest: ["#5a3068", "#3a2048"],
   };
-  const [a, b] = palettes[biome] ?? palettes.wasteland!;
+  const [a, b] = palettes[biome] ?? palettes.mempool!;
   ctx.fillStyle = checker ? a : b;
   ctx.fillRect(0, 0, size, size);
-  if (checker && biome === "defi") {
+  if (checker && biome === "bridge") {
     ctx.fillStyle = "#33ff66";
     ctx.fillRect(size / 2 - 2, size / 2 - 2, 4, 4);
   }
@@ -142,7 +142,7 @@ export function makeWalkTexture(THREE: typeof import("three"), id: CharacterId):
 
 export function makePortraitTexture(
   THREE: typeof import("three"),
-  id: CharacterId | "hacker" | "sec-dev",
+  id: CharacterId | "hacker" | "trace",
   size = 256
 ): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");

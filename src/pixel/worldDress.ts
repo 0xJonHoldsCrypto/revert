@@ -65,12 +65,12 @@ export function makeFieldCanvas(biome: string): HTMLCanvasElement {
   canvas.height = S;
   const ctx = canvas.getContext("2d")!;
   const bases: Record<string, [string, string, string]> = {
-    wasteland: ["#3d7a44", "#4e8a52", "#2c5a34"],
-    cex: ["#3a3a52", "#4a4a68", "#2a2a40"],
-    defi: ["#145868", "#1e7890", "#0e3e4c"],
-    apt: ["#3a2048", "#542868", "#281434"],
+    mempool: ["#3d7a44", "#4e8a52", "#2c5a34"],
+    vault: ["#3a3a52", "#4a4a68", "#2a2a40"],
+    bridge: ["#145868", "#1e7890", "#0e3e4c"],
+    forest: ["#3a2048", "#542868", "#281434"],
   };
-  const [a, b, c] = bases[biome] ?? bases.wasteland!;
+  const [a, b, c] = bases[biome] ?? bases.mempool!;
   const img = ctx.createImageData(S, S);
   const data = img.data;
   const parse = (hex: string) => {

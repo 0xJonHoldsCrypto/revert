@@ -98,7 +98,7 @@ export class OverlayUI {
       <div class="hud-block">
         <strong>ZONE</strong>
         ${data.biome}<br/>
-        🪙 ${data.coins} sats
+        🪙 ${data.coins} SAFU
         ${data.sidekick ? `<br/>🤖 ${data.sidekick}` : ""}
       </div>
       <div class="hud-block">
@@ -145,7 +145,7 @@ export class OverlayUI {
         <p class="wordmark" style="position:static;left:auto;transform:none;margin-bottom:0.6rem">Exploit<span>.run</span></p>
         <h1>${won ? "Funds safu" : "Rekt"}</h1>
         <p class="tagline">
-          ${won ? "You survived 20 minutes. Lazarus logs off in shame." : "The exploit won this round. Re-deploy your ego."}
+          ${won ? "You held the chain. The attacker logs off in shame." : "The exploit won this round. Re-deploy your ego."}
         </p>
         <p style="text-align:center;margin-bottom:1.25rem;line-height:1.8;color:#8b949e">
           Time: ${formatTime(s.timeSurvived)} · Kills: ${s.kills} · Bosses: ${s.bossesDefeated}<br/>

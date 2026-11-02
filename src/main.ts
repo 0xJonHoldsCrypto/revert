@@ -167,7 +167,7 @@ function drawRunChrome(w: number, h: number) {
     const d = Math.hypot(p.x - c.x, p.y - c.y);
     if (d < best) {
       best = d;
-      prompt = p.coins >= c.coinCost ? `Step in · ${CHESTS[c.kind].name} · ${c.coinCost} sats` : `Need ${c.coinCost} sats`;
+      prompt = p.coins >= c.coinCost ? `Step in · ${CHESTS[c.kind].name} · ${c.coinCost} SAFU` : `Need ${c.coinCost} SAFU`;
     }
   }
   for (const well of game.wells) {

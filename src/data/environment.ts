@@ -2,7 +2,7 @@ import { WORLD } from "../constants";
 import type { ChestKind, EnvObstacleKind, WeaponKind } from "../types";
 import type { WeaponRarity } from "./rarity";
 
-export type BiomeId = "wasteland" | "cex" | "defi" | "apt";
+export type BiomeId = "mempool" | "vault" | "bridge" | "forest";
 
 export interface EnvObstacleDef {
   kind: EnvObstacleKind;
@@ -36,7 +36,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     slowMult: 0.45,
     damagePerSec: 6,
     color: "#f778ba",
-    biome: ["wasteland", "defi"],
+    biome: ["mempool", "bridge"],
   },
   "gas-gate": {
     kind: "gas-gate",
@@ -45,7 +45,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     height: 120,
     blocks: true,
     color: "#ffa657",
-    biome: ["cex", "defi"],
+    biome: ["vault", "bridge"],
   },
   "kyc-wall": {
     kind: "kyc-wall",
@@ -54,7 +54,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     height: 40,
     blocks: true,
     color: "#79c0ff",
-    biome: ["cex"],
+    biome: ["vault"],
   },
   "liquidation-spike": {
     kind: "liquidation-spike",
@@ -64,7 +64,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     blocks: true,
     damagePerSec: 12,
     color: "#f85149",
-    biome: ["defi", "apt"],
+    biome: ["bridge", "forest"],
   },
   "sandwich-bot": {
     kind: "sandwich-bot",
@@ -74,7 +74,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     blocks: false,
     slowMult: 0.7,
     color: "#d2a8ff",
-    biome: ["wasteland", "cex"],
+    biome: ["mempool", "vault"],
   },
   honeypot: {
     kind: "honeypot",
@@ -84,7 +84,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     blocks: false,
     damagePerSec: 16,
     color: "#ff5d7a",
-    biome: ["defi", "apt", "wasteland"],
+    biome: ["bridge", "forest", "mempool"],
   },
   "mempool-fog": {
     kind: "mempool-fog",
@@ -94,7 +94,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     blocks: false,
     slowMult: 0.55,
     color: "#6cb6ff",
-    biome: ["cex", "defi", "apt"],
+    biome: ["vault", "bridge", "forest"],
   },
 };
 
@@ -150,10 +150,10 @@ export const CHEST_WEAPON_POOL: WeaponKind[] = [
   "audit-dart",
   "rug-coin",
   "memo-pulse",
-  "eth-beam",
-  "bnb-whip",
+  "finality-beam",
+  "reorg-whip",
   "stable-shield",
-  "alameda-burst",
+  "patch-burst",
   "flash-loan",
   "validator-seal",
   "bridge-bolt",
@@ -163,6 +163,6 @@ export const CHEST_WEAPON_POOL: WeaponKind[] = [
 export function biomeAt(x: number, y: number): BiomeId {
   const east = x >= WORLD.width / 2;
   const south = y >= WORLD.height / 2;
-  if (east) return south ? "apt" : "cex";
-  return south ? "defi" : "wasteland";
+  if (east) return south ? "forest" : "vault";
+  return south ? "bridge" : "mempool";
 }

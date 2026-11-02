@@ -2,7 +2,7 @@ import type { CharacterDef } from "../types";
 
 export const CHARACTERS: CharacterDef[] = [
   {
-    id: "cz",
+    id: "keel",
     name: "Keel",
     emoji: "⌨️",
     role: "Protocol Engineer",
@@ -14,10 +14,10 @@ export const CHARACTERS: CharacterDef[] = [
     damageMult: 1.12,
     xpMult: 1,
     dashCooldown: 2.4,
-    startWeapon: "bnb-whip",
+    startWeapon: "reorg-whip",
   },
   {
-    id: "elon",
+    id: "nyx",
     name: "Nyx",
     emoji: "📡",
     role: "Mempool Watcher",
@@ -32,7 +32,7 @@ export const CHARACTERS: CharacterDef[] = [
     startWeapon: "memo-pulse",
   },
   {
-    id: "sbf",
+    id: "diff",
     name: "Diff",
     emoji: "🩹",
     role: "Whitehat",
@@ -47,7 +47,7 @@ export const CHARACTERS: CharacterDef[] = [
     startWeapon: "audit-dart",
   },
   {
-    id: "sec-dev",
+    id: "trace",
     name: "Trace",
     emoji: "🛡️",
     role: "Incident Responder",

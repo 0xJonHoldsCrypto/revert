@@ -27,7 +27,7 @@ export function rollChestLoot(minRarity: WeaponRarity, biome: BiomeId): ChestLoo
     return { type: "stat", stat, amount };
   }
   const kind = pick(CHEST_WEAPON_POOL);
-  let rarity = rollRarity(biome === "apt" ? 0.22 : biome === "defi" ? 0.18 : 0.12);
+  let rarity = rollRarity(biome === "forest" ? 0.22 : biome === "bridge" ? 0.18 : 0.12);
   const order = ["common", "uncommon", "rare", "epic", "legendary"];
   if (order.indexOf(rarity) < order.indexOf(minRarity)) rarity = minRarity;
   const base = WEAPONS[kind].rarity;
@@ -41,9 +41,9 @@ export function rollWellStat(seed: number): WellStatId {
 
 export function chestKindForBiome(biome: BiomeId, rnd: () => number): ChestKind {
   const pool = (["cold-wallet", "defi-lootbox", "validator-crate", "airdrop-pod", "grant-safe"] as ChestKind[]).filter((k) => {
-    if (biome === "wasteland") return k === "airdrop-pod" || k === "cold-wallet" || rnd() > 0.55;
-    if (biome === "cex") return k !== "grant-safe" || rnd() > 0.6;
-    if (biome === "defi") return k !== "airdrop-pod" || rnd() > 0.45;
+    if (biome === "mempool") return k === "airdrop-pod" || k === "cold-wallet" || rnd() > 0.55;
+    if (biome === "vault") return k !== "grant-safe" || rnd() > 0.6;
+    if (biome === "bridge") return k !== "airdrop-pod" || rnd() > 0.45;
     return k === "grant-safe" || k === "validator-crate" || rnd() > 0.5;
   });
   return pool[Math.floor(rnd() * pool.length)] ?? "cold-wallet";

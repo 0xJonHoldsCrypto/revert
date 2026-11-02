@@ -3,10 +3,10 @@ import type { CharacterId, EnemyKind, SidekickKind } from "../types";
 import { blank, blitTone, fillClump, finishSprite, paintGrid, putPx, rampTones, type PixRow, type Tone } from "./spriteUtil";
 
 const GRASS: Record<BiomeId, [string, string, string, string]> = {
-  wasteland: ["#2d5a28", "#3c6e32", "#4e863c", "#1e3e1c"],
-  cex: ["#3a3a28", "#4a4a34", "#5c5c40", "#242418"],
-  defi: ["#1a4a48", "#246058", "#2e7870", "#103430"],
-  apt: ["#3a2848", "#4a3458", "#5c4068", "#241830"],
+  mempool: ["#2d5a28", "#3c6e32", "#4e863c", "#1e3e1c"],
+  vault: ["#3a3a28", "#4a4a34", "#5c5c40", "#242418"],
+  bridge: ["#1a4a48", "#246058", "#2e7870", "#103430"],
+  forest: ["#3a2848", "#4a3458", "#5c4068", "#241830"],
 };
 
 const FLOWER = ["#d8d060", "#e07070", "#70b0e0", "#f0f0e8"];
@@ -98,10 +98,10 @@ const SIDE: PixRow[] = [
 ];
 
 const PAL: Record<CharacterId, Record<string, string>> = {
-  cz: { h: "#1a120c", s: "#f3c7a0", d: "#c48b62", E: "#1a120c", c: "#f0b429", p: "#241c14", b: "#101010", o: "#140c10" },
-  elon: { h: "#3a2418", s: "#f0c09a", d: "#c48968", E: "#1a120c", c: "#1c1c1c", p: "#3d5a80", b: "#e8e4dc", o: "#140c10" },
-  sbf: { h: "#6b4428", s: "#f6d0b0", d: "#d4a574", E: "#1a120c", c: "#8b93a0", p: "#c4a574", b: "#2a241c", o: "#140c10" },
-  "sec-dev": { h: "#141820", s: "#e8c4a8", d: "#c49678", E: "#58a6ff", c: "#214e38", p: "#1a1e24", b: "#111111", o: "#140c10" },
+  keel: { h: "#1a120c", s: "#f3c7a0", d: "#c48b62", E: "#1a120c", c: "#f0b429", p: "#241c14", b: "#101010", o: "#140c10" },
+  nyx: { h: "#3a2418", s: "#f0c09a", d: "#c48968", E: "#1a120c", c: "#1c1c1c", p: "#3d5a80", b: "#e8e4dc", o: "#140c10" },
+  diff: { h: "#6b4428", s: "#f6d0b0", d: "#d4a574", E: "#1a120c", c: "#8b93a0", p: "#c4a574", b: "#2a241c", o: "#140c10" },
+  "trace": { h: "#141820", s: "#e8c4a8", d: "#c49678", E: "#58a6ff", c: "#214e38", p: "#1a1e24", b: "#111111", o: "#140c10" },
 };
 
 const spriteCache = new Map<string, HTMLCanvasElement>();
@@ -338,7 +338,7 @@ export function getMonsterSprite(kind: EnemyKind): HTMLCanvasElement {
   if (kind.includes("sim")) return hold("worm", paintWorm);
   if (kind.includes("insider")) return hold("insider", paintSuit);
   if (kind.includes("phish")) return hold("fish", paintFish);
-  if (kind.includes("apt")) return hold("cloak-horn", () => paintCloak("horn"));
+  if (kind.includes("forest")) return hold("cloak-horn", () => paintCloak("horn"));
   if (kind.includes("lazarus")) return hold("cloak", () => paintCloak("plain"));
   if (kind.includes("bridge")) return hold("bridge", paintBridge);
   if (kind.includes("rug")) return hold("rug", paintRug);

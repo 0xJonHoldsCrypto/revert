@@ -2,8 +2,8 @@ import type { UpgradeDef } from "../types";
 
 export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   {
-    id: "power-uniswap",
-    title: "Uniswap V3 LP",
+    id: "power-lp",
+    title: "Concentrated LP",
     description: "Swap stats: +10% damage and +5% move speed.",
     rarity: "rare",
     maxTimes: 1,
@@ -14,8 +14,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-aave",
-    title: "Aave Yield Vault",
+    id: "power-lending",
+    title: "Lending Vault",
     description: "Stake yield: passive XP/sec scales with your level.",
     rarity: "epic",
     maxTimes: 1,
@@ -25,8 +25,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-binance",
-    title: "Binance Launchpool",
+    id: "power-launchpool",
+    title: "Exchange Launchpool",
     description: "Exchange liquidity: +18% weapon damage.",
     rarity: "rare",
     maxTimes: 1,
@@ -36,8 +36,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-bitfi",
-    title: "BitFi Bridge Guard",
+    id: "power-bridge-guard",
+    title: "Bridge Guard",
     description: "Bridge insurance: +12% armor and heal 15.",
     rarity: "legendary",
     maxTimes: 1,
@@ -48,8 +48,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-curve",
-    title: "Curve Pool",
+    id: "power-stable-pool",
+    title: "Stable Pool",
     description: "Stable depth. +8% armor and +8% pickup.",
     rarity: "uncommon",
     maxTimes: 1,
@@ -60,8 +60,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-lido",
-    title: "Lido Restake",
+    id: "power-restake",
+    title: "Liquid Restake",
     description: "Stake the run. Passive yield and +6% move speed.",
     rarity: "rare",
     maxTimes: 1,
@@ -72,8 +72,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-chainlink",
-    title: "Chainlink Feed",
+    id: "power-price-feed",
+    title: "Clean Price Feed",
     description: "A cleaner price. Weapon damage +14%.",
     rarity: "rare",
     maxTimes: 1,
@@ -83,8 +83,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-eigen",
-    title: "EigenLayer",
+    id: "power-restaking",
+    title: "Restaking Layer",
     description: "Restake the same stake. +10% damage and +8% armor.",
     rarity: "epic",
     maxTimes: 1,
@@ -95,8 +95,8 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
     },
   },
   {
-    id: "power-flashbots",
-    title: "Flashbots Protect",
+    id: "power-private-relay",
+    title: "Private Relay",
     description: "Skip the public mempool. Cooldowns -12%.",
     rarity: "epic",
     maxTimes: 1,

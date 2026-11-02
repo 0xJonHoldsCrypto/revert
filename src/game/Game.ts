@@ -71,7 +71,7 @@ import {
 const PLAYER_HIT_RADIUS = 11;
 const ENEMY_HIT_SCALE = 0.8;
 const HUD_TICKS = 6;
-const AOE_COLOR: Partial<Record<WeaponKind, string>> = { "bnb-whip": "#ffd166", "memo-pulse": "#b58cff", "flash-loan": "#ffb020" };
+const AOE_COLOR: Partial<Record<WeaponKind, string>> = { "reorg-whip": "#ffd166", "memo-pulse": "#b58cff", "flash-loan": "#ffb020" };
 const DASH_BUFFER_SEC = 0.1;
 const SEPARATION_STRENGTH = 42;
 const KNOCKBACK = 170;
@@ -107,8 +107,8 @@ export type HudData = {
 
 export class Game {
   phase: GamePhase = "menu";
-  selectedCharacter: CharacterId = "cz";
-  menuHero: CharacterId = "cz";
+  selectedCharacter: CharacterId = "keel";
+  menuHero: CharacterId = "keel";
   runDifficulty: DifficultyId = "normal";
   player!: PlayerState;
   enemies: Enemy[] = [];
@@ -459,8 +459,8 @@ export class Game {
   private syncMusic() {
     if (!this.player) return;
     const boss = this.enemies.some((e) => !e.dead && ENEMIES[e.kind].isBoss);
-    const zone: Record<string, MusicTrackId> = { wasteland: "mempool", cex: "vault", defi: "bridge", apt: "forest" };
-    this.audio.setMusic(boss ? "boss" : zone[biomeAt(this.player.x, this.player.y)]!);
+    const track: MusicTrackId = boss ? "boss" : biomeAt(this.player.x, this.player.y);
+    this.audio.setMusic(track);
   }
 
   private beginLanding() {
@@ -1088,12 +1088,12 @@ export class Game {
 
       if (def.orbit) continue;
 
-      if (def.aoe && (w.kind === "bnb-whip" || w.kind === "memo-pulse" || w.kind === "flash-loan")) {
+      if (def.aoe && (w.kind === "reorg-whip" || w.kind === "memo-pulse" || w.kind === "flash-loan")) {
         const dmg = this.weaponDamageScale(w, def.damage);
         const radius = (def.aoe ?? def.range) * (w.evolved ? 1.35 : 1);
         this.aoeHit(p.x, p.y, radius, dmg, w.kind);
         const color = AOE_COLOR[w.kind] ?? COLORS.gold;
-        const arc = w.kind === "bnb-whip" ? p.facing : undefined;
+        const arc = w.kind === "reorg-whip" ? p.facing : undefined;
         this.shockwaves.push({ x: p.x, y: p.y, radius, life: 0.28, maxLife: 0.28, color, arc });
         this.audio.play("pulse");
         if (w.evolved) {
@@ -1103,7 +1103,7 @@ export class Game {
         continue;
       }
 
-      if (w.kind === "alameda-burst" || w.kind === "nonce-shard") {
+      if (w.kind === "patch-burst" || w.kind === "nonce-shard") {
         const count = 3 + w.level + (w.evolved ? 4 : 0);
         const aim = this.nearestEnemy(p.x, p.y, def.range);
         for (let i = 0; i < count; i++) {
@@ -1117,7 +1117,7 @@ export class Game {
       if (!target) continue;
       const ang = angleBetween(p.x, p.y, target.x, target.y);
       const spreads =
-        w.evolved && (w.kind === "eth-beam" || w.kind === "bridge-bolt")
+        w.evolved && (w.kind === "finality-beam" || w.kind === "bridge-bolt")
           ? [-0.16, 0, 0.16]
           : w.evolved && w.kind === "audit-dart"
             ? [-0.1, 0.1]
@@ -1141,8 +1141,8 @@ export class Game {
     const speed = def.projectileSpeed ?? 400;
     const colors: Record<string, string> = {
       "audit-dart": "#58a6ff",
-      "eth-beam": "#627eea",
-      "alameda-burst": "#79c0ff",
+      "finality-beam": "#627eea",
+      "patch-burst": "#79c0ff",
       "bridge-bolt": "#2ee6c7",
       "nonce-shard": "#f0c14d",
       "flash-loan": "#ffb020",
@@ -1153,7 +1153,7 @@ export class Game {
       y,
       vx: dx * speed,
       vy: dy * speed,
-      radius: kind === "eth-beam" ? 6 : 5,
+      radius: kind === "finality-beam" ? 6 : 5,
       dead: false,
       damage: this.weaponDamageScale(w, def.damage),
       life: def.range / speed + 0.5,

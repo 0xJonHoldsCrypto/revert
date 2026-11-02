@@ -6,31 +6,31 @@ export type WellStatId = import("./data/wells").WellStatId;
 
 export type GamePhase = "menu" | "cutscene" | "cinematic" | "playing" | "levelup" | "paused" | "won" | "lost";
 
-export type CharacterId = "cz" | "elon" | "sbf" | "sec-dev";
+export type CharacterId = "keel" | "nyx" | "diff" | "trace";
 
 export type EnemyKind =
   | "script-kiddie"
   | "phishing-bot"
-  | "lazarus-op"
+  | "shadow-op"
   | "bridge-drainer"
   | "rug-dev"
   | "mev-searcher"
-  | "oracle-witch"
+  | "oracle-manipulator"
   | "sim-swapper"
   | "insider"
-  | "boss-lazarus-414"
+  | "boss-unit-414"
   | "boss-phish-king"
-  | "boss-apt38"
+  | "boss-nightdesk"
   | "boss-grandmaster"
   | "boss-mev-king"
   | "boss-oracle";
 
 export type WeaponKind =
   | "audit-dart"
-  | "bnb-whip"
-  | "eth-beam"
+  | "reorg-whip"
+  | "finality-beam"
   | "stable-shield"
-  | "alameda-burst"
+  | "patch-burst"
   | "rug-coin"
   | "memo-pulse"
   | "flash-loan"

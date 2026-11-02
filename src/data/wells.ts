@@ -13,7 +13,7 @@ export const WELL_STATS: Record<WellStatId, WellStatDef> = {
   maxHp: { id: "maxHp", title: "Cold Storage", description: "+18 max HP for this run.", applyAmount: 18 },
   pickup: { id: "pickup", title: "MEV Magnet", description: "+12% pickup radius for this run.", applyAmount: 0.12 },
   armor: { id: "armor", title: "Multisig Skin", description: "+6% damage reduction for this run.", applyAmount: 0.06 },
-  yield: { id: "yield", title: "Staking Yield", description: "+0.4 passive HP/sec for this run.", applyAmount: 0.4 },
+  yield: { id: "yield", title: "Staking Yield", description: "+0.4 passive XP/sec for this run.", applyAmount: 0.4 },
   cooldown: { id: "cooldown", title: "Priority Lane", description: "Weapon cooldowns -8% for this run.", applyAmount: 0.08 },
 };
 

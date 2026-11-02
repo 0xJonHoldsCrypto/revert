@@ -29,9 +29,9 @@ export const BOSS_TIMES = [3 * 60, 6 * 60, 9 * 60, 12 * 60, 16 * 60, 19 * 60];
 
 export const BOSS_KINDS = [
   "boss-mev-king",
-  "boss-lazarus-414",
+  "boss-unit-414",
   "boss-phish-king",
   "boss-oracle",
-  "boss-apt38",
+  "boss-nightdesk",
   "boss-grandmaster",
 ] as const;

@@ -2,7 +2,7 @@
 
 Browser **survivors-like** game (think [tibo.dog](https://tibo.dog)): move, dash, auto-firing crypto weapons, level-up picks, and 20-minute survival runs.
 
-**Theme:** Play as parody crypto figures (CZ, Vitalik, Do Kwon, SBF) and fight waves of hackers, phishing bots, and **Lazarus**-style APT bosses.
+**Theme:** Night-shift responders fall into the chain and fight the attack itself: phishing bots, MEV searchers, bridge drainers, and fictional APT crews. All names are fictional.
 
 ## Run locally
 
@@ -21,7 +21,7 @@ npm run dev
 
 ## Goal
 
-Survive **20 minutes**. Bosses spawn at 5 / 10 / 15 / 20 minutes. Collect XP gems, level up, stack weapons and upgrades.
+Save the funds and survive **20 minutes**. Six bosses arrive between 3:00 and 19:00. Victory needs the clock at 20:00 and the Grandmaster dead. Collect XP gems, level up, stack weapons and upgrades.
 
 ## X embed budget
 

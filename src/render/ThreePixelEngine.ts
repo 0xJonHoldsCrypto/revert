@@ -35,8 +35,8 @@ const DECAL_CAPACITY = 1400;
 const TILE_WORLD_SIZE = 256;
 const PROJECTILE_LOOK: Partial<Record<WeaponKind, { width: number; length: number; glow: number; trail: number }>> = {
   "audit-dart": { width: 7, length: 30, glow: 2.8, trail: 2 },
-  "eth-beam": { width: 8, length: 74, glow: 3.6, trail: 1 },
-  "alameda-burst": { width: 15, length: 15, glow: 2.6, trail: 2 },
+  "finality-beam": { width: 8, length: 74, glow: 3.6, trail: 1 },
+  "patch-burst": { width: 15, length: 15, glow: 2.6, trail: 2 },
   "bridge-bolt": { width: 9, length: 52, glow: 3.4, trail: 3 },
   "nonce-shard": { width: 12, length: 24, glow: 2.6, trail: 2 },
 };
@@ -47,10 +47,10 @@ const ORBITER_COLOR: Partial<Record<WeaponKind, string>> = {
 };
 
 const QUADRANTS: { biome: BiomeId; x: number; z: number }[] = [
-  { biome: "wasteland", x: WORLD.width / 4, z: WORLD.height / 4 },
-  { biome: "cex", x: (WORLD.width * 3) / 4, z: WORLD.height / 4 },
-  { biome: "defi", x: WORLD.width / 4, z: (WORLD.height * 3) / 4 },
-  { biome: "apt", x: (WORLD.width * 3) / 4, z: (WORLD.height * 3) / 4 },
+  { biome: "mempool", x: WORLD.width / 4, z: WORLD.height / 4 },
+  { biome: "vault", x: (WORLD.width * 3) / 4, z: WORLD.height / 4 },
+  { biome: "bridge", x: WORLD.width / 4, z: (WORLD.height * 3) / 4 },
+  { biome: "forest", x: (WORLD.width * 3) / 4, z: (WORLD.height * 3) / 4 },
 ];
 
 const colorCache = new Map<string, THREE.Color>();

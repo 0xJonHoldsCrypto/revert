@@ -13,8 +13,8 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     pierce: 1,
     maxLevel: 8,
   },
-  "bnb-whip": {
-    kind: "bnb-whip",
+  "reorg-whip": {
+    kind: "reorg-whip",
     name: "Reorg Whip",
     description: "A wide arc that cleaves the mempool.",
     damage: 22,
@@ -24,10 +24,10 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     aoe: 95,
     maxLevel: 8,
   },
-  "eth-beam": {
-    kind: "eth-beam",
-    name: "Ethereum Beam",
-    description: "Piercing laser through the mempool.",
+  "finality-beam": {
+    kind: "finality-beam",
+    name: "Finality Beam",
+    description: "A finalized block fired in a straight line. Pierces.",
     damage: 18,
     cooldown: 0.7,
     range: 500,
@@ -39,7 +39,7 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
   "stable-shield": {
     kind: "stable-shield",
     name: "Stablecoin Shield",
-    description: "Orbiting USDT that bonks hackers.",
+    description: "Orbiting pegged coins that bonk attackers.",
     damage: 16,
     cooldown: 0.35,
     range: 90,
@@ -47,10 +47,10 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     orbit: true,
     maxLevel: 8,
   },
-  "alameda-burst": {
-    kind: "alameda-burst",
-    name: "Payload Burst",
-    description: "A spread of exploit payloads.",
+  "patch-burst": {
+    kind: "patch-burst",
+    name: "Hotfix Burst",
+    description: "A radial spread of emergency patches.",
     damage: 14,
     cooldown: 1.1,
     range: 380,
@@ -62,8 +62,8 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
   "rug-coin": {
     kind: "rug-coin",
     name: "Rug Pull Coin",
-    description: "Spinning shitcoins orbit you.",
-    damage: 14,
+    description: "Huge orbit damage, until a coin rugs and vanishes for a while.",
+    damage: 26,
     cooldown: 0.4,
     range: 75,
     rarity: "common",
@@ -131,10 +131,10 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
 
 export const EVOLUTIONS: Record<WeaponKind, { name: string; blurb: string }> = {
   "audit-dart": { name: "Formal Verification", blurb: "Twin findings. The darts fork and pierce deeper." },
-  "bnb-whip": { name: "Chain Split", blurb: "The arc doubles. Two shockwaves per swing." },
-  "eth-beam": { name: "Blob Tunnel", blurb: "Three beams. The mempool does not get a gap." },
+  "reorg-whip": { name: "Chain Split", blurb: "The arc doubles. Two shockwaves per swing." },
+  "finality-beam": { name: "Blob Tunnel", blurb: "Three beams. The mempool does not get a gap." },
   "stable-shield": { name: "Peg Defense", blurb: "Extra orbiting pegs. They stay until the hackers don't." },
-  "alameda-burst": { name: "Exploit Spiral", blurb: "More payloads, a wider spread, and the shots bend toward targets." },
+  "patch-burst": { name: "Patch Storm", blurb: "More patches, a wider spread, and the shots bend toward targets." },
   "rug-coin": { name: "Liquidity Exit", blurb: "The orbit fills with extra coins. They pull harder." },
   "memo-pulse": { name: "Block Storm", blurb: "A second pulse. The congestion ring gets wider." },
   "flash-loan": { name: "Atomic Arb", blurb: "The loan recurs. A second wave lands inside the first." },

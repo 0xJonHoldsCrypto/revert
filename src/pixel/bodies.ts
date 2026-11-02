@@ -12,7 +12,7 @@ const hex = (s: string): RGB => [
 ];
 
 const LOOK: Record<CharacterId, { hair: RGB; hairHi: RGB; skin: RGB; skinSh: RGB; cloth: RGB; clothSh: RGB; pants: RGB; shoe: RGB; eye: RGB; hood: boolean; messy: boolean }> = {
-  cz: {
+  keel: {
     hair: hex("#1a120c"),
     hairHi: hex("#3a2a18"),
     skin: hex("#f3c7a0"),
@@ -25,7 +25,7 @@ const LOOK: Record<CharacterId, { hair: RGB; hairHi: RGB; skin: RGB; skinSh: RGB
     hood: false,
     messy: false,
   },
-  elon: {
+  nyx: {
     hair: hex("#3a2418"),
     hairHi: hex("#6b4428"),
     skin: hex("#f0c09a"),
@@ -38,7 +38,7 @@ const LOOK: Record<CharacterId, { hair: RGB; hairHi: RGB; skin: RGB; skinSh: RGB
     hood: false,
     messy: false,
   },
-  sbf: {
+  diff: {
     hair: hex("#6b4428"),
     hairHi: hex("#a56b3c"),
     skin: hex("#f6d0b0"),
@@ -51,7 +51,7 @@ const LOOK: Record<CharacterId, { hair: RGB; hairHi: RGB; skin: RGB; skinSh: RGB
     hood: false,
     messy: true,
   },
-  "sec-dev": {
+  "trace": {
     hair: hex("#141820"),
     hairHi: hex("#2a3544"),
     skin: hex("#e8c4a8"),

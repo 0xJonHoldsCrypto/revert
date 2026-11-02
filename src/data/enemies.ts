@@ -25,9 +25,9 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     color: "#ffa657",
     contactCooldown: 0.7,
   },
-  "lazarus-op": {
-    kind: "lazarus-op",
-    name: "Lazarus Operative",
+  "shadow-op": {
+    kind: "shadow-op",
+    name: "Shadow Operator",
     emoji: "🕵️",
     hp: 55,
     speed: 88,
@@ -73,8 +73,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     color: "#ffe08a",
     contactCooldown: 0.4,
   },
-  "oracle-witch": {
-    kind: "oracle-witch",
+  "oracle-manipulator": {
+    kind: "oracle-manipulator",
     name: "Oracle Manipulator",
     emoji: "🔮",
     hp: 80,
@@ -109,9 +109,9 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     color: "#d2a8ff",
     contactCooldown: 0.55,
   },
-  "boss-lazarus-414": {
-    kind: "boss-lazarus-414",
-    name: "Lazarus Unit 414",
+  "boss-unit-414": {
+    kind: "boss-unit-414",
+    name: "Unit 414",
     emoji: "☠️",
     hp: 2800,
     speed: 78,
@@ -135,9 +135,9 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     isBoss: true,
     contactCooldown: 0.35,
   },
-  "boss-apt38": {
-    kind: "boss-apt38",
-    name: "APT38 Overlord",
+  "boss-nightdesk": {
+    kind: "boss-nightdesk",
+    name: "Nightdesk Overlord",
     emoji: "🐉",
     hp: 6500,
     speed: 82,
@@ -150,7 +150,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   },
   "boss-grandmaster": {
     kind: "boss-grandmaster",
-    name: "Lazarus Grandmaster",
+    name: "The Grandmaster",
     emoji: "💀",
     hp: 12000,
     speed: 90,
@@ -194,9 +194,9 @@ export const HORDE_WEIGHTS: { kind: EnemyKind; weight: number; minTime: number }
   { kind: "sim-swapper", weight: 22, minTime: 30 },
   { kind: "phishing-bot", weight: 26, minTime: 45 },
   { kind: "mev-searcher", weight: 20, minTime: 70 },
-  { kind: "lazarus-op", weight: 16, minTime: 120 },
+  { kind: "shadow-op", weight: 16, minTime: 120 },
   { kind: "bridge-drainer", weight: 14, minTime: 180 },
-  { kind: "oracle-witch", weight: 12, minTime: 220 },
+  { kind: "oracle-manipulator", weight: 12, minTime: 220 },
   { kind: "insider", weight: 10, minTime: 260 },
   { kind: "rug-dev", weight: 10, minTime: 300 },
 ];

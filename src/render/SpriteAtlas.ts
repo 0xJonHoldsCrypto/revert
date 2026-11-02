@@ -9,7 +9,7 @@ export type AtlasFrame = { u0: number; v0: number; u1: number; v1: number; aspec
 
 const ATLAS_SIZE = 2048;
 const PADDING = 2;
-const HEROES: CharacterId[] = ["cz", "elon", "sbf", "sec-dev"];
+const HEROES: CharacterId[] = ["keel", "nyx", "diff", "trace"];
 export const PROP_KINDS: CryptoProp[] = ["rack", "spool", "fan", "cone"];
 
 function opaqueBounds(source: HTMLCanvasElement) {

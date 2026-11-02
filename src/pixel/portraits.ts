@@ -1,7 +1,7 @@
 import type { CharacterId } from "../types";
 import { pick } from "../utils/math";
 
-export const STARTER_ROSTER: CharacterId[] = ["cz", "elon", "sbf", "sec-dev"];
+export const STARTER_ROSTER: CharacterId[] = ["keel", "nyx", "diff", "trace"];
 
 export function rollStarterCharacter(): CharacterId {
   return pick(STARTER_ROSTER);
@@ -70,7 +70,7 @@ const CZ: PixRow[] = [
   "........................",
 ];
 
-const ELON: PixRow[] = [
+const NYX: PixRow[] = [
   "........................",
   "..........hhhh..........",
   ".........hsssshh........",
@@ -95,7 +95,7 @@ const ELON: PixRow[] = [
   "........................",
 ];
 
-const SBF: PixRow[] = [
+const DIFF: PixRow[] = [
   "........................",
   "........hhhhhh..........",
   ".......hssssssh.........",
@@ -171,10 +171,10 @@ const HACKER: PixRow[] = [
 ];
 
 const sheets: Record<string, PixRow[]> = {
-  cz: CZ,
-  elon: ELON,
-  sbf: SBF,
-  "sec-dev": SEC,
+  keel: CZ,
+  nyx: NYX,
+  diff: DIFF,
+  "trace": SEC,
   hacker: HACKER,
 };
 
@@ -184,7 +184,7 @@ export function getPortraitCanvas(id: CharacterId | "hacker" | "researcher", siz
   const key = `${id}-${size}`;
   const cached = cache.get(key);
   if (cached) return cached;
-  const grid = sheets[id === "researcher" ? "sec-dev" : id] ?? sheets.cz!;
+  const grid = sheets[id === "researcher" ? "trace" : id] ?? sheets.keel!;
   const base = paint(grid, PAL, size);
   cache.set(key, base);
   return base;

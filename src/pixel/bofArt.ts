@@ -143,15 +143,15 @@ export function drawWell(ctx: CanvasRenderingContext2D, x: number, y: number, pr
 
 export function drawBiomeTile(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, biome: string, checker: boolean) {
   const palettes: Record<string, [string, string]> = {
-    wasteland: ["#2d4a2d", "#3d6c3d"],
-    cex: ["#3a3a52", "#4a4a68"],
-    defi: ["#1a3a4a", "#2a5a6a"],
-    apt: ["#3a2a4a", "#5a3a6a"],
+    mempool: ["#2d4a2d", "#3d6c3d"],
+    vault: ["#3a3a52", "#4a4a68"],
+    bridge: ["#1a3a4a", "#2a5a6a"],
+    forest: ["#3a2a4a", "#5a3a6a"],
   };
-  const [a, b] = palettes[biome] ?? palettes.wasteland!;
+  const [a, b] = palettes[biome] ?? palettes.mempool!;
   ctx.fillStyle = checker ? a : b;
   ctx.fillRect(x, y, size, size);
-  if (checker && biome === "defi") {
+  if (checker && biome === "bridge") {
     px(ctx, x + size / 2 - 2, y + size / 2 - 2, 4, 4, BOF.terminalGreen);
   }
 }

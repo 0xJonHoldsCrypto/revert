@@ -25,9 +25,9 @@ export type BossGimmick = "rewind" | "salute" | "modal" | "prices" | "pdf" | "ha
 
 export const BOSS_ENTRANCES: Partial<Record<EnemyKind, { title: string; line: string; gimmick: BossGimmick }>> = {
   "boss-mev-king": { title: "The Block Builder", line: "I saw that coming. Literally. I am one slot ahead of you.", gimmick: "rewind" },
-  "boss-lazarus-414": { title: "Withdrawal Division", line: "We mapped your withdrawal flow in March. Nobody read the ticket.", gimmick: "salute" },
+  "boss-unit-414": { title: "Withdrawal Division", line: "We mapped your withdrawal flow in March. Nobody read the ticket.", gimmick: "salute" },
   "boss-phish-king": { title: "Trusted Popup", line: "Relax. It only needs unlimited approval. Everybody signs.", gimmick: "modal" },
   "boss-oracle": { title: "Price Is A Suggestion", line: "Your collateral is worth whatever I say it is. Today: nothing.", gimmick: "prices" },
-  "boss-apt38": { title: "Senior Recruiter", line: "Loved your GitHub. Please open the attached offer letter.", gimmick: "pdf" },
+  "boss-nightdesk": { title: "Senior Recruiter", line: "Loved your GitHub. Please open the attached offer letter.", gimmick: "pdf" },
   "boss-grandmaster": { title: "The Final Patch", line: "Blocks stop when I say so. Say goodbye to finality.", gimmick: "halt" },
 };

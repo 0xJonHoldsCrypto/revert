@@ -7,10 +7,10 @@ const heroCache = new Map<string, HTMLCanvasElement>();
 const patchCache = new Map<string, HTMLCanvasElement>();
 
 const FIELD: Record<BiomeId, { base: string; light: string; dark: string; spec: string; dirt: string; scrub: string }> = {
-  wasteland: { base: "#6ea84a", light: "#8ec45e", dark: "#4e8434", spec: "#d8e88a", dirt: "#7a5a34", scrub: "#3e7a32" },
-  cex: { base: "#6a7048", light: "#8a9060", dark: "#4a5030", spec: "#d8d8a0", dirt: "#6a6244", scrub: "#545a30" },
-  defi: { base: "#3e8a78", light: "#5eaa96", dark: "#2a6858", spec: "#c8f0d8", dirt: "#3a6858", scrub: "#1e6454" },
-  apt: { base: "#6a4878", light: "#8a6898", dark: "#4a3058", spec: "#e0c8f0", dirt: "#5a4060", scrub: "#4a3068" },
+  mempool: { base: "#6ea84a", light: "#8ec45e", dark: "#4e8434", spec: "#d8e88a", dirt: "#7a5a34", scrub: "#3e7a32" },
+  vault: { base: "#6a7048", light: "#8a9060", dark: "#4a5030", spec: "#d8d8a0", dirt: "#6a6244", scrub: "#545a30" },
+  bridge: { base: "#3e8a78", light: "#5eaa96", dark: "#2a6858", spec: "#c8f0d8", dirt: "#3a6858", scrub: "#1e6454" },
+  forest: { base: "#6a4878", light: "#8a6898", dark: "#4a3058", spec: "#e0c8f0", dirt: "#5a4060", scrub: "#4a3068" },
 };
 
 function mixHash(x: number, y: number) {
@@ -121,10 +121,10 @@ export function paintGrassPatch(biome: BiomeId, variant = 0): HTMLCanvasElement 
 type Look = { hair: string; skin: string; shirt: string; pants: string; shoe: string; accent: string };
 
 const LOOK: Record<CharacterId, Look> = {
-  cz: { hair: "#1a120c", skin: "#e0b090", shirt: "#12362f", pants: "#1a1e24", shoe: "#111111", accent: "#2ee6c7" },
-  elon: { hair: "#2a2418", skin: "#e8c4a8", shirt: "#16181e", pants: "#243044", shoe: "#101014", accent: "#6cb6ff" },
-  sbf: { hair: "#3a2418", skin: "#f0c8a4", shirt: "#2a3140", pants: "#1c2128", shoe: "#141414", accent: "#f0c14d" },
-  "sec-dev": { hair: "#10141c", skin: "#e8c4a8", shirt: "#1a2438", pants: "#141820", shoe: "#0c0c0c", accent: "#9b8cff" },
+  keel: { hair: "#1a120c", skin: "#e0b090", shirt: "#12362f", pants: "#1a1e24", shoe: "#111111", accent: "#2ee6c7" },
+  nyx: { hair: "#2a2418", skin: "#e8c4a8", shirt: "#16181e", pants: "#243044", shoe: "#101014", accent: "#6cb6ff" },
+  diff: { hair: "#3a2418", skin: "#f0c8a4", shirt: "#2a3140", pants: "#1c2128", shoe: "#141414", accent: "#f0c14d" },
+  "trace": { hair: "#10141c", skin: "#e8c4a8", shirt: "#1a2438", pants: "#141820", shoe: "#0c0c0c", accent: "#9b8cff" },
 };
 
 export function getSideHero(id: CharacterId, step: number): HTMLCanvasElement {
@@ -188,9 +188,9 @@ function paintHero(id: CharacterId, step: number): HTMLCanvasElement {
   fillClump(data, w, h, 54, 30 + bob, 10, 11, skin, 0);
   fillClump(data, w, h, 42, 26 + bob, 11, 7, hair, -0.1);
   fillClump(data, w, h, 50, 20 + bob, 9, 5, hair, -0.2);
-  if (id === "sbf") fillClump(data, w, h, 62, 24 + bob, 6, 8, hair, 0);
-  if (id === "elon") fillClump(data, w, h, 38, 32 + bob, 5, 8, hair, 0.05);
-  if (id === "sec-dev" || id === "cz") {
+  if (id === "diff") fillClump(data, w, h, 62, 24 + bob, 6, 8, hair, 0);
+  if (id === "nyx") fillClump(data, w, h, 38, 32 + bob, 5, 8, hair, 0.05);
+  if (id === "trace" || id === "keel") {
     fillClump(data, w, h, 58, 30 + bob, 8, 3.2, accent, -0.35);
     putPx(data, w, h, 62, 30 + bob, "#f4feff");
   } else {
