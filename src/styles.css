@@ -1,0 +1,353 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #070910;
+  color: #e8eef8;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+
+#ui {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: pixelated;
+  z-index: 1;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#overlay.interactive {
+  pointer-events: auto;
+}
+
+.overlay-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8, 12, 18, 0.82) 0%, rgba(5, 7, 12, 0.94) 100%);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+
+.panel-card {
+  max-width: min(920px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 2rem;
+  border: 1px solid #2a3548;
+  border-radius: 16px;
+  background: linear-gradient(165deg, #141a26 0%, #0c1018 100%);
+  box-shadow: 0 0 48px rgba(46, 230, 199, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.upgrade-card.rarity-rare { border-color: #6cb6ff; }
+.upgrade-card.rarity-epic { border-color: #9b8cff; }
+.upgrade-card.rarity-legendary { border-color: #f0c14d; box-shadow: 0 0 16px rgba(240, 193, 77, 0.22); }
+.upgrade-card.rarity-uncommon { border-color: #2ee6c7; }
+
+.rarity-tag {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93a0b5;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.rarity-legendary .rarity-tag { color: #f0c14d; }
+.rarity-epic .rarity-tag { color: #9b8cff; }
+.rarity-rare .rarity-tag { color: #6cb6ff; }
+.rarity-uncommon .rarity-tag { color: #2ee6c7; }
+
+.panel-card h1 {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: #e8eef8;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.panel-card .tagline {
+  text-align: center;
+  color: #8b949e;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.char-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.char-card {
+  padding: 1rem;
+  border: 1px solid #2a3548;
+  border-radius: 12px;
+  background: #121826;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  text-align: left;
+}
+
+.char-card:hover {
+  border-color: #58a6ff;
+  transform: translateY(-2px);
+}
+
+.char-card.selected {
+  border-color: #f0b429;
+  box-shadow: 0 0 20px rgba(240, 180, 41, 0.25);
+}
+
+.char-card h3 {
+  font-size: 1rem;
+  margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.char-card .role {
+  font-size: 0.75rem;
+  color: #58a6ff;
+  margin-bottom: 0.5rem;
+}
+
+.char-card p {
+  font-size: 0.8rem;
+  color: #8b949e;
+  line-height: 1.4;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.btn {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  padding: 0.75rem 1.15rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.1s, filter 0.15s;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, #3df0d2 0%, #14b89a 100%);
+  color: #07120f;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn-secondary {
+  background: #161c28;
+  color: #e8eef8;
+  border: 1px solid #2a3548;
+}
+
+.controls-hint {
+  margin-top: 1.25rem;
+  font-size: 0.75rem;
+  color: #6e7681;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.upgrade-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.upgrade-card {
+  padding: 1rem 1.25rem;
+  border: 1px solid #2a3548;
+  border-radius: 12px;
+  background: #121826;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upgrade-card:hover {
+  border-color: #2ee6c7;
+  background: #172033;
+}
+
+.upgrade-card h4 {
+  color: #e8eef8;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.upgrade-card p {
+  font-size: 0.8rem;
+  color: #8b949e;
+}
+
+.wordmark {
+  position: absolute;
+  top: 0.7rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-size: 1rem;
+  color: #e8eef8;
+  pointer-events: none;
+}
+
+.wordmark span {
+  color: #2ee6c7;
+}
+
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 2.4rem 1.25rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  pointer-events: none;
+  font-size: 0.8rem;
+}
+
+.hud-block {
+  background: rgba(10, 14, 22, 0.82);
+  border: 1px solid rgba(46, 230, 199, 0.28);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  min-width: 140px;
+}
+
+.hud-block strong {
+  display: block;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: #2ee6c7;
+  margin-bottom: 0.35rem;
+}
+
+.bar {
+  height: 8px;
+  background: #21262d;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.15s ease-out;
+}
+
+.bar-fill.hp {
+  background: linear-gradient(90deg, #f85149, #ff7b72);
+}
+
+.bar-fill.xp {
+  background: linear-gradient(90deg, #a371f7, #58a6ff);
+}
+
+.pause-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+  color: #e8eef8;
+  text-shadow: 0 0 24px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  text-align: center;
+}
+
+#touch-zones {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.touch-zone {
+  position: absolute;
+  bottom: 0;
+  height: 45%;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+.touch-zone.left {
+  left: 0;
+  width: 55%;
+  background: linear-gradient(90deg, #58a6ff, transparent);
+}
+
+.touch-zone.right {
+  right: 0;
+  width: 45%;
+  background: linear-gradient(-90deg, #f0b429, transparent);
+}
+
+@media (max-width: 600px) {
+  .panel-card {
+    padding: 1.25rem;
+  }
+}

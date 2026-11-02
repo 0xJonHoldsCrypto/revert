@@ -1,0 +1,68 @@
+import type { CharacterDef } from "../types";
+
+export const CHARACTERS: CharacterDef[] = [
+  {
+    id: "cz",
+    name: "Keel",
+    emoji: "⌨️",
+    role: "Protocol Engineer",
+    blurb: "Ships the patch. A wide chain-whip and extra damage.",
+    color: "#2ee6c7",
+    accent: "#14302c",
+    maxHp: 120,
+    moveSpeed: 210,
+    damageMult: 1.12,
+    xpMult: 1,
+    dashCooldown: 2.4,
+    startWeapon: "bnb-whip",
+  },
+  {
+    id: "elon",
+    name: "Nyx",
+    emoji: "📡",
+    role: "Mempool Watcher",
+    blurb: "Reads the dark pool. Fast, and the pulse hits first.",
+    color: "#6cb6ff",
+    accent: "#102030",
+    maxHp: 105,
+    moveSpeed: 218,
+    damageMult: 1.15,
+    xpMult: 1.05,
+    dashCooldown: 2.1,
+    startWeapon: "memo-pulse",
+  },
+  {
+    id: "sbf",
+    name: "Diff",
+    emoji: "🩹",
+    role: "Whitehat",
+    blurb: "Fragile, precise. Findings land harder.",
+    color: "#e8eef8",
+    accent: "#1a1e28",
+    maxHp: 85,
+    moveSpeed: 205,
+    damageMult: 1.28,
+    xpMult: 0.95,
+    dashCooldown: 2.5,
+    startWeapon: "audit-dart",
+  },
+  {
+    id: "sec-dev",
+    name: "Trace",
+    emoji: "🛡️",
+    role: "Incident Responder",
+    blurb: "On call. Audit darts and more XP while you learn the chain.",
+    color: "#9b8cff",
+    accent: "#1a1830",
+    maxHp: 110,
+    moveSpeed: 200,
+    damageMult: 1,
+    xpMult: 1.25,
+    dashCooldown: 2.3,
+    startWeapon: "audit-dart",
+  },
+];
+
+export function getCharacter(id: string): CharacterDef {
+  return CHARACTERS.find((c) => c.id === id) ?? CHARACTERS[0]!;
+}

@@ -1,0 +1,168 @@
+import type { ChestKind, EnvObstacleKind, WeaponKind } from "../types";
+import type { WeaponRarity } from "./rarity";
+
+export type BiomeId = "wasteland" | "cex" | "defi" | "apt";
+
+export interface EnvObstacleDef {
+  kind: EnvObstacleKind;
+  name: string;
+  width: number;
+  height: number;
+  blocks: boolean;
+  slowMult?: number;
+  damagePerSec?: number;
+  color: string;
+  biome: BiomeId[];
+}
+
+export interface ChestDef {
+  kind: ChestKind;
+  name: string;
+  radius: number;
+  openTime: number;
+  minRarity: WeaponRarity;
+  color: string;
+  coinCost: number;
+}
+
+export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
+  "rug-pool": {
+    kind: "rug-pool",
+    name: "Rug Pool",
+    width: 96,
+    height: 64,
+    blocks: false,
+    slowMult: 0.45,
+    damagePerSec: 6,
+    color: "#f778ba",
+    biome: ["wasteland", "defi"],
+  },
+  "gas-gate": {
+    kind: "gas-gate",
+    name: "Gas Gate",
+    width: 48,
+    height: 120,
+    blocks: true,
+    color: "#ffa657",
+    biome: ["cex", "defi"],
+  },
+  "kyc-wall": {
+    kind: "kyc-wall",
+    name: "KYC Wall",
+    width: 140,
+    height: 40,
+    blocks: true,
+    color: "#79c0ff",
+    biome: ["cex"],
+  },
+  "liquidation-spike": {
+    kind: "liquidation-spike",
+    name: "Liquidation Spike",
+    width: 56,
+    height: 56,
+    blocks: true,
+    damagePerSec: 12,
+    color: "#f85149",
+    biome: ["defi", "apt"],
+  },
+  "sandwich-bot": {
+    kind: "sandwich-bot",
+    name: "Sandwich Bot",
+    width: 72,
+    height: 48,
+    blocks: false,
+    slowMult: 0.7,
+    color: "#d2a8ff",
+    biome: ["wasteland", "cex"],
+  },
+  honeypot: {
+    kind: "honeypot",
+    name: "Honeypot",
+    width: 70,
+    height: 70,
+    blocks: false,
+    damagePerSec: 16,
+    color: "#ff5d7a",
+    biome: ["defi", "apt", "wasteland"],
+  },
+  "mempool-fog": {
+    kind: "mempool-fog",
+    name: "Mempool Fog",
+    width: 120,
+    height: 90,
+    blocks: false,
+    slowMult: 0.55,
+    color: "#6cb6ff",
+    biome: ["cex", "defi", "apt"],
+  },
+};
+
+export const CHESTS: Record<ChestKind, ChestDef> = {
+  "cold-wallet": {
+    kind: "cold-wallet",
+    name: "Cold Wallet Cache",
+    radius: 52,
+    openTime: 1.15,
+    minRarity: "uncommon",
+    color: "#58a6ff",
+    coinCost: 5,
+  },
+  "defi-lootbox": {
+    kind: "defi-lootbox",
+    name: "DeFi Loot Box",
+    radius: 58,
+    openTime: 1.35,
+    minRarity: "rare",
+    color: "#a371f7",
+    coinCost: 12,
+  },
+  "validator-crate": {
+    kind: "validator-crate",
+    name: "Validator Crate",
+    radius: 64,
+    openTime: 1.6,
+    minRarity: "epic",
+    color: "#f0b429",
+    coinCost: 25,
+  },
+  "airdrop-pod": {
+    kind: "airdrop-pod",
+    name: "Airdrop Pod",
+    radius: 48,
+    openTime: 0.95,
+    minRarity: "common",
+    color: "#2ee6c7",
+    coinCost: 3,
+  },
+  "grant-safe": {
+    kind: "grant-safe",
+    name: "Grant Safe",
+    radius: 60,
+    openTime: 1.45,
+    minRarity: "rare",
+    color: "#f0c14d",
+    coinCost: 18,
+  },
+};
+
+export const CHEST_WEAPON_POOL: WeaponKind[] = [
+  "audit-dart",
+  "rug-coin",
+  "memo-pulse",
+  "eth-beam",
+  "bnb-whip",
+  "stable-shield",
+  "alameda-burst",
+  "flash-loan",
+  "validator-seal",
+  "bridge-bolt",
+  "nonce-shard",
+];
+
+export function biomeAt(x: number, y: number): BiomeId {
+  if (x < 1600 && y < 1600) return "wasteland";
+  if (x >= 3200) return "cex";
+  if (y >= 3200) return "defi";
+  if (x >= 1600 && y >= 1600 && x < 3200 && y < 3200) return "apt";
+  return "wasteland";
+}
