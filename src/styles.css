@@ -494,7 +494,8 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 1px 
 .menu-card .btn { width: 100%; }
 .postmortem h1 { font-family: var(--display); }
 .hud-funds label, .hud-block-clock label { font-family: var(--mono); }
-.hud-funds strong, .hud-block-clock strong, .hud-stats strong, .hud-banner strong, .pm-hero strong { font-family: var(--display); }
+.hud-banner strong { font-family: var(--display); }
+.hud-funds strong, .hud-block-clock strong, .hud-stats strong, .pm-hero strong { font-family: var(--mono); font-weight: 700; }
 .hud-funds, .hud-block-clock, .hud-stats, .hud-loadout, .hud-feed { background: var(--plate); border: 1px solid var(--line); }
 @media (max-width: 860px) {
   .t-dock { flex-direction: column; align-items: stretch; padding: 8px; gap: 8px; }
