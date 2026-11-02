@@ -17,7 +17,8 @@ import { rarityDamageMult } from "../data/rarity";
 import { EVOLUTIONS, weaponAtLevel, WEAPONS } from "../data/weapons";
 import type { Input } from "../engine/Input";
 import { CutsceneEngine, type CutsceneId } from "../cutscene/CutsceneEngine";
-import { MusicDirector } from "../audio/ChipSynth";
+import { AudioEngine } from "../audio/AudioEngine";
+import type { MusicTrackId } from "../audio/music";
 import { generateWorld } from "./worldGen";
 import { CHESTS } from "../data/environment";
 import { HashItem, SpatialHash } from "../physics/SpatialHash";
@@ -30,6 +31,7 @@ import { SIDEKICKS } from "../data/sidekicks";
 import { TIMED_BUFFS, TIMED_BUFF_ORDER, type TimedBuffKind } from "../data/timedBuffs";
 import { WELL_STATS, type WellStatId } from "../data/wells";
 import { readViewport } from "../render/viewport";
+import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE, type Cinematic } from "./cinematic";
 import { groundHalfExtents } from "../render/view";
 import type {
   CharacterId,
@@ -38,6 +40,8 @@ import type {
   GamePhase,
   Orbiter,
   Floater,
+  Corpse,
+  Shockwave,
   Particle,
   Pickup,
   PlayerState,
@@ -67,8 +71,13 @@ import {
 const PLAYER_HIT_RADIUS = 11;
 const ENEMY_HIT_SCALE = 0.8;
 const HUD_TICKS = 6;
+const AOE_COLOR: Partial<Record<WeaponKind, string>> = { "bnb-whip": "#ffd166", "memo-pulse": "#b58cff", "flash-loan": "#ffb020" };
+const DASH_BUFFER_SEC = 0.1;
+const SEPARATION_STRENGTH = 42;
+const KNOCKBACK = 170;
+const KNOCKBACK_DECAY = 9;
+const MAX_PARTICLES = 420;
 const CUTSCENE_SKIP_HOLD_SEC = 1;
-const CUTSCENE_TAP_MAX_SEC = 0.35;
 
 let nextId = 1;
 function uid(): number {
@@ -127,8 +136,19 @@ export class Game {
   shake = 0;
 
   readonly recorder = new RunRecorder();
-  private music = new MusicDirector();
+  readonly audio = new AudioEngine();
   private spatial = new SpatialHash();
+  private enemyById = new Map<number, Enemy>();
+  private simTick = 0;
+  private dashBuffer = 0;
+  private dying = 0;
+  cinematic: Cinematic | null = null;
+  shockwaves: Shockwave[] = [];
+  corpses: Corpse[] = [];
+  hitstop = 0;
+  impactFrames = 0;
+  hurtPulse = 0;
+  cameraFocus: { x: number; y: number; weight: number } | null = null;
   private collisionScratch: HashItem[] = [];
 
   private maxHpBonus = 0;
@@ -143,7 +163,10 @@ export class Game {
     private canvas: HTMLCanvasElement,
     private input: Input,
     private cb: GameCallbacks
-  ) {}
+  ) {
+    this.cutscene.setAudio(this.audio);
+    this.audio.setMusic("title");
+  }
 
   selectCharacter(id: CharacterId) {
     this.selectedCharacter = id;
@@ -157,9 +180,13 @@ export class Game {
   requestStartRun(fromTitle = false) {
     if (!fromTitle) this.rollMenuHero();
     this.selectCharacter(this.menuHero);
-    this.cutscene.setHero(this.menuHero);
-    this.setPhase("cutscene");
-    this.cutscene.play("intro", () => this.startRun());
+    this.audio.unlock();
+    if (fromTitle) {
+      this.setPhase("cutscene");
+      this.cutscene.play("intro", () => this.startRun());
+    } else {
+      this.startRun();
+    }
   }
 
   startRun() {
@@ -218,24 +245,30 @@ export class Game {
     this.maxHpBonus = 0;
     this.upgradeCounts.clear();
     this.recorder.reset();
-    this.setPhase("playing");
+    this.shockwaves = [];
+    this.corpses = [];
+    this.hitstop = 0;
+    this.impactFrames = 0;
+    this.hurtPulse = 0;
+    this.dying = 0;
+    this.dashBuffer = 0;
+    this.cameraFocus = null;
     this.input.focus();
     this.syncOrbiters();
+    this.beginLanding();
   }
 
   setPhase(phase: GamePhase) {
     this.phase = phase;
     this.input.clearEdges();
     this.cutsceneHold = 0;
-    if (phase === "menu" || phase === "won" || phase === "lost" || phase === "paused") this.music.stop();
-    if (phase === "menu") this.rollMenuHero();
-    if (phase === "playing") {
-      this.music.start();
-      this.music.resume();
+    if (phase === "menu") {
+      this.rollMenuHero();
+      this.audio.setMusic("title");
     }
-    if (phase === "cutscene") {
-      this.music.resume();
-    }
+    if (phase === "lost") this.audio.setMusic("gameOver", true);
+    this.audio.duck(phase === "paused" || phase === "levelup");
+    if (phase === "playing") this.syncMusic();
     this.cb.onPhaseChange(phase);
     this.pushHud();
   }
@@ -265,6 +298,7 @@ export class Game {
       up.apply(ctx);
     }
     this.upgradeCounts.set(up.id, (this.upgradeCounts.get(up.id) ?? 0) + 1);
+    this.audio.play(up.id.startsWith("upgrade-") && up.title.indexOf("·") < 0 ? "evolve" : "cardSelect");
     this.syncOrbiters();
     this.setPhase("playing");
   }
@@ -313,13 +347,24 @@ export class Game {
       this.player.hp += 5;
       return;
     }
+    this.audio.play("levelUp");
     this.setPhase("levelup");
     this.cb.onLevelUpChoices(this.levelUpChoices);
   }
 
   update(dt: number) {
+    this.simTick++;
+    if (this.impactFrames > 0) this.impactFrames--;
+    if (this.hurtPulse > 0) this.hurtPulse = Math.max(0, this.hurtPulse - dt * 2.4);
+    if (this.input.consumeMute()) this.audio.toggleMute();
+
     if (this.phase === "menu") {
       if (this.input.consumeConfirm()) this.requestStartRun(true);
+      return;
+    }
+
+    if (this.phase === "cinematic") {
+      this.updateCinematic(dt);
       return;
     }
 
@@ -336,12 +381,30 @@ export class Game {
     }
 
     if (this.phase === "won" || this.phase === "lost") {
-      if (this.input.consumeRestart()) this.requestStartRun();
+      if (this.input.consumeRestart()) {
+        this.audio.play("ui");
+        this.requestStartRun();
+      }
       return;
     }
 
-    if (this.input.consumePause()) this.togglePause();
+    if (this.dying <= 0 && this.input.consumePause()) this.togglePause();
     if (this.phase === "paused") return;
+
+    if (this.hitstop > 0) {
+      this.hitstop -= dt;
+      if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 1.5);
+      return;
+    }
+
+    if (this.dying > 0) {
+      this.dying -= dt;
+      if (this.dying <= 0) {
+        this.setPhase("lost");
+        return;
+      }
+      dt *= 0.18;
+    }
 
     this.snapshotPositions();
     this.elapsed += dt;
@@ -351,23 +414,24 @@ export class Game {
       this.victoryPending = true;
       this.setPhase("cutscene");
       this.cutscene.play("victory", () => this.setPhase("won"));
+      this.audio.play("txConfirmed");
       return;
     }
 
-    this.updatePlayer(dt);
+    if (this.dying <= 0) this.updatePlayer(dt);
     this.updateWells(dt);
     this.updateChests(dt);
     this.updateSidekick(dt);
     this.updateSpawner(dt);
     this.rebuildEnemySpatial();
     this.updateEnemies(dt);
-    this.updateWeapons(dt);
+    if (this.dying <= 0) this.updateWeapons(dt);
     this.updateProjectiles(dt);
     this.updateOrbiters(dt);
     this.updatePickups(dt);
     this.updateParticles(dt);
     this.updateYield(dt);
-    this.music.updateRegion(biomeAt(this.player.x, this.player.y));
+    this.syncMusic();
     const mv = this.input.moveVector();
     this.recorder.sample(this.elapsed, mv.x, mv.y, false);
     this.checkBossSchedule();
@@ -375,10 +439,147 @@ export class Game {
     if (++this.hudTick % HUD_TICKS === 0) this.pushHud();
 
     if (this.god) this.player.hp = this.player.maxHp;
-    if (this.player.hp <= 0) {
+    if (this.player.hp <= 0 && this.dying <= 0) {
       this.player.hp = 0;
       this.player.dead = true;
-      this.setPhase("lost");
+      this.player.invuln = 99;
+      this.dying = 0.75;
+      this.impactFrames = 6;
+      this.addTrauma(0.9);
+      this.audio.play("death");
+      this.audio.setMusic(null, true);
+      this.burstParticles(this.player.x, this.player.y, "#ff5d7a", 28);
+    }
+  }
+
+  addTrauma(amount: number) {
+    this.shake = Math.min(1, Math.max(this.shake, amount));
+  }
+
+  private syncMusic() {
+    if (!this.player) return;
+    const boss = this.enemies.some((e) => !e.dead && ENEMIES[e.kind].isBoss);
+    const zone: Record<string, MusicTrackId> = { wasteland: "mempool", cex: "vault", defi: "bridge", apt: "forest" };
+    this.audio.setMusic(boss ? "boss" : zone[biomeAt(this.player.x, this.player.y)]!);
+  }
+
+  private beginLanding() {
+    this.cinematic = { kind: "landing", t: 0, flash: 1, step: 0 };
+    this.player.lift = 300;
+    this.setPhase("cinematic");
+  }
+
+  private beginBossEntrance(kind: EnemyKind) {
+    const p = this.player;
+    this.spawnBoss(kind);
+    const boss = this.enemies[this.enemies.length - 1]!;
+    const side = p.x > WORLD.width - 500 ? -1 : 1;
+    boss.x = clamp(p.x + side * 300, boss.radius, WORLD.width - boss.radius);
+    boss.y = clamp(p.y - 60, boss.radius, WORLD.height - boss.radius);
+    boss.px = boss.x;
+    boss.py = boss.y;
+    boss.lift = 420;
+    this.cinematic = { kind: "boss", t: 0, flash: 0, step: 0, bossId: boss.id, bossKind: kind };
+    this.cameraFocus = { x: boss.x, y: boss.y, weight: 0 };
+    this.setPhase("cinematic");
+    this.audio.setMusic(null, true);
+  }
+
+  private endCinematic() {
+    if (this.cinematic?.kind === "boss") this.shake = Math.max(this.shake, 0.1);
+    this.cinematic = null;
+    this.cameraFocus = null;
+    if (this.player) this.player.lift = 0;
+    this.setPhase("playing");
+  }
+
+  private updateCinematic(dt: number) {
+    const c = this.cinematic;
+    if (!c) {
+      this.setPhase("playing");
+      return;
+    }
+    this.updateParticles(dt);
+    this.updateShockwaves(dt);
+    if (this.hitstop > 0) {
+      this.hitstop -= dt;
+      return;
+    }
+    c.t += dt;
+    this.updateCutsceneHold(dt, () => this.endCinematic());
+    if (!this.cinematic) return;
+    if (c.kind === "landing") this.updateLanding(c);
+    else this.updateBossEntrance(c);
+  }
+
+  private updateLanding(c: Cinematic) {
+    const T = LANDING_TIMELINE;
+    const p = this.player;
+    c.flash = Math.max(0, 1 - c.t / T.flashFade);
+    if (c.t < T.drop) {
+      const f = c.t / T.drop;
+      p.lift = 300 * (1 - f * f);
+      return;
+    }
+    p.lift = 0;
+    if (c.step === 0) {
+      c.step = 1;
+      this.audio.play("thud");
+      this.addTrauma(0.75);
+      this.burstParticles(p.x, p.y, "#c8d4e8", 22);
+      this.shockwaves.push({ x: p.x, y: p.y, radius: 95, life: 0.4, maxLife: 0.4, color: "#c8e8ff" });
+    }
+    if (c.step === 1 && c.t > T.skitter) {
+      c.step = 2;
+      this.audio.play("skitter");
+    }
+    if (c.t >= T.end) this.endCinematic();
+  }
+
+  private updateBossEntrance(c: Cinematic) {
+    const T = BOSS_TIMELINE;
+    const boss = this.enemies.find((e) => e.id === c.bossId);
+    if (!boss) {
+      this.endCinematic();
+      return;
+    }
+    const focus = this.cameraFocus;
+    if (focus) {
+      if (c.t < T.taunt + T.tauntHold) focus.weight = Math.min(1, c.t / 0.5);
+      else focus.weight = Math.max(0, 1 - (c.t - T.taunt - T.tauntHold) / T.barsOut);
+    }
+    if (c.t < T.drop) {
+      boss.lift = 420;
+    } else if (c.t < T.impact) {
+      const f = (c.t - T.drop) / (T.impact - T.drop);
+      boss.lift = 420 * (1 - f * f);
+    } else {
+      boss.lift = 0;
+    }
+    if (c.step === 0 && c.t >= T.impact) {
+      c.step = 1;
+      this.impactFrames = 8;
+      this.hitstop = 0.1;
+      this.addTrauma(0.85);
+      this.audio.play("bossSpawn");
+      this.audio.setMusic("boss", true);
+      this.burstParticles(boss.x, boss.y, ENEMIES[boss.kind].color, 44);
+      this.shockwaves.push({ x: boss.x, y: boss.y, radius: 300, life: 0.7, maxLife: 0.7, color: ENEMIES[boss.kind].color });
+    }
+    if (c.t >= T.taunt && c.t < T.taunt + T.tauntHold && this.simTick % 3 === 0) {
+      const line = BOSS_ENTRANCES[boss.kind]?.line ?? "";
+      if (Math.floor((c.t - T.taunt) * T.typeCps) < line.length) this.audio.play("blip");
+    }
+    if (c.t >= T.taunt + T.tauntHold + T.barsOut) this.endCinematic();
+  }
+
+  private updateCutsceneHold(dt: number, skip: () => void) {
+    this.input.consumePause();
+    if (this.input.advanceHeld) {
+      this.cutsceneHold += dt;
+      if (this.cutsceneHold >= CUTSCENE_SKIP_HOLD_SEC) skip();
+    } else {
+      this.cutsceneHold = 0;
     }
   }
 
@@ -401,15 +602,7 @@ export class Game {
   }
 
   private updateCutsceneInput(dt: number) {
-    this.input.consumePause();
-    if (this.input.advanceHeld) {
-      this.cutsceneHold += dt;
-      if (this.cutsceneHold >= CUTSCENE_SKIP_HOLD_SEC) this.cutscene.skip();
-      return;
-    }
-    const tapped = this.cutsceneHold > 0 && this.cutsceneHold < CUTSCENE_TAP_MAX_SEC;
-    this.cutsceneHold = 0;
-    if (tapped) this.cutscene.advance();
+    this.updateCutsceneHold(dt, () => this.cutscene.skip());
   }
 
   private victoryReady(): boolean {
@@ -438,7 +631,11 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      if (this.input.consumeDash() && p.dashCooldown <= 0) {
+      if (this.input.consumeDash()) this.dashBuffer = DASH_BUFFER_SEC;
+      else if (this.dashBuffer > 0) this.dashBuffer -= dt;
+      if (this.dashBuffer > 0 && p.dashCooldown <= 0) {
+        this.dashBuffer = 0;
+        this.audio.play("dash");
         const dashDir =
           n.x !== 0 || n.y !== 0
             ? n
@@ -591,6 +788,7 @@ export class Game {
       if (w.channelProgress < 1.35) continue;
       w.used = true;
       w.channelProgress = 0;
+      this.audio.play("txConfirmed");
       this.applyWellBonus(w.stat);
       this.ringParticle(w.x, w.y, w.radius, "#58a6ff");
     }
@@ -646,6 +844,8 @@ export class Game {
       if (c.openProgress < def.openTime) continue;
       c.opened = true;
       p.coins -= c.coinCost;
+      this.audio.play("jackpot");
+      this.addTrauma(0.4);
       const loot = rollChestLoot(def.minRarity, biomeAt(c.x, c.y));
       this.applyChestLoot(loot);
       this.burstParticles(c.x, c.y, def.color, 14);
@@ -654,15 +854,6 @@ export class Game {
 
   private weaponDamageScale(w: WeaponInstance, baseDamage: number): number {
     return baseDamage * this.player.damageMult * this.buffMult("damage") * rarityDamageMult(w.rarity);
-  }
-
-  private bossCutsceneFor(kind: EnemyKind): CutsceneId {
-    if (kind === "boss-mev-king") return "boss-mev";
-    if (kind === "boss-lazarus-414") return "boss-414";
-    if (kind === "boss-phish-king") return "boss-phish";
-    if (kind === "boss-oracle") return "boss-oracle";
-    if (kind === "boss-apt38") return "boss-apt";
-    return "boss-grand";
   }
 
   private diffMult() {
@@ -735,16 +926,8 @@ export class Game {
     if (this.bossesSpawned >= BOSS_TIMES.length) return;
     if (this.elapsed < BOSS_TIMES[this.bossesSpawned]!) return;
     const kind = BOSS_KINDS[this.bossesSpawned]! as EnemyKind;
-    this.pendingBossKind = kind;
     this.bossesSpawned++;
-    this.setPhase("cutscene");
-    this.cutscene.play(this.bossCutsceneFor(kind), () => {
-      if (!this.pendingBossKind) return;
-      this.spawnBoss(this.pendingBossKind);
-      this.pendingBossKind = null;
-      this.shake = 0.5;
-      this.setPhase("playing");
-    });
+    this.beginBossEntrance(kind);
   }
 
   private spawnBoss(kind: EnemyKind) {
@@ -777,13 +960,13 @@ export class Game {
   }
 
   debugSpawnBoss(kind: EnemyKind) {
-    this.spawnBoss(kind);
+    this.beginBossEntrance(kind);
   }
 
   debugPlayCutscene(id: CutsceneId) {
     const back = this.phase;
     this.setPhase("cutscene");
-    this.cutscene.play(id, () => this.setPhase(back === "menu" ? "menu" : "playing"));
+    this.cutscene.play(id, () => this.setPhase(back === "playing" ? "playing" : "menu"));
   }
 
   private updateYield(dt: number) {
@@ -799,9 +982,11 @@ export class Game {
 
   private rebuildEnemySpatial() {
     this.spatial.clear();
+    this.enemyById.clear();
     for (const e of this.enemies) {
       if (e.dead) continue;
       this.spatial.insert({ id: e.id, x: e.x, y: e.y, radius: e.radius });
+      this.enemyById.set(e.id, e);
     }
   }
 
@@ -815,13 +1000,25 @@ export class Game {
       const ang = angleBetween(e.x, e.y, p.x, p.y);
       e.x += Math.cos(ang) * e.speed * dt;
       e.y += Math.sin(ang) * e.speed * dt;
+      if (e.kx || e.ky) {
+        e.x += (e.kx ?? 0) * dt;
+        e.y += (e.ky ?? 0) * dt;
+        const decay = Math.exp(-KNOCKBACK_DECAY * dt);
+        e.kx = (e.kx ?? 0) * decay;
+        e.ky = (e.ky ?? 0) * decay;
+        if (Math.abs(e.kx) < 2 && Math.abs(e.ky) < 2) {
+          e.kx = 0;
+          e.ky = 0;
+        }
+      }
+      if ((e.id + this.simTick) % 2 === 0) this.separate(e, dt);
 
       if (e.contactCd > 0) e.contactCd -= dt;
     }
 
     const nearby = this.spatial.query(p.x, p.y, p.radius + 52, this.collisionScratch);
     for (const item of nearby) {
-      const e = this.enemies.find((x) => x.id === item.id);
+      const e = this.enemyById.get(item.id);
       if (!e || e.dead) continue;
       const def = ENEMIES[e.kind];
       if (p.invuln > 0 || e.contactCd > 0) continue;
@@ -830,11 +1027,40 @@ export class Game {
       p.hp -= dmg;
       p.invuln = 0.45;
       e.contactCd = def.contactCooldown ?? 0.5;
-      this.shake = 0.25;
-      this.burstParticles(p.x, p.y, COLORS.danger, 6);
+      this.addTrauma(clamp(0.25 + (dmg / p.maxHp) * 2, 0.25, 0.7));
+      this.hurtPulse = 1;
+      this.hitstop = Math.max(this.hitstop, 0.04);
+      this.audio.play("hurt");
+      this.burstParticles(p.x, p.y, COLORS.danger, 10);
     }
 
     this.enemies = this.enemies.filter((e) => !e.dead);
+  }
+
+  private separate(e: Enemy, dt: number) {
+    const nearby = this.spatial.query(e.x, e.y, e.radius + 24, this.collisionScratch);
+    let pushX = 0;
+    let pushY = 0;
+    for (const other of nearby) {
+      if (other.id === e.id) continue;
+      const dx = e.x - other.x;
+      const dy = e.y - other.y;
+      const minD = (e.radius + other.radius) * 0.8;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= minD * minD) continue;
+      if (d2 < 0.01) {
+        pushX += (e.id % 7) - 3;
+        pushY += (e.id % 5) - 2;
+        continue;
+      }
+      const d = Math.sqrt(d2);
+      const force = 1 - d / minD;
+      pushX += (dx / d) * force;
+      pushY += (dy / d) * force;
+    }
+    const scale = (ENEMIES[e.kind].isBoss ? 0.1 : 1) * SEPARATION_STRENGTH * 2 * dt;
+    e.x += pushX * scale;
+    e.y += pushY * scale;
   }
 
   private nearestEnemy(x: number, y: number, range: number): Enemy | undefined {
@@ -866,10 +1092,13 @@ export class Game {
         const dmg = this.weaponDamageScale(w, def.damage);
         const radius = (def.aoe ?? def.range) * (w.evolved ? 1.35 : 1);
         this.aoeHit(p.x, p.y, radius, dmg, w.kind);
-        this.ringParticle(p.x, p.y, radius, WEAPONS[w.kind].kind === "memo-pulse" ? COLORS.purple : COLORS.gold);
+        const color = AOE_COLOR[w.kind] ?? COLORS.gold;
+        const arc = w.kind === "bnb-whip" ? p.facing : undefined;
+        this.shockwaves.push({ x: p.x, y: p.y, radius, life: 0.28, maxLife: 0.28, color, arc });
+        this.audio.play("pulse");
         if (w.evolved) {
           this.aoeHit(p.x, p.y, radius * 0.62, dmg * 0.7, w.kind);
-          this.ringParticle(p.x, p.y, radius * 0.62, COLORS.gold);
+          this.shockwaves.push({ x: p.x, y: p.y, radius: radius * 0.62, life: 0.22, maxLife: 0.22, color, arc: arc === undefined ? undefined : arc + Math.PI });
         }
         continue;
       }
@@ -930,6 +1159,7 @@ export class Game {
       life: def.range / speed + 0.5,
       pierce: def.pierce ?? 0,
       fromPlayer: true,
+      weaponKind: kind,
       color: colors[kind] ?? "#58a6ff",
       homing: kind === "audit-dart" && simRandom() < 0.3,
       targetId,
@@ -940,7 +1170,7 @@ export class Game {
     for (const e of this.enemies) {
       if (e.dead) continue;
       if (dist(x, y, e.x, e.y) < radius + e.radius) {
-        this.damageEnemy(e, damage);
+        this.damageEnemy(e, damage, e.x - x, e.y - y);
       }
     }
   }
@@ -965,13 +1195,15 @@ export class Game {
       pr.y += pr.vy * dt;
 
       if (pr.fromPlayer) {
-        const nearby = this.spatial.query(pr.x, pr.y, pr.radius + 32, this.collisionScratch);
+        const nearby = this.spatial.query(pr.x, pr.y, pr.radius + 44, this.collisionScratch);
         for (const item of nearby) {
-          const e = this.enemies.find((x) => x.id === item.id);
+          const e = this.enemyById.get(item.id);
           if (!e || e.dead) continue;
+          if (pr.hitIds?.includes(e.id)) continue;
           if (!rectsOverlap(pr.x, pr.y, pr.radius, e.x, e.y, e.radius)) continue;
-          this.damageEnemy(e, pr.damage);
-          this.stats.damageDealt += pr.damage;
+          (pr.hitIds ??= []).push(e.id);
+          this.damageEnemy(e, pr.damage, pr.vx, pr.vy);
+          this.burstParticles(pr.x, pr.y, pr.color, 3);
           if (pr.pierce <= 0) {
             pr.dead = true;
             break;
@@ -1027,32 +1259,64 @@ export class Game {
     }
   }
 
-  private damageEnemy(e: Enemy, damage: number) {
+  private damageEnemy(e: Enemy, damage: number, pushX = 0, pushY = 0) {
     const dealt = Math.max(1, Math.round(damage));
     e.hp -= dealt;
-    e.flash = 0.08;
-    if (this.floaters.length < 48) {
-      this.floaters.push({
-        x: e.x + randRange(-8, 8),
-        y: e.y - e.radius,
-        vy: -36,
-        life: 0.55,
-        maxLife: 0.55,
-        text: String(dealt),
-        color: e.flash ? "#fff6d8" : "#ffe08a",
-      });
+    e.flash = 0.05;
+    this.stats.damageDealt += dealt;
+    this.audio.play("hit");
+    if (!ENEMIES[e.kind].isBoss && (pushX || pushY)) {
+      const n = normalize(pushX, pushY);
+      e.kx = n.x * KNOCKBACK;
+      e.ky = n.y * KNOCKBACK;
     }
+    this.addDamageFloater(e, dealt);
     if (e.hp <= 0 && !e.dead) {
       e.dead = true;
       this.onEnemyKilled(e);
     }
   }
 
+  private addDamageFloater(e: Enemy, dealt: number) {
+    const existing = this.floaters.find((f) => f.enemyId === e.id && f.life > f.maxLife - 0.22);
+    if (existing) {
+      existing.amount = (existing.amount ?? 0) + dealt;
+      existing.hits = (existing.hits ?? 1) + 1;
+      existing.text = `${existing.amount}`;
+      existing.life = existing.maxLife;
+      return;
+    }
+    if (this.floaters.length >= 60) return;
+    this.floaters.push({
+      x: e.x + randRange(-8, 8),
+      y: e.y - e.radius * 1.5,
+      vy: -46,
+      life: 0.6,
+      maxLife: 0.6,
+      text: String(dealt),
+      color: "#ffe9a8",
+      enemyId: e.id,
+      amount: dealt,
+      hits: 1,
+    });
+  }
+
   private onEnemyKilled(e: Enemy) {
     const def = ENEMIES[e.kind];
     this.stats.kills++;
-    if (def.isBoss) this.stats.bossesDefeated++;
-    this.burstParticles(e.x, e.y, def.color, def.isBoss ? 25 : 8);
+    this.corpses.push({ x: e.x, y: e.y, kind: e.kind, life: 0.2, maxLife: 0.2, flip: this.player.x < e.x });
+    this.burstParticles(e.x, e.y, def.color, def.isBoss ? 60 : 10);
+    if (def.isBoss) {
+      this.stats.bossesDefeated++;
+      this.hitstop = 0.22;
+      this.impactFrames = 10;
+      this.addTrauma(0.9);
+      this.audio.play("bossDeath");
+      this.shockwaves.push({ x: e.x, y: e.y, radius: 360, life: 0.9, maxLife: 0.9, color: def.color });
+    } else {
+      this.audio.play("kill");
+      this.shockwaves.push({ x: e.x, y: e.y, radius: e.radius * 1.9, life: 0.2, maxLife: 0.2, color: def.color });
+    }
     const area = AREA_RULES[biomeAt(e.x, e.y)];
     const xpVal = def.xp * this.player.xpMult * area.xp;
     this.spawnPickup(e.x, e.y, "xp", xpVal);
@@ -1116,10 +1380,22 @@ export class Game {
       }
       if (d < p.radius + pk.radius) {
         pk.dead = true;
-        if (pk.kind === "xp") this.gainXp(pk.value);
-        if (pk.kind === "health") p.hp = Math.min(p.maxHp, p.hp + pk.value);
-        if (pk.kind === "coin") p.coins += pk.value;
-        if (pk.kind === "buff" && pk.buffKind) this.applyTimedBuff(pk.buffKind);
+        if (pk.kind === "xp") {
+          this.audio.play("xp");
+          this.gainXp(pk.value);
+        }
+        if (pk.kind === "health") {
+          this.audio.play("txConfirmed");
+          p.hp = Math.min(p.maxHp, p.hp + pk.value);
+        }
+        if (pk.kind === "coin") {
+          this.audio.play("coin");
+          p.coins += pk.value;
+        }
+        if (pk.kind === "buff" && pk.buffKind) {
+          this.audio.play("chest");
+          this.applyTimedBuff(pk.buffKind);
+        }
       }
     }
     this.pickups = this.pickups.filter((x) => !x.dead);
@@ -1149,11 +1425,20 @@ export class Game {
       f.y += f.vy * dt;
     }
     this.floaters = this.floaters.filter((f) => f.life > 0);
-    if (this.shake > 0) this.shake -= dt;
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 1.5);
+    for (const c of this.corpses) c.life -= dt;
+    this.corpses = this.corpses.filter((c) => c.life > 0);
+    this.updateShockwaves(dt);
+  }
+
+  private updateShockwaves(dt: number) {
+    for (const s of this.shockwaves) s.life -= dt;
+    this.shockwaves = this.shockwaves.filter((s) => s.life > 0);
   }
 
   private burstParticles(x: number, y: number, color: string, n: number) {
-    for (let i = 0; i < n; i++) {
+    const room = Math.min(n, MAX_PARTICLES - this.particles.length);
+    for (let i = 0; i < room; i++) {
       const a = randRange(0, Math.PI * 2);
       const s = randRange(40, 160);
       this.particles.push({

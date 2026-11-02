@@ -11,6 +11,7 @@ import { CHESTS } from "./data/environment";
 import { FONT_MONO, FONT_UI } from "./ui/theme";
 import { applyCanvasBackingStore, applyCanvasSize, readViewport } from "./render/viewport";
 import { OverlayUI } from "./ui/OverlayUI";
+import { drawCinematic } from "./ui/cinematicOverlay";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const uiCanvas = document.createElement("canvas");
@@ -71,12 +72,17 @@ let last = performance.now();
 let loopStarted = false;
 
 function isWorldVisible() {
-  return game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "won" || game.phase === "lost";
+  return game.phase === "playing" || game.phase === "paused" || game.phase === "levelup" || game.phase === "won" || game.phase === "lost" || game.phase === "cinematic";
 }
 
 function drawUiOverlay() {
   const vp = readViewport(uiCanvas);
   uiCtx.clearRect(0, 0, vp.width, vp.height);
+  if (game.phase === "cinematic") {
+    drawCinematic(uiCtx, game, vp.width, vp.height, (x, y) => pixelEngine?.worldToScreen(x, y, vp.width, vp.height) ?? null);
+    drawSkipHint(vp.width, vp.height);
+    return;
+  }
   if (isWorldVisible() && game.player) {
     if (game.phase !== "won" && game.phase !== "lost") drawRunChrome(vp.width, vp.height);
     return;
@@ -86,21 +92,57 @@ function drawUiOverlay() {
     titleScene.setHero(getCharacter(game.menuHero));
     titleScene.drawOverlay(uiCtx, vp.width, vp.height);
   } else if (game.phase === "cutscene") {
-    game.cutscene.draw(uiCtx, vp.width, vp.height);
+    drawSkipHint(vp.width, vp.height);
   }
+}
+
+function drawSkipHint(w: number, h: number) {
+  uiCtx.textAlign = "right";
+  uiCtx.textBaseline = "alphabetic";
+  uiCtx.fillStyle = "rgba(4,6,12,0.7)";
+  uiCtx.fillRect(w - 158, h - 40, 146, 28);
+  uiCtx.fillStyle = "#f0c14d";
+  uiCtx.font = `600 12px ${FONT_MONO}`;
+  uiCtx.fillText("HOLD SPACE TO SKIP", w - 20, h - 22);
+  const progress = game.cutsceneSkipProgress;
+  if (progress > 0) uiCtx.fillRect(w - 158, h - 14, 146 * progress, 2);
+}
+
+function drawFeetBars(w: number, h: number) {
+  const p = game.player;
+  const s = pixelEngine?.worldToScreen(p.x, p.y + 24, w, h);
+  if (!s) return;
+  const barW = 54;
+  const x = s.x - barW / 2;
+  const y = s.y;
+  uiCtx.fillStyle = "rgba(4,6,12,0.82)";
+  uiCtx.fillRect(x - 1, y - 1, barW + 2, 9);
+  uiCtx.fillStyle = "#ff5d7a";
+  uiCtx.fillRect(x, y, barW * Math.max(0, p.hp / p.maxHp), 4);
+  const dashMax = getCharacter(p.characterId).dashCooldown;
+  const ready = 1 - Math.max(0, p.dashCooldown) / dashMax;
+  uiCtx.fillStyle = ready >= 1 ? "#2ee6c7" : "#3a6a78";
+  uiCtx.fillRect(x, y + 5, barW * ready, 2);
 }
 
 function drawRunChrome(w: number, h: number) {
   const p = game.player;
   if (!p) return;
+  drawFeetBars(w, h);
 
   for (const f of game.floaters) {
     const s = pixelEngine?.worldToScreen(f.x, f.y, w, h);
     if (!s) continue;
-    uiCtx.globalAlpha = Math.max(0, f.life / f.maxLife);
-    uiCtx.fillStyle = f.color;
-    uiCtx.font = `600 14px ${FONT_UI}`;
+    const age = 1 - f.life / f.maxLife;
+    const hits = f.hits ?? 1;
+    const size = Math.round(Math.min(26, 13 + Math.log2(hits + 1) * 3) * (age < 0.12 ? 1.25 : 1));
+    uiCtx.globalAlpha = Math.min(1, (f.life / f.maxLife) * 2.2);
+    uiCtx.font = `800 ${size}px ${FONT_UI}`;
     uiCtx.textAlign = "center";
+    uiCtx.lineWidth = 3;
+    uiCtx.strokeStyle = "#08080f";
+    uiCtx.strokeText(f.text, s.x, s.y);
+    uiCtx.fillStyle = f.color;
     uiCtx.fillText(f.text, s.x, s.y);
   }
   uiCtx.globalAlpha = 1;
@@ -158,11 +200,10 @@ function loop(now: number) {
     steps++;
   }
   if (steps === MAX_SIM_STEPS) accumulator = 0;
-  game.cutscene.skipProgress = game.cutsceneSkipProgress;
 
   if (game.phase === "menu") titleScene.update(frameDt);
 
-  if (isWorldVisible()) pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
+  if (isWorldVisible() || game.phase === "cutscene") pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
   drawUiOverlay();
   requestAnimationFrame(loop);
 }
@@ -175,6 +216,8 @@ createThreePixelEngine(canvas).then((engine) => {
   }
 });
 
+window.addEventListener("pointerdown", () => game.audio.unlock());
+window.addEventListener("keydown", () => game.audio.unlock());
 window.addEventListener("blur", () => game.autoPause());
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) game.autoPause();
@@ -203,6 +246,5 @@ canvas.addEventListener("click", (e) => {
       return;
     }
   }
-  if (game.phase === "cutscene") game.cutscene.advance();
-  else if (game.phase === "paused") game.togglePause();
+  if (game.phase === "paused") game.togglePause();
 });

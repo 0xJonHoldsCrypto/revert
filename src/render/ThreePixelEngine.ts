@@ -7,11 +7,11 @@ import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPa
 import { WORLD } from "../constants";
 import { CHESTS, ENV_OBSTACLES, type BiomeId } from "../data/environment";
 import { ENEMIES } from "../data/enemies";
-import { RARITY_COLORS } from "../data/rarity";
+import { CutscenePlayer } from "../cutscene/CutscenePlayer";
 import type { Game } from "../game/Game";
 import { makeFloorCanvases } from "../pixel/floorTiles";
-import type { Enemy } from "../types";
-import { DECAL_BLOB, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
+import type { Enemy, WeaponKind } from "../types";
+import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
 import { GradeShader } from "./gradeShader";
 import { DynamicResolution, pickQualityTier, QUALITY } from "./quality";
 import { PROP_KINDS, SpriteAtlas } from "./SpriteAtlas";
@@ -33,6 +33,18 @@ const SPRITE_CAPACITY = 2200;
 const FX_CAPACITY = 900;
 const DECAL_CAPACITY = 1400;
 const TILE_WORLD_SIZE = 256;
+const PROJECTILE_LOOK: Partial<Record<WeaponKind, { width: number; length: number; glow: number; trail: number }>> = {
+  "audit-dart": { width: 7, length: 30, glow: 2.8, trail: 2 },
+  "eth-beam": { width: 8, length: 74, glow: 3.6, trail: 1 },
+  "alameda-burst": { width: 15, length: 15, glow: 2.6, trail: 2 },
+  "bridge-bolt": { width: 9, length: 52, glow: 3.4, trail: 3 },
+  "nonce-shard": { width: 12, length: 24, glow: 2.6, trail: 2 },
+};
+const ORBITER_COLOR: Partial<Record<WeaponKind, string>> = {
+  "stable-shield": "#5de2b8",
+  "rug-coin": "#ffc23d",
+  "validator-seal": "#9b8cff",
+};
 
 const QUADRANTS: { biome: BiomeId; x: number; z: number }[] = [
   { biome: "wasteland", x: WORLD.width / 4, z: WORLD.height / 4 },
@@ -163,11 +175,16 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   let leadZ = 0;
   let shakeTime = 0;
 
+  const cutscenePlayer = new CutscenePlayer();
+  const dashTrail: { x: number; y: number; frame: string; flip: boolean }[] = [];
+  let dashTrailTick = 0;
+
   const composer = new EffectComposer(
     renderer,
     new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 0 })
   );
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
   let bloom: UnrealBloomPass | null = null;
   if (tier.bloom) {
     bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.55, 1.0);
@@ -254,12 +271,15 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     leadX += (targetLeadX - leadX) * leadRate;
     leadZ += (targetLeadZ - leadZ) * leadRate;
     const follow = Math.min(1, dt * 9);
-    camX += (x + leadX - camX) * follow;
-    camZ += (y + leadZ - camZ) * follow;
+    const focus = game.cameraFocus;
+    const goalX = focus ? x + (focus.x - x) * focus.weight : x + leadX;
+    const goalZ = focus ? y + (focus.y - y) * focus.weight : y + leadZ;
+    camX += (goalX - camX) * follow;
+    camZ += (goalZ - camZ) * follow;
 
     shakeTime += dt;
-    const trauma = Math.max(0, Math.min(1, game.shake * 2));
-    const amount = trauma * trauma * 9;
+    const trauma = Math.max(0, Math.min(1, game.shake));
+    const amount = trauma * trauma * 13;
     const sx = amount ? Math.sin(shakeTime * 71) * amount : 0;
     const sz = amount ? Math.sin(shakeTime * 89 + 1.3) * amount : 0;
 
@@ -300,6 +320,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   }
 
   const BLACK = new THREE.Color(0, 0, 0);
+  const scratchColor = new THREE.Color();
   const WHITE = new THREE.Color(1, 1, 1);
   const PLAYER_LIGHT = new THREE.Color(0.65, 0.95, 1);
   const CHEST_LIGHT = new THREE.Color(1, 0.72, 0.28);
@@ -394,11 +415,33 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const squash = 1 + Math.sin(e.wobble * 4.8) * (def.isBoss ? 0.015 : 0.04);
       const frame = atlas.frame(`enemy:${e.kind}`);
       const width = height * frame.aspect;
-      decals.push(x, y + 1, width * 0.5, width * 0.24, DECAL_BLOB, 0, BLACK, 0.55);
-      sprites.push(frame, x, y, 0.5 + hop, height * squash, p.x < e.x, e.flash > 0 ? 1 : 0);
+      const lift = e.lift ?? 0;
+      decals.push(x, y + 1, width * 0.5 * (lift > 0 ? 0.6 : 1), width * 0.24 * (lift > 0 ? 0.6 : 1), DECAL_BLOB, 0, BLACK, lift > 0 ? 0.3 : 0.55);
+      sprites.push(frame, x, y, 0.5 + hop + lift, height * squash, p.x < e.x, e.flash > 0 ? 1 : 0);
       if (def.isBoss && !bossLightSet) {
         bossLightSet = true;
         scratchLights.splice(1, 0, { x, y: y + 20, h: 130, color: BOSS_LIGHT, power: 1.4 });
+      }
+    }
+
+    for (const c of game.corpses) {
+      if (!inView(c.x, c.y)) continue;
+      const def = ENEMIES[c.kind];
+      const f = c.life / c.maxLife;
+      const height = (def.isBoss ? BOSS_HEIGHT : def.radius * ENEMY_HEIGHT_PER_RADIUS) * f;
+      sprites.push(atlas.frame(`enemy:${c.kind}`), c.x, c.y, 0.5, height, c.flip, 1, 0, 1 + (1 - f) * 1.1);
+    }
+
+    for (const wave of game.shockwaves) {
+      if (!inView(wave.x, wave.y)) continue;
+      const f = 1 - wave.life / wave.maxLife;
+      const eased = 1 - (1 - f) * (1 - f);
+      const color = scratchColor.copy(cachedColor(wave.color)).multiplyScalar(2.2);
+      const radius = wave.radius * (0.35 + 0.65 * eased);
+      if (wave.arc !== undefined) {
+        decals.push(wave.x, wave.y, radius, radius, DECAL_ARC, Math.atan2(Math.sin(wave.arc), Math.cos(wave.arc)), color, 1 - f * 0.8);
+      } else {
+        decals.push(wave.x, wave.y, radius, radius, DECAL_DISC, 0, color, (1 - f) * 0.9);
       }
     }
 
@@ -408,7 +451,27 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     const blink = p.invuln > 0 && p.dashTimer <= 0 && Math.floor(p.invuln * 20) % 2 === 0;
     if (!blink) {
       const bob = moving ? Math.abs(Math.sin(anim * 13)) * 2 : Math.sin(anim * 2.2) * 0.5;
-      sprites.push(atlas.frame(`hero:${p.characterId}:${step}`), px, py, 0.5 + bob, HERO_HEIGHT, Math.cos(p.facing) < 0);
+      const dead = p.dead;
+      sprites.push(
+        atlas.frame(`hero:${p.characterId}:${step}`),
+        px,
+        py,
+        0.5 + bob + (p.lift ?? 0),
+        dead ? HERO_HEIGHT * 0.55 : HERO_HEIGHT,
+        Math.cos(p.facing) < 0,
+        dead ? 0.35 : 0,
+        0,
+        dead ? 1.5 : 1
+      );
+    }
+    if (p.dashTimer > 0 && ++dashTrailTick % 2 === 0) {
+      dashTrail.push({ x: px, y: py, frame: `hero:${p.characterId}:${step}`, flip: Math.cos(p.facing) < 0 });
+      if (dashTrail.length > 6) dashTrail.shift();
+    } else if (p.dashTimer <= 0 && dashTrail.length) {
+      dashTrail.shift();
+    }
+    for (const ghost of dashTrail) {
+      sprites.push(atlas.frame(ghost.frame), ghost.x, ghost.y, 0.5, HERO_HEIGHT, ghost.flip, 0.75);
     }
     if (p.dashTimer > 0) {
       const color = PLAYER_LIGHT;
@@ -427,14 +490,27 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       if (!inView(x, y)) continue;
       const color = cachedColor(pr.color);
       const angle = Math.atan2(-pr.vy * cameraBasis.backY, pr.vx);
-      fx.push(x, y, 26, pr.radius * 3.4, pr.radius * 8, angle, color, 2.6);
+      const look = (pr.weaponKind && PROJECTILE_LOOK[pr.weaponKind]) || { width: 10, length: 20, glow: 2.6, trail: 2 };
+      fx.push(x, y, 26, look.width, look.length, angle, color, look.glow);
+      const speed = Math.hypot(pr.vx, pr.vy) || 1;
+      for (let i = 1; i <= look.trail; i++) {
+        const back = i * look.length * 0.6;
+        fx.push(x - (pr.vx / speed) * back, y - (pr.vy / speed) * back, 26, look.width * (1 - i * 0.2), look.length * 0.8, angle, color, look.glow * 0.5, 1 - i * 0.28);
+      }
     }
 
     for (const o of game.orbiters) {
-      const w = game.weapons.find((v) => v.kind === o.weaponKind);
-      const color = cachedColor(w ? RARITY_COLORS[w.rarity] : "#f0b429");
-      fx.push(o.x, o.y, 26, o.radius * 3, o.radius * 3, 0, color, 2);
-      decals.push(o.x, o.y, o.radius, o.radius * 0.6, DECAL_BLOB, 0, BLACK, 0.3);
+      const color = cachedColor(ORBITER_COLOR[o.weaponKind] ?? "#f0b429");
+      decals.push(o.x, o.y, o.radius, o.radius * 0.6, DECAL_BLOB, 0, BLACK, 0.35);
+      if (o.weaponKind === "rug-coin") {
+        const spin = Math.abs(Math.cos(anim * 7 + o.id));
+        sprites.push(atlas.frame("pickup:coin"), o.x, o.y, 18, 22, false, 0, 0.9, Math.max(0.18, spin));
+        fx.push(o.x, o.y, 28, 26, 26, 0, color, 0.8);
+      } else {
+        fx.push(o.x, o.y, 26, o.radius * 3.2, o.radius * 3.2, 0, color, 2.2);
+        const tangent = o.angle + Math.PI / 2;
+        fx.push(o.x - Math.cos(tangent) * 18, o.y - Math.sin(tangent) * 18, 26, o.radius * 1.6, o.radius * 3, -tangent, color, 0.9, 0.7);
+      }
     }
 
     for (const part of game.particles) {
@@ -455,11 +531,24 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const vp = readViewport(canvas);
       if (dynamicRes.update(dt * 1000)) lastPixelRatio = 0;
       resizeIfNeeded(vp.width, vp.height);
-      if (!game.player) return;
-      if (game.phase !== "paused" && game.phase !== "levelup") {
-        renderWorld(game, dt, alpha);
+      const inPanels = game.phase === "cutscene" && game.cutscene.score;
+      if (inPanels) {
+        cutscenePlayer.update(game.cutscene.score!, game.cutscene.step, aspect);
+        renderPass.scene = cutscenePlayer.scene;
+        renderPass.camera = cutscenePlayer.camera;
+        grade.uniforms.uImpact!.value = cutscenePlayer.impact;
+        grade.uniforms.uHurt!.value = 0;
+        grade.uniforms.uTilt!.value = 0;
       } else {
-        renderWorld(game, 0, 1);
+        if (!game.player) return;
+        renderPass.scene = scene;
+        renderPass.camera = camera;
+        cutscenePlayer.reset();
+        if (game.phase !== "paused" && game.phase !== "levelup") renderWorld(game, dt, alpha);
+        else renderWorld(game, 0, 1);
+        grade.uniforms.uImpact!.value = game.impactFrames > 0 ? 1 : 0;
+        grade.uniforms.uHurt!.value = game.hurtPulse;
+        grade.uniforms.uTilt!.value = tier.tiltShift ? 1 : 0;
       }
       grade.uniforms.uTime!.value = elapsed;
       renderer.info.reset();

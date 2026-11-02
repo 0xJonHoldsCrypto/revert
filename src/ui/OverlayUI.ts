@@ -23,7 +23,7 @@ export class OverlayUI {
 
   onPhaseChange(phase: GamePhase) {
     this.overlay.classList.toggle("interactive", phase === "levelup" || phase === "won" || phase === "lost");
-    if (phase === "menu" || phase === "cutscene") {
+    if (phase === "menu" || phase === "cutscene" || phase === "cinematic") {
       this.overlay.innerHTML = "";
       this.hudEl = null;
     }

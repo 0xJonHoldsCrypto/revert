@@ -4,6 +4,8 @@ export const GradeShader = {
     uTexel: { value: [1 / 1024, 1 / 768] },
     uTime: { value: 0 },
     uTilt: { value: 1 },
+    uImpact: { value: 0 },
+    uHurt: { value: 0 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -16,6 +18,8 @@ export const GradeShader = {
     uniform vec2 uTexel;
     uniform float uTime;
     uniform float uTilt;
+    uniform float uImpact;
+    uniform float uHurt;
     varying vec2 vUv;
 
     const vec2 TAPS[12] = vec2[12](
@@ -50,9 +54,14 @@ export const GradeShader = {
       vec2 fromCenter = vUv - 0.5;
       float vignette = smoothstep(0.42, 1.05, length(fromCenter) * 1.4142);
       color *= 1.0 - vignette * 0.45;
+      color = mix(color, vec3(0.95, 0.12, 0.16), smoothstep(0.25, 1.0, length(fromCenter) * 1.4142) * uHurt * 0.55);
 
       float grain = noise(vUv * 917.0 + fract(uTime) * 61.0) - 0.5;
       color += grain * 0.02;
+      if (uImpact > 0.5) {
+        float ink = step(0.32, dot(color, vec3(0.299, 0.587, 0.114)));
+        color = mix(vec3(0.05, 0.04, 0.08), vec3(1.0, 0.97, 0.92), ink);
+      }
       gl_FragColor = vec4(color, 1.0);
     }`,
 };

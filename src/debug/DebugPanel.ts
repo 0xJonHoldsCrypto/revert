@@ -3,7 +3,7 @@ import type { CutsceneId } from "../cutscene/CutsceneEngine";
 import type { Game } from "../game/Game";
 import type { EnemyKind } from "../types";
 
-const CUTSCENES: CutsceneId[] = ["intro", "boss-mev", "boss-414", "boss-phish", "boss-oracle", "boss-apt", "boss-grand", "victory"];
+const CUTSCENES: CutsceneId[] = ["intro", "victory"];
 const TIME_JUMPS = [60, 170, 350, 530, 710, 950, 1130, 1195];
 
 function button(label: string, onClick: () => void): HTMLButtonElement {

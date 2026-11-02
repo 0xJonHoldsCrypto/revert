@@ -4,7 +4,7 @@ export type TimedBuffKind = import("./data/timedBuffs").TimedBuffKind;
 
 export type WellStatId = import("./data/wells").WellStatId;
 
-export type GamePhase = "menu" | "cutscene" | "playing" | "levelup" | "paused" | "won" | "lost";
+export type GamePhase = "menu" | "cutscene" | "cinematic" | "playing" | "levelup" | "paused" | "won" | "lost";
 
 export type CharacterId = "cz" | "elon" | "sbf" | "sec-dev";
 
@@ -112,6 +112,7 @@ export interface Entity {
   y: number;
   px?: number;
   py?: number;
+  lift?: number;
   vx: number;
   vy: number;
   radius: number;
@@ -143,6 +144,8 @@ export interface PlayerState extends Entity {
 }
 
 export interface Enemy extends Entity {
+  kx?: number;
+  ky?: number;
   kind: EnemyKind;
   hp: number;
   maxHp: number;
@@ -154,6 +157,8 @@ export interface Enemy extends Entity {
 }
 
 export interface Projectile extends Entity {
+  weaponKind?: WeaponKind;
+  hitIds?: number[];
   damage: number;
   life: number;
   pierce: number;
@@ -196,6 +201,28 @@ export interface Floater {
   maxLife: number;
   text: string;
   color: string;
+  enemyId?: number;
+  amount?: number;
+  hits?: number;
+}
+
+export interface Shockwave {
+  x: number;
+  y: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  arc?: number;
+}
+
+export interface Corpse {
+  x: number;
+  y: number;
+  kind: EnemyKind;
+  life: number;
+  maxLife: number;
+  flip: boolean;
 }
 
 export type ChestKind = "cold-wallet" | "defi-lootbox" | "validator-crate" | "airdrop-pod" | "grant-safe";

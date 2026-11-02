@@ -6,6 +6,7 @@ export class Input {
   advanceHeld = false;
   confirmPressed = false;
   restartPressed = false;
+  mutePressed = false;
   cardPick: number | null = null;
   touchMove = { x: 0, y: 0 };
   touchDash = false;
@@ -105,6 +106,7 @@ export class Input {
         this.advanceHeld = true;
       }
       if (k === "r") this.restartPressed = true;
+      if (k === "m") this.mutePressed = true;
       if (k === "1" || k === "2" || k === "3") this.cardPick = Number(k) - 1;
     } else {
       this.keys.delete(k);
@@ -132,6 +134,12 @@ export class Input {
   consumeConfirm(): boolean {
     const v = this.confirmPressed;
     this.confirmPressed = false;
+    return v;
+  }
+
+  consumeMute(): boolean {
+    const v = this.mutePressed;
+    this.mutePressed = false;
     return v;
   }
 
