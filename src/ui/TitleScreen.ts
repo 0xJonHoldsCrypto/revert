@@ -103,6 +103,7 @@ export class TitleScreen {
         <small>${c.role}</small>
         ${stat("HP", c.maxHp / 125)}${stat("SPD", (c.moveSpeed - 160) / 60)}${stat("DMG", (c.damageMult - 0.7) / 0.6)}
         <p>${WEAPONS[c.startWeapon].name}</p>
+        <p class="t-passive">${c.blurb}</p>
       `;
       const source = heroPortrait(c.id);
       const portrait = document.createElement("canvas");

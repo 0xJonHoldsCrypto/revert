@@ -59,9 +59,25 @@ export class OverlayUI {
     if (phase === "paused") this.showPauseMenu();
   }
 
+  private buildPanel(): string {
+    const b = this.game.buildSummary();
+    const top = b.tools[0]?.dps ?? 1;
+    return `<div class="menu-card build-panel">
+      <h2>YOUR BUILD</h2>
+      <div class="build-stats">${b.stats.map(([k, v]) => `<div><label>${k}</label><strong>${v}</strong></div>`).join("")}</div>
+      <h3>Tools · about ${Math.round(b.total)} DPS</h3>
+      ${b.tools.map((t) => `<div class="pm-bar"><span>${t.name} · Lv ${t.level}</span><b>${Math.round(t.dps)}</b><i style="width:${(t.dps / top) * 100}%"></i></div>`).join("")}
+      <h3>Gear</h3>
+      ${b.gear.map((g) => `<p><b>${g.slot}</b> ${g.name}${g.lines.length ? ` · ${g.lines.join(", ")}` : ""}</p>`).join("")}
+      ${b.stash.length ? `<h3>Stash</h3><p>${b.stash.join(", ")}</p>` : ""}
+      ${b.merges.length ? `<p class="build-merge">Ready to merge at a Merge Contract: ${b.merges.join(", ")}</p>` : ""}
+      ${b.rigs.length ? `<h3>Hardware</h3><p>${b.rigs.join(", ")}</p>` : ""}
+    </div>`;
+  }
+
   private showPauseMenu() {
     const panel = document.createElement("div");
-    panel.className = "overlay-panel pause-menu";
+    panel.className = "overlay-panel pause-menu pause-with-build";
     panel.innerHTML = `
       <div class="menu-card">
         <h1>TX PAUSED</h1>
@@ -72,6 +88,7 @@ export class OverlayUI {
         <button type="button" class="btn btn-secondary" data-a="quit">QUIT TO TITLE</button>
         <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
       </div>
+      ${this.buildPanel()}
     `;
     const label = () => {
       panel.querySelector('[data-a="mute"]')!.textContent = this.game.audio.muted ? "SOUND: OFF" : "SOUND: ON";
@@ -104,6 +121,7 @@ export class OverlayUI {
         <h1>${gear ? this.game.popupTitle : "NEW BLOCK. SIGN ONE."}</h1>
         <div class="upgrade-grid" id="upgrade-grid"></div>
         ${gear ? "" : `<div class="lv-actions">
+          <span class="lv-banish">BANISH ${this.game.banishes}</span>
           <button type="button" class="btn btn-secondary" id="lv-reroll" ${this.game.rerolls <= 0 ? "disabled" : ""}>REORG (${this.game.rerolls}) <kbd>R</kbd></button>
           <button type="button" class="btn btn-secondary" id="lv-skip">SKIP, HEAL 15 <kbd>X</kbd></button>
         </div>`}
@@ -115,10 +133,16 @@ export class OverlayUI {
       const card = document.createElement("button");
       card.type = "button";
       const rarity = c.rarity ?? "common";
-      const kind = c.id === "gear-equip" ? "GEAR" : c.id === "gear-sell" ? "SELL" : c.id === "loot-claim" ? "CLAIM" : c.id.startsWith("deal-") || c.id.startsWith("bounty-") ? "CHOICE" : c.id.startsWith("weapon-") ? "NEW TOOL" : c.id.startsWith("upgrade-") ? "PATCH" : "PASSIVE";
-      card.className = `upgrade-card rarity-${rarity}`;
-      card.innerHTML = `<kbd>${i + 1}</kbd><span class="rarity-tag">${kind} · ${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>`;
-      card.addEventListener("click", () => this.game.pickUpgrade(i));
+      const kind = c.tag ?? (c.id.startsWith("deal-") || c.id.startsWith("bounty-") ? "CHOICE" : "PASSIVE");
+      card.className = `upgrade-card rarity-${rarity}${c.recommended ? " recommended" : ""}`;
+      const compare = c.compare?.length ? `<ul class="card-compare">${c.compare.map((l) => `<li>${l}</li>`).join("")}</ul>` : "";
+      const value = c.value !== undefined && c.value > 0 ? `<small class="card-value">Worth about +${Math.round(c.value)} DPS</small>` : "";
+      const banish = !gear && this.game.banishes > 0 ? `<i class="card-banish" title="Banish for this run">✕</i>` : "";
+      card.innerHTML = `${c.recommended ? `<b class="card-rec">RECOMMENDED</b>` : ""}<kbd>${i + 1}</kbd>${banish}<span class="rarity-tag">${kind} · ${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>${compare}${value}`;
+      card.addEventListener("click", (event) => {
+        if ((event.target as HTMLElement).classList.contains("card-banish")) this.game.banishCard(i);
+        else this.game.pickUpgrade(i);
+      });
       grid.appendChild(card);
     });
     panel.querySelector("#lv-reroll")?.addEventListener("click", () => this.game.rerollCards());
@@ -141,6 +165,7 @@ export class OverlayUI {
     const abilityLine = data.ability
       ? `<div class="hud-weapon hud-ability" style="color:${data.ability.color}"><span>${data.ability.name}</span><b>${data.ability.remaining > 0 ? `${Math.ceil(data.ability.remaining)}s` : "Q"}</b></div>`
       : "";
+    const rigLines = data.rigs.map((r) => `<div class="hud-weapon hud-rig"><span>${r}</span><b>R</b></div>`).join("");
     syncTouchAbility(data.ability);
     const status = [
       data.signers > 0 ? `SIGNERS ${data.signers}/3` : "",
@@ -172,9 +197,9 @@ export class OverlayUI {
         <div><label>REVERTED</label><strong>${data.kills}</strong></div>
         <div><label>$SAFU</label><strong>${data.coins}</strong></div>
       </div>
-      <div class="hud-zone">${data.biome}${data.sidekick ? ` · ${data.sidekick}` : ""}</div>
+      <div class="hud-zone">${data.biome}</div>
       <div class="hud-status">${status.map((t) => `<span>${t}</span>`).join("")}</div>
-      <div class="hud-loadout">${weaponLines}${gearLines}${abilityLine}</div>
+      <div class="hud-loadout">${weaponLines}${gearLines}${rigLines}${abilityLine}</div>
       <div class="hud-feed">${data.feed.map((l) => `<div>${l}</div>`).join("")}</div>
       <div class="hud-toasts">${data.toasts.map((t) => `<div style="border-color:${t.color};color:${t.color}">${t.text}</div>`).join("")}</div>
       ${alert}
@@ -248,29 +273,12 @@ export class OverlayUI {
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="again-btn">RESPOND AGAIN [R]</button>
           <button type="button" class="btn btn-secondary" id="menu-btn">TITLE</button>
-          <button type="button" class="btn btn-secondary" id="wallet-btn">SIGN SCORE (WALLET)</button>
         </div>
-        <p class="controls-hint" id="wallet-status"></p>
       </div>
     `;
     this.overlay.appendChild(panel);
     panel.querySelector("#again-btn")!.addEventListener("click", () => this.game.requestStartRun());
     panel.querySelector("#menu-btn")!.addEventListener("click", () => this.game.setPhase("menu"));
-    panel.querySelector("#wallet-btn")?.addEventListener("click", () => void this.submitWalletScore(panel));
   }
 
-  private async submitWalletScore(panel: HTMLElement) {
-    const status = panel.querySelector("#wallet-status") as HTMLElement;
-    status.textContent = "Signing…";
-    const { submitScoreWithWallet } = await import("../web3/submitScore");
-    const payload = this.game.recorder.build(
-      this.game.selectedCharacter,
-      this.game.score(),
-      this.game.stats.timeSurvived,
-      this.game.stats.kills
-    );
-    const apiBase = /localhost|127\.0\.0\.1/.test(window.location.origin) ? "http://localhost:8787" : window.location.origin;
-    const result = await submitScoreWithWallet(payload, apiBase);
-    status.textContent = result.message;
-  }
 }

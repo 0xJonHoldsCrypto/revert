@@ -1,6 +1,6 @@
 import { biomeAt, CHESTS, ENV_OBSTACLES } from "../data/environment";
 import { chestKindForBiome, rollWellStat } from "../data/loot";
-import type { EnvObstacleKind, Interactable, InteractableKind, WorldChest, WorldLandmark, WorldObstacle, WorldWell } from "../types";
+import type { SidekickKind, EnvObstacleKind, Interactable, InteractableKind, WorldChest, WorldLandmark, WorldObstacle, WorldWell } from "../types";
 import { LANDMARKS } from "../pixel/threatArt";
 
 const SECTOR = 1400;
@@ -8,13 +8,17 @@ const STREAM_RADIUS = 1;
 const SPAWN_CLEAR = 300;
 const BRIDGE_JUMP = 2600;
 const INTERACT_RADIUS: Record<Exclude<InteractableKind, "airdrop" | "cameo">, number> = {
+  "staking-pad": 70,
+  "merge-contract": 66,
+  "hardware-rack": 62,
   faucet: 56,
   "lp-pool": 92,
   "bridge-gate": 58,
   "exploit-charge": 42,
   "bounty-board": 60,
 };
-const SCATTERED: Exclude<InteractableKind, "airdrop" | "cameo">[] = ["faucet", "lp-pool", "bridge-gate", "exploit-charge", "exploit-charge", "bounty-board"];
+const SCATTERED: Exclude<InteractableKind, "airdrop" | "cameo">[] = ["faucet", "lp-pool", "bridge-gate", "exploit-charge", "bounty-board", "staking-pad", "staking-pad", "merge-contract", "hardware-rack"];
+const RIGS: SidekickKind[] = ["asic-miner", "dev-laptop", "codebase-guardian", "block-builder"];
 
 type Sector = {
   chests: WorldChest[];
@@ -99,7 +103,7 @@ export class WorldStream {
       out.obstacles.push({ id: this.nextId++, kind, x, y, width: def.width, height: def.height });
     }
 
-    const chestCount = 2 + (rnd() < 0.4 ? 1 : 0);
+    const chestCount = 1 + (rnd() < 0.5 ? 1 : 0);
     for (let i = 0; i < chestCount; i++) {
       const { x, y } = place(0.06);
       const kind = chestKindForBiome(biomeAt(x, y), rnd);
@@ -107,7 +111,7 @@ export class WorldStream {
       out.chests.push({ id: this.nextId++, kind, x, y, radius: def.radius, openProgress: 0, opened: false, coinCost: def.coinCost });
     }
 
-    if (rnd() < 0.65) {
+    if (rnd() < 0.3) {
       const { x, y } = place(0.08);
       out.wells.push({ id: this.nextId++, x, y, radius: 62, stat: rollWellStat(Math.floor(rnd() * 1000)), used: false, channelProgress: 0 });
     }
@@ -127,6 +131,7 @@ export class WorldStream {
         used: false,
         readyAt: 0,
         charge: kind === "lp-pool" ? 70 : undefined,
+        rig: kind === "hardware-rack" ? RIGS[Math.floor(rnd() * RIGS.length)] : undefined,
         destX: kind === "bridge-gate" ? x + Math.cos(angle) * BRIDGE_JUMP : undefined,
         destY: kind === "bridge-gate" ? y + Math.sin(angle) * BRIDGE_JUMP : undefined,
       });

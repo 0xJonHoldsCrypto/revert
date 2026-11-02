@@ -1,12 +1,15 @@
 import { CAMEO_ORDER, CAMEOS, SATOSHI_CHANCE, type CameoId } from "../data/cameos";
-import { rollGear } from "../data/gear";
-import { rollChestLoot } from "../data/loot";
+import { gearName, rollGear } from "../data/gear";
+import { SIDEKICKS } from "../data/sidekicks";
 import { biomeAt } from "../data/environment";
 import type { EnemyKind, Interactable, InteractableKind } from "../types";
 import { dist, randRange } from "../utils/math";
 import type { Game } from "./Game";
 
 export const CHANNEL_SEC: Record<InteractableKind, number> = {
+  "staking-pad": 1,
+  "merge-contract": 0.8,
+  "hardware-rack": 0.8,
   faucet: 0.6,
   "lp-pool": 0,
   "bridge-gate": 0.45,
@@ -20,6 +23,7 @@ const BRIDGE_COOLDOWN_SEC = 25;
 const LP_HEAL_PER_SEC = 10;
 const CHARGE_FUSE_SEC = 0.9;
 const CHARGE_BLAST_RADIUS = 360;
+const PAD_COOLDOWN_SEC = 60;
 const AIRDROP_LIFT = 420;
 const AIRDROP_FALL_PER_SEC = 260;
 
@@ -147,7 +151,8 @@ export class WorldEvents {
         break;
       }
       case "bridge-gate": {
-        item.readyAt = g.elapsed + BRIDGE_COOLDOWN_SEC;
+        item.readyAt = g.elapsed + BRIDGE_COOLDOWN_SEC * (g.perks.wormhole > 0 ? 0.5 : 1);
+        if (g.perks.wormhole > 0) p.hp = Math.min(p.maxHp, p.hp + 25);
         p.x = item.destX ?? p.x;
         p.y = item.destY ?? p.y;
         p.px = p.x;
@@ -162,20 +167,36 @@ export class WorldEvents {
       case "exploit-charge": {
         item.used = true;
         g.addStrike(item.x, item.y, CHARGE_BLAST_RADIUS, g.strikeDamage() * 1.4, "#ff5c48", CHARGE_FUSE_SEC);
-        g.addToast("Charge armed. Run.", "#ff5c48");
+        g.addToast("Charge armed: lure them in", "#ff5c48");
         g.audio.play("alarm");
         break;
       }
       case "bounty-board": {
         g.showPopup("BOUNTY BOARD", [
           { id: "bounty-accept", title: "Post the bounty", description: "A whale wallet spawns nearby. Kill it for rare loot.", rarity: "rare", apply: () => { item.used = true; g.postBounty(); return true; } },
-          { id: "bounty-decline", title: "Not now", description: "The board stays here. Come back when you are ready.", rarity: "common", apply: () => { item.readyAt = g.elapsed + 8; return true; } },
+          { id: "bounty-decline", title: "Not now", description: "The board stays here.", rarity: "common", value: 0, apply: () => { item.readyAt = g.elapsed + 8; return true; } },
         ]);
         break;
       }
       case "airdrop": {
         item.used = true;
-        g.grantLoot(rollChestLoot("uncommon", biomeAt(item.x, item.y)), "AIRDROP CLAIMED", "#f4f3ee", item.x, item.y);
+        g.openChest("AIRDROP: PICK ONE", "uncommon", "#f4f3ee", item.x, item.y);
+        break;
+      }
+      case "staking-pad": {
+        item.readyAt = g.elapsed + PAD_COOLDOWN_SEC;
+        g.applyPadBoost();
+        break;
+      }
+      case "merge-contract": {
+        item.readyAt = g.elapsed + 4;
+        if (g.mergeOptions().length) g.showPopup("MERGE CONTRACT", g.mergeCards());
+        else g.addToast(`Need two identical items. You hold: ${g.allGear().map(gearName).join(", ") || "nothing"}`, "#b58cff");
+        break;
+      }
+      case "hardware-rack": {
+        item.readyAt = g.elapsed + 5;
+        g.showPopup(`HARDWARE RACK: ${SIDEKICKS[item.rig!].name.toUpperCase()}`, g.rigCards(item.rig!, item));
         break;
       }
       case "cameo": {
@@ -192,7 +213,7 @@ export class WorldEvents {
     this.game.audio.play("jackpot");
     this.game.showPopup(`${def.name.toUpperCase()} ${def.handle}`, [
       { id: "deal-accept", title: "Take the deal", description: `"${def.arrival}" ${def.deal}`, rarity: id === "satoshi" ? "legendary" : "epic", apply: () => { this.takeDeal(id); return true; } },
-      { id: "deal-decline", title: "Walk away", description: "They will post about it.", rarity: "common", apply: () => true },
+      { id: "deal-decline", title: "Walk away", description: "Take 15 $SAFU instead.", rarity: "common", value: 13, apply: () => { this.game.player.coins += 15; return true; } },
     ]);
   }
 
@@ -208,10 +229,13 @@ export class WorldEvents {
         const x = target ? target.x : p.x + randRange(-280, 280);
         const y = target ? target.y : p.y + randRange(-200, 200);
         g.addStrike(x, y, 110, g.strikeDamage(), "#7cc4ff", 0.5 + i * 0.3);
+        if (i % 4 === 3) g.addHazard({ shape: "circle", x: p.x + randRange(-60, 60), y: p.y + randRange(-50, 50), r: 70, windup: 1 + i * 0.3, active: 0, damage: 18, color: "#7cc4ff", source: "boss-shill", knock: 120, label: "OOPS" });
       }
     } else if (id === "cz-four") {
       g.fundsLost = Math.max(0, g.fundsLost - 200_000_000);
       p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.4);
+      g.addToast("Next boss gets stronger: the attackers noticed", "#f0c14d");
+      g.nextBossHpBonus = 1.25;
       p.invuln = Math.max(p.invuln, 3);
     } else if (id === "donald-pump") {
       for (let i = 0; i < 30; i++) g.spawnPickup(p.x + randRange(-170, 170), p.y + randRange(-120, 120), "coin", 2);
@@ -221,7 +245,7 @@ export class WorldEvents {
     } else if (id === "michael-sailor") {
       p.neverSellUntil = g.elapsed + 30;
     } else {
-      g.offerGear(rollGear("legendary"));
+      g.offerGear({ id: rollGear("legendary"), tier: 0 });
     }
   }
 }

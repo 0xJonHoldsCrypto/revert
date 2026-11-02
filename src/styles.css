@@ -552,3 +552,27 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 1px 
 .hud-toasts div { padding: 3px 10px; background: rgba(4, 6, 12, 0.85); border-left: 3px solid; white-space: nowrap; }
 @media (max-width: 640px) { .hud-toasts { bottom: 128px; } }
 .upgrade-card:only-child { grid-column: 1 / -1; width: min(420px, 100%); justify-self: center; }
+
+.upgrade-card { position: relative; }
+.upgrade-card.recommended { box-shadow: 0 0 0 2px #ffc23d; }
+.upgrade-card.recommended { padding-top: 26px; }
+.card-rec { position: absolute; top: 0; left: 0; padding: 1px 8px; background: #ffc23d; color: #0a0b12; font: 700 10px var(--mono); letter-spacing: 0.08em; }
+.card-compare { list-style: none; margin: 8px 0 0; padding: 0; font: 500 11px var(--mono); color: #7ee787; }
+.card-value { display: block; margin-top: 6px; font: 500 10px var(--mono); color: #93a0b5; }
+.card-banish { position: absolute; top: 8px; right: 40px; width: 20px; height: 20px; display: grid; place-items: center; font-style: normal; font-size: 11px; color: #93a0b5; border: 1px solid rgba(255, 255, 255, 0.2); }
+.card-banish:hover { color: #ff5c48; border-color: #ff5c48; }
+.lv-banish { align-self: center; font: 700 11px var(--mono); color: #93a0b5; }
+.t-passive { font-size: 10px; line-height: 1.25; color: var(--muted); margin-top: 3px; }
+.hud-rig { color: #79c0ff; }
+.pause-with-build { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: flex-start; overflow-y: auto; }
+.build-panel { width: min(420px, 94vw); text-align: left; font-size: 12px; }
+.build-panel h2 { font-size: 18px; margin-bottom: 8px; }
+.build-panel h3 { margin: 10px 0 4px; font: 700 11px var(--mono); color: #93a0b5; letter-spacing: 0.08em; text-transform: uppercase; }
+.build-panel p { margin: 2px 0; font: 400 12px var(--mono); }
+.build-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.build-stats label { display: block; font-size: 10px; color: #93a0b5; }
+.build-stats strong { font: 700 15px var(--mono); }
+.build-merge { color: #b58cff; }
+.pause-menu .btn { min-height: 40px; }
+@media (max-width: 900px) { .hud-ticker { display: none; } .hud-feed { display: none; } }
+@media (max-width: 640px) { .t-passive { display: none; } .upgrade-card:only-child { width: 100%; } }

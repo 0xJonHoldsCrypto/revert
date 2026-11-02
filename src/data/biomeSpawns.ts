@@ -1,5 +1,5 @@
 import type { BiomeId } from "./environment";
-import type { ChestKind, EnemyKind } from "../types";
+import type { EnemyKind } from "../types";
 
 export const BIOME_LABEL: Record<BiomeId, { name: string; tagline: string }> = {
   mempool: { name: "The Mempool", tagline: "Pending transactions drift through the dark." },
@@ -22,9 +22,3 @@ export const AREA_RULES: Record<BiomeId, { speed: number; damageTaken: number; c
   forest: { speed: 1, damageTaken: 1.22, coin: 1.4, xp: 1.35, rule: "High bounty" },
 };
 
-export const BIOME_CHEST_KINDS: Record<BiomeId, ChestKind[]> = {
-  mempool: ["airdrop-pod", "cold-wallet", "cold-wallet"],
-  vault: ["cold-wallet", "defi-lootbox", "airdrop-pod"],
-  bridge: ["defi-lootbox", "grant-safe", "validator-crate"],
-  forest: ["grant-safe", "validator-crate", "defi-lootbox"],
-};

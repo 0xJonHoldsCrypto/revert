@@ -9,7 +9,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: "index.html",
-        embed: "embed.html",
       },
       output: {
         manualChunks(id) {

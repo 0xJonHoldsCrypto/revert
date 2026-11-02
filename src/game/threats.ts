@@ -32,6 +32,7 @@ export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
 const DRAIN_PER_SEC = 900_000;
 const DRAIN_CAP = 70_000_000;
 const MAX_HAZARDS = 48;
+const AI_START_DELAY_SEC = 1.2;
 const MAX_FARM_POPULATION = 420;
 const SLASHER_RECOVERY_SEC = 3;
 
@@ -68,7 +69,7 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
   const p = game.player;
   const speed = e.speed * game.gasEnemySpeedMult();
   const d = dist(e.x, e.y, p.x, p.y);
-  e.aiTimer = (e.aiTimer ?? 0) - dt;
+  e.aiTimer = (e.aiTimer ?? AI_START_DELAY_SEC) - dt;
 
   switch (e.kind) {
     case "phishing-bot": {
@@ -131,7 +132,7 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
     }
     case "oracle-manipulator": {
       if (d > 240) steer(e, p.x, p.y, speed, dt);
-      if (d < 280) game.priceLieTimer = Math.max(game.priceLieTimer, 0.4);
+      if (d < 280 && game.perks.cleanFeed <= 0) game.priceLieTimer = Math.max(game.priceLieTimer, 0.4);
       if ((e.aiTimer ?? 0) <= 0 && d < 420) {
         e.aiTimer = 2.8;
         fireEnemyBullet(game, e.x, e.y, angleBetween(e.x, e.y, p.x, p.y), 210, e.damage * 0.6, "#79c0ff", e.kind);
@@ -432,7 +433,7 @@ function updateBoss(game: Game, boss: Enemy, dt: number, speed: number) {
     case "boss-oracle": {
       boss.aiTimer = 5.4 * cadence;
       if (step % 2 === 1) {
-        game.priceLieTimer = 6;
+        if (game.perks.cleanFeed <= 0) game.priceLieTimer = 6;
         spawnMinions(game, boss, "oracle-manipulator", 3, 240, (m) => {
           m.feedNode = true;
           m.hp = m.maxHp = 90;

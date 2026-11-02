@@ -1,6 +1,6 @@
 # REVERT
 
-Browser **survivors-like** game (think [tibo.dog](https://tibo.dog)): move, dash, auto-firing crypto weapons, level-up picks, and 20-minute survival runs.
+Browser **survivors-like** game (think [tibo.dog](https://tibo.dog)): move, dash, auto-firing crypto weapons, level-up picks, and endless survival runs.
 
 **Theme:** Night-shift responders fall into the chain and fight the attack itself: phishing bots, MEV searchers, bridge drainers, and fictional APT crews. All names are fictional.
 
@@ -17,7 +17,21 @@ npm run dev
 |-----|--------|
 | WASD / arrows | Move |
 | Space | Dash (i-frames) |
+| Q / E | Active ability |
+| 1-3 | Pick a card |
+| R / X | Reroll / skip cards |
+| M | Mute |
 | Esc / P | Pause |
+
+## Checks
+
+```bash
+npm test
+npm run balance
+npm run formal
+```
+
+`npm run balance` plays headless bots across heroes and difficulties. Set `CAP` (minutes) and `RUNS` to change its size.
 
 ## Goal
 
@@ -25,7 +39,7 @@ The run is endless and ends only when you die. The first boss arrives at 2:00, a
 
 ## X player card
 
-The build fails if the first load of `index.html` or `embed.html` exceeds **124KB gzip** (see `scripts/first-load-budget-plugin.ts`). That counts the HTML plus every script and stylesheet it loads without a dynamic import. Three.js loads afterwards.
+The build fails if the first load of `index.html` or  exceeds **124KB gzip** (see `scripts/first-load-budget-plugin.ts`). That counts the HTML plus every script and stylesheet it loads without a dynamic import. Three.js loads afterwards.
 
 The card plays the full game from `/`. Build with your public https URL to add the tags:
 

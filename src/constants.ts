@@ -1,7 +1,3 @@
-export const WORLD = { width: 4800, height: 4800 };
-
-export const TILE = 64;
-
 export const COLORS = {
   bg: "#0d1117",
   grid: "#161b22",

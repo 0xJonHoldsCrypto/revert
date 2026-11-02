@@ -124,8 +124,8 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   slasher: { kind: "slasher", name: "Slasher", emoji: "🪓", hp: 120, speed: 62, damage: 24, radius: 19, xp: 16, color: "#c9a0ff", contactCooldown: 0.7 },
   "tg-scammer": { kind: "tg-scammer", name: "Telegram Scammer", emoji: "✉️", hp: 30, speed: 112, damage: 6, radius: 14, xp: 7, color: "#4ab3e8", contactCooldown: 0.8 },
   "leverage-degen": { kind: "leverage-degen", name: "100x Degen", emoji: "💥", hp: 24, speed: 118, damage: 30, radius: 14, xp: 7, color: "#ff5c48", contactCooldown: 0.6 },
-  "boss-shill": { kind: "boss-shill", name: "The Shill", emoji: "📣", hp: 450, speed: 58, damage: 18, radius: 34, xp: 70, color: "#ff8bd1", isBoss: true, contactCooldown: 0.5 },
-  "boss-rug-baron": { kind: "boss-rug-baron", name: "Rug Baron", emoji: "🧶", hp: 1350, speed: 66, damage: 24, radius: 36, xp: 80, color: "#f778ba", isBoss: true, contactCooldown: 0.45 },
+  "boss-shill": { kind: "boss-shill", name: "The Shill", emoji: "📣", hp: 800, speed: 58, damage: 18, radius: 34, xp: 70, color: "#ff8bd1", isBoss: true, contactCooldown: 0.5 },
+  "boss-rug-baron": { kind: "boss-rug-baron", name: "Rug Baron", emoji: "🧶", hp: 1500, speed: 66, damage: 24, radius: 36, xp: 80, color: "#f778ba", isBoss: true, contactCooldown: 0.45 },
   "boss-gas-golem": { kind: "boss-gas-golem", name: "Gas Golem", emoji: "⛽", hp: 3000, speed: 54, damage: 32, radius: 44, xp: 110, color: "#b7e04b", isBoss: true, contactCooldown: 0.4 },
   "boss-unit-414": {
     kind: "boss-unit-414",

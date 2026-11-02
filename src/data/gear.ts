@@ -1,5 +1,6 @@
 import type { WeaponRarity } from "./rarity";
-import { pick } from "../utils/math";
+import { RARITY_ORDER } from "./rarity";
+import { pick, simRandom } from "../utils/math";
 
 export type GearSlot = "hardware" | "wearable" | "bag";
 
@@ -20,7 +21,11 @@ export type GearStats = {
 
 export type GearDef = { name: string; slot: GearSlot; rarity: WeaponRarity; line: string; stats: GearStats };
 
-export const RARITY_ORDER: WeaponRarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
+export { RARITY_ORDER };
+export type GearItem = { id: GearId; tier: number };
+export const MAX_GEAR_TIER = 2;
+const TIER_BONUS = 0.6;
+const OWNED_REOFFER_CHANCE = 0.35;
 export const SLOT_LABEL: Record<GearSlot, string> = { hardware: "HARDWARE", wearable: "WEARABLE", bag: "BAG" };
 
 export const GEAR = {
@@ -52,7 +57,19 @@ export function gearDef(id: GearId): GearDef {
   return GEAR[id];
 }
 
-export function rollGear(minRarity: WeaponRarity): GearId {
+export function gearStats(item: GearItem): GearStats {
+  const scale = 1 + item.tier * TIER_BONUS;
+  const out: GearStats = {};
+  for (const [key, value] of Object.entries(gearDef(item.id).stats) as [keyof GearStats, number][]) out[key] = value * scale;
+  return out;
+}
+
+export function gearName(item: GearItem): string {
+  return `${gearDef(item.id).name}${item.tier ? ` +${item.tier}` : ""}`;
+}
+
+export function rollGear(minRarity: WeaponRarity, owned: GearItem[] = []): GearId {
+  if (owned.length && simRandom() < OWNED_REOFFER_CHANCE) return pick(owned).id;
   const floor = RARITY_ORDER.indexOf(minRarity);
   const pool = ALL_GEAR.filter((id) => {
     const rank = RARITY_ORDER.indexOf(gearDef(id).rarity);
@@ -71,8 +88,38 @@ const PERCENT: [keyof GearStats, string][] = [
   ["coin", "$SAFU"],
 ];
 
-export function describeGear(id: GearId): string {
-  const s: GearStats = gearDef(id).stats;
+const COMPARE_LABEL: [keyof GearStats, string, boolean][] = [
+  ["damage", "Damage", true],
+  ["speed", "Speed", true],
+  ["armor", "Armor", true],
+  ["pickup", "Pickup", true],
+  ["cooldown", "Cooldowns", true],
+  ["xp", "XP", true],
+  ["coin", "$SAFU", true],
+  ["dash", "Dash cooldown", true],
+  ["maxHp", "Max HP", false],
+  ["yield", "Passive XP", false],
+  ["healOnKill", "Heal per kill", false],
+  ["fundsOnKill", "Funds per kill", false],
+];
+
+function compareValue(value: number, percent: boolean): string {
+  return percent ? `${Math.round(value * 100)}%` : `${Math.round(value * 100) / 100}`;
+}
+
+export function compareGear(next: GearItem, current?: GearItem): string[] {
+  const a: GearStats = current ? gearStats(current) : {};
+  const b = gearStats(next);
+  const lines: string[] = [];
+  for (const [key, label, percent] of COMPARE_LABEL) {
+    if (!a[key] && !b[key]) continue;
+    lines.push(`${label} ${compareValue(a[key] ?? 0, percent)} → ${compareValue(b[key] ?? 0, percent)}`);
+  }
+  return lines;
+}
+
+export function describeGear(item: GearItem): string {
+  const s = gearStats(item);
   const parts = PERCENT.filter(([key]) => s[key]).map(([key, label]) => `${key === "cooldown" ? "-" : "+"}${Math.round(s[key]! * 100)}% ${label}`);
   if (s.maxHp) parts.push(`+${s.maxHp} max HP`);
   if (s.dash) parts.push(`-${Math.round(s.dash * 100)}% dash cooldown`);

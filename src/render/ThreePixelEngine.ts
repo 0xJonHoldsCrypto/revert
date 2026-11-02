@@ -13,6 +13,7 @@ import { LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
 import { CAMEOS } from "../data/cameos";
 import { CHANNEL_SEC } from "../game/interact";
 import { ARC_LIFE_SEC } from "../game/Game";
+import { isHiddenFromWeapons } from "../game/threats";
 import type { InteractableKind } from "../types";
 import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
@@ -56,6 +57,9 @@ const FLOOR_CELL_COUNT = (FLOOR_RADIUS_CELLS * 2 + 1) ** 2;
 const MOTE_COUNT = 34;
 const LP_POOL_CHARGE = 70;
 const ITEM_RING: Record<InteractableKind, string> = {
+  "staking-pad": "#ffc23d",
+  "merge-contract": "#b58cff",
+  "hardware-rack": "#79c0ff",
   faucet: "#6cb6ff",
   "lp-pool": "#2ee6c7",
   "bridge-gate": "#b58cff",
@@ -323,7 +327,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     }
   }
 
-  function emitProps(left: number, right: number, top: number, bottom: number) {
+  function emitProps(left: number, right: number, top: number, bottom: number, occludeX: number, occludeY: number) {
     const step = 240;
     const x0 = Math.floor(left / step) * step;
     const y0 = Math.floor(top / step) * step;
@@ -338,6 +342,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
           const py = cy + (hash(gx, gy + 30 + i) - 0.5) * 44;
           const props = ZONE_PROPS[biomeAt(px, py)];
           const prop = props[Math.floor(hash(gx + i * 13, gy + i) * props.length)]!;
+          if (Math.abs(px - occludeX) < 70 && occludeY < py && py - occludeY < prop.height) continue;
           const frame = atlas.frame(`prop:${prop.key}`);
           decals.push(px, py + 1, prop.height * frame.aspect * 0.55, prop.height * 0.18, DECAL_BLOB, 0, BLACK, 0.5);
           sprites.push(frame, px, py, 0.5, prop.height, !prop.key.endsWith("-sign") && hash(gx + i, gy + 40) > 0.5);
@@ -436,7 +441,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     scratchLights.length = 0;
     scratchLights.push({ x: px, y: py, h: 64, color: PLAYER_LIGHT, power: 1 });
 
-    emitProps(left, right, top, bottom);
+    emitProps(left, right, top, bottom, px, py);
     emitBiomeSeams(left, right, top, bottom);
     emitMotes(left, right, top, bottom);
     for (const mark of game.landmarks) {
@@ -510,6 +515,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         fx.push(x, y, hover + 6, 13, 13, 0, flicker ? PHISH_TELL : XP_COLOR, 0.45);
         continue;
       }
+      if (p.characterId === "nyx" && isHiddenFromWeapons(e)) decals.push(x, y, 26, 26, DECAL_RING, 1, PHISH_TELL, 0.9);
       if (e.kind === "honeypot-mimic" && !e.revealed) {
         const coin = atlas.frame("pickup:coin");
         decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
@@ -640,12 +646,26 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       fx.push(px, py, 26, 26, 60, Math.atan2(-p.vy * cameraBasis.backY, p.vx), color, 1.6, 0.8);
     }
 
-    const sk = game.sidekickEntity;
-    if (sk) {
+    for (const sk of game.rigs) {
       decals.push(sk.x, sk.y + 1, 11, 6, DECAL_BLOB, 0, BLACK, 0.45);
       const rigFrame = atlas.frame(`rig:${sk.kind}`);
       sprites.push(rigFrame, sk.x, sk.y, 6, rigFrame.px * PIXEL_SIZE, false);
     }
+    for (const loan of game.loans) {
+      const left = Math.max(0, loan.until - game.elapsed) / loan.total;
+      decals.push(loan.x, loan.y, 52, 52, DECAL_RING, left, COIN_COLOR, 1);
+      fx.push(loan.x, loan.y, 20, 18, 18, 0, COIN_COLOR, 2.4);
+    }
+    const sealColor = cachedColor("#9b8cff");
+    game.seals.forEach((seal, i) => {
+      decals.push(seal.x, seal.y, 18, 18, DECAL_RING, 1, sealColor, 0.9);
+      const next = game.seals[(i + 1) % game.seals.length]!;
+      if (game.seals.length < 2 || (game.seals.length === 2 && i === 1)) return;
+      const dx = next.x - seal.x;
+      const dy = next.y - seal.y;
+      fx.push((seal.x + next.x) / 2, (seal.y + next.y) / 2, 14, 5, Math.hypot(dx, dy * cameraBasis.backY), Math.atan2(-dy * cameraBasis.backY, dx), sealColor, 2.2, 0.8);
+    });
+    if (game.fieldRadius > 0) decals.push(px, py, game.fieldRadius, game.fieldRadius, DECAL_RING, 1, cachedColor("#c9a0ff"), 0.45);
 
     for (const pr of game.projectiles) {
       const x = lerpPos(pr.px, pr.x, alpha);

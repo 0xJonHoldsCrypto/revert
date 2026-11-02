@@ -11,6 +11,7 @@ export class Input {
   touchMove = { x: 0, y: 0 };
   touchDash = false;
   abilityPressed = false;
+  skipPressed = false;
   stickOrigin: { x: number; y: number } | null = null;
 
   private stickId: number | null = null;
@@ -100,6 +101,7 @@ export class Input {
       if (k === "r") this.restartPressed = true;
       if (k === "m") this.mutePressed = true;
       if (k === "q" || k === "e") this.abilityPressed = true;
+      if (k === "x") this.skipPressed = true;
       if (k === "1" || k === "2" || k === "3") this.cardPick = Number(k) - 1;
     } else {
       this.keys.delete(k);
@@ -111,6 +113,7 @@ export class Input {
     this.dashPressed = false;
     this.touchDash = false;
     this.abilityPressed = false;
+    this.skipPressed = false;
     this.pausePressed = false;
     this.advanceHeld = false;
     this.confirmPressed = false;
@@ -153,6 +156,12 @@ export class Input {
     const v = this.dashPressed || this.touchDash;
     this.dashPressed = false;
     this.touchDash = false;
+    return v;
+  }
+
+  consumeSkip(): boolean {
+    const v = this.skipPressed;
+    this.skipPressed = false;
     return v;
   }
 

@@ -128,6 +128,58 @@ const CAMEO_ART: Record<CameoId, { rows: string[]; palette: Record<string, strin
 };
 
 const ITEM_ART: Record<Exclude<InteractableKind, "cameo">, { rows: string[]; palette: Record<string, string> }> = {
+  "staking-pad": {
+    palette: { g: "#ffc23d", G: "#fff0b0", s: "#3a3e50", S: "#5c6684", c: "#2ee6c7" },
+    rows: [
+      ".......kGGk.......",
+      "......kGggGk......",
+      ".......kggk.......",
+      "......kGggGk......",
+      ".......kggk.......",
+      "...kkkkkkkkkkkk...",
+      "..kSSSSSSSSSSSSk..",
+      ".kSsscsscsscsscSk.",
+      "kSsssssssssssssssk",
+      "kkkkkkkkkkkkkkkkkk",
+    ],
+  },
+  "merge-contract": {
+    palette: { p: "#b58cff", P: "#efe0ff", d: "#4a2f80", s: "#2a2f3e", S: "#4a5166", y: "#ffc23d" },
+    rows: [
+      "..kkk........kkk..",
+      ".kpPpk......kpPpk.",
+      ".kpppk......kpppk.",
+      "..kkkpk....kpkkk..",
+      "......kp..pk......",
+      ".......kyyk.......",
+      "......kyPPyk......",
+      "......kyPPyk......",
+      ".......kyyk.......",
+      "....kkkkkkkkkk....",
+      "...kSSSSSSSSSSk...",
+      "..kssdddddddssk...",
+      "..kkkkkkkkkkkkk...",
+    ],
+  },
+  "hardware-rack": {
+    palette: { m: "#6a6f80", M: "#a8adbc", d: "#1f2230", g: "#3cf07c", y: "#ffc23d", r: "#ff5c48" },
+    rows: [
+      "kkkkkkkkkkkkkk",
+      "kMMMMMMMMMMMMk",
+      "kmddddddddddmk",
+      "kmdgdyddddddmk",
+      "kmddddddddddmk",
+      "kmmmmmmmmmmmmk",
+      "kmddddddddddmk",
+      "kmdrdgddddddmk",
+      "kmddddddddddmk",
+      "kmmmmmmmmmmmmk",
+      "kmddddddddddmk",
+      "kmdydrddddddmk",
+      "kmddddddddddmk",
+      "kkkkkkkkkkkkkk",
+    ],
+  },
   faucet: {
     palette: { m: "#8a8f9e", M: "#c8ccd8", d: "#3a3e50", b: "#6cb6ff", B: "#c8e8ff", y: "#ffc23d" },
     rows: [

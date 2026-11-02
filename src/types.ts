@@ -93,7 +93,7 @@ export interface EnemyDef {
 }
 
 import type { WeaponRarity } from "./data/rarity";
-import type { GearId, GearSlot } from "./data/gear";
+import type { GearItem, GearSlot } from "./data/gear";
 import type { AbilityId } from "./data/abilities";
 import type { CameoId } from "./data/cameos";
 
@@ -121,17 +121,25 @@ export interface UpgradeDef {
   rarity?: WeaponRarity;
   apply: (ctx: UpgradeContext) => boolean;
   maxTimes?: number;
+  tag?: string;
+  value?: number;
+  recommended?: boolean;
+  compare?: string[];
 }
 
-export type PerkId = "pierce" | "multishot" | "area" | "crit" | "regen" | "thorns" | "dashBlast" | "dashCooldown" | "xp" | "coin" | "killBlast" | "abilityCooldown" | "revive" | "rerolls";
+export type PerkId =
+  | "pierce" | "multishot" | "area" | "crit" | "regen" | "thorns" | "dashBlast" | "dashCooldown" | "xp" | "coin" | "killBlast" | "abilityCooldown" | "revive" | "rerolls"
+  | "lpRange" | "launchpool" | "cleanFeed" | "bugBounty" | "eigen" | "aave" | "lido" | "flashbots" | "wormhole" | "opGrant" | "curve";
 
 export interface UpgradeContext {
   addWeapon: (kind: WeaponKind, rarity?: WeaponRarity) => void;
   upgradeWeapon: (kind: WeaponKind) => void;
   heal: (amount: number) => void;
+  maxHp: (amount: number) => void;
   boostStat: (stat: "damage" | "speed" | "pickup" | "armor" | "cooldown" | "yield", amount: number) => void;
   special: (id: "leverage" | "flash-loan" | "multisig") => void;
   perk: (id: PerkId, amount: number) => void;
+  hasUpgrade: (id: string) => boolean;
   hasWeapon: (kind: WeaponKind) => boolean;
   weaponCount: () => number;
   weaponLevel: (kind: WeaponKind) => number;
@@ -170,10 +178,10 @@ export interface PlayerState extends Entity {
   cooldownMult: number;
   yieldPerSec: number;
   coins: number;
-  sidekick: SidekickKind | null;
   activeBuffs: { kind: TimedBuffKind; until: number }[];
   wellBonusArmor: number;
-  gear: Partial<Record<GearSlot, GearId>>;
+  gear: Partial<Record<GearSlot, GearItem>>;
+  stash: GearItem[];
   ability: AbilityId | null;
   abilityReadyAt: number;
   shieldUntil: number;
@@ -221,6 +229,9 @@ export interface Enemy extends Entity {
   feedNode?: boolean;
   implant?: boolean;
   elite?: boolean;
+  slashedUntil?: number;
+  auditHits?: number;
+  fullHp?: boolean;
   bounty?: boolean;
   scale?: number;
   frozenUntil?: number;
@@ -236,6 +247,7 @@ export interface Enemy extends Entity {
 
 export interface Projectile extends Entity {
   returnAt?: number;
+  outIds?: number[];
   weaponKind?: WeaponKind;
   hitIds?: number[];
   source?: EnemyKind;
@@ -254,6 +266,7 @@ export interface Orbiter extends Entity {
   damage: number;
   weaponKind: WeaponKind;
   offUntil?: number;
+  tvlSince?: number;
 }
 
 export interface Pickup extends Entity {
@@ -306,7 +319,7 @@ export interface Corpse {
   flip: boolean;
 }
 
-export type ChestKind = "cold-wallet" | "defi-lootbox" | "validator-crate" | "airdrop-pod" | "grant-safe";
+export type ChestKind = "cold-wallet" | "defi-lootbox" | "validator-crate" | "airdrop-pod";
 
 export type EnvObstacleKind =
   | "rug-pool"
@@ -338,7 +351,7 @@ export interface WorldWell {
   channelProgress: number;
 }
 
-export type InteractableKind = "faucet" | "lp-pool" | "bridge-gate" | "exploit-charge" | "bounty-board" | "airdrop" | "cameo";
+export type InteractableKind = "staking-pad" | "merge-contract" | "hardware-rack" | "faucet" | "lp-pool" | "bridge-gate" | "exploit-charge" | "bounty-board" | "airdrop" | "cameo";
 
 export interface Interactable {
   id: number;
@@ -355,6 +368,7 @@ export interface Interactable {
   until?: number;
   lift?: number;
   cameo?: CameoId;
+  rig?: SidekickKind;
 }
 
 export interface WorldLandmark {
@@ -364,6 +378,7 @@ export interface WorldLandmark {
 }
 
 export interface SidekickState {
+  tier: number;
   kind: SidekickKind;
   x: number;
   y: number;
@@ -381,6 +396,8 @@ export interface WorldObstacle {
 }
 
 export interface WeaponInstance {
+  swings?: number;
+  charge?: number;
   kind: WeaponKind;
   level: number;
   timer: number;

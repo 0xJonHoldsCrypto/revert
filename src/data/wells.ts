@@ -10,9 +10,9 @@ export type WellStatDef = {
 export const WELL_STATS: Record<WellStatId, WellStatDef> = {
   damage: { id: "damage", title: "Sharp Audits", description: "+8% damage for this run.", applyAmount: 0.08 },
   speed: { id: "speed", title: "Low Latency", description: "+7% move speed for this run.", applyAmount: 0.07 },
-  maxHp: { id: "maxHp", title: "Cold Storage", description: "+18 max HP for this run.", applyAmount: 18 },
+  maxHp: { id: "maxHp", title: "Node Vault", description: "+18 max HP for this run.", applyAmount: 18 },
   pickup: { id: "pickup", title: "MEV Magnet", description: "+12% pickup radius for this run.", applyAmount: 0.12 },
-  armor: { id: "armor", title: "Multisig Skin", description: "+6% damage reduction for this run.", applyAmount: 0.06 },
+  armor: { id: "armor", title: "Hardened Node", description: "+6% damage reduction for this run.", applyAmount: 0.06 },
   yield: { id: "yield", title: "Staking Yield", description: "+0.4 passive XP/sec for this run.", applyAmount: 0.4 },
   cooldown: { id: "cooldown", title: "Priority Lane", description: "Weapon cooldowns -8% for this run.", applyAmount: 0.08 },
 };

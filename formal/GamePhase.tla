@@ -37,7 +37,7 @@ QueuePopup == focused /\ phase = "playing" /\ popups < MaxPopups /\ popups' = po
 OpenPopup == focused /\ phase = "playing" /\ popups > 0 /\ popups' = popups - 1 /\ Go("levelup") /\ UNCHANGED focused
 PickCard == phase = "levelup" /\ Go("playing") /\ focused' = TRUE /\ UNCHANGED popups
 Die == focused /\ phase = "playing" /\ Go("lost") /\ UNCHANGED <<focused, popups>>
-Restart == phase = "lost" /\ Go("cinematic") /\ popups' = 0 /\ focused' = TRUE
+Restart == phase \in {"lost", "paused"} /\ Go("cinematic") /\ popups' = 0 /\ focused' = TRUE
 QuitToTitle == phase \in {"paused", "lost"} /\ Go("menu") /\ popups' = 0 /\ focused' = TRUE
 
 Blur ==

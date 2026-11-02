@@ -670,7 +670,6 @@ const CHEST_COLORS: Record<ChestKind, [string, string, string]> = {
   "defi-lootbox": ["#7a4de0", "#c2a4ff", "#452690"],
   "validator-crate": ["#d09a22", "#ffe08a", "#7a5610"],
   "airdrop-pod": ["#1fa890", "#7df2dc", "#0d5c50"],
-  "grant-safe": ["#c9b060", "#fff2b8", "#74622c"],
 };
 
 export function chestSprite(kind: ChestKind): HTMLCanvasElement {

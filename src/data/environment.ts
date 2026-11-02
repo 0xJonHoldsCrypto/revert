@@ -1,4 +1,4 @@
-import type { ChestKind, EnvObstacleKind, WeaponKind } from "../types";
+import type { ChestKind, EnvObstacleKind } from "../types";
 import type { WeaponRarity } from "./rarity";
 
 export type BiomeId = "mempool" | "vault" | "bridge" | "forest";
@@ -67,7 +67,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
   },
   "sandwich-bot": {
     kind: "sandwich-bot",
-    name: "Sandwich Bot",
+    name: "Slippage Pit",
     width: 72,
     height: 48,
     blocks: false,
@@ -77,7 +77,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
   },
   honeypot: {
     kind: "honeypot",
-    name: "Honeypot",
+    name: "Sticky Pool",
     width: 70,
     height: 70,
     blocks: false,
@@ -105,7 +105,7 @@ export const CHESTS: Record<ChestKind, ChestDef> = {
     openTime: 1.15,
     minRarity: "uncommon",
     color: "#58a6ff",
-    coinCost: 5,
+    coinCost: 8,
   },
   "defi-lootbox": {
     kind: "defi-lootbox",
@@ -114,7 +114,7 @@ export const CHESTS: Record<ChestKind, ChestDef> = {
     openTime: 1.35,
     minRarity: "rare",
     color: "#a371f7",
-    coinCost: 12,
+    coinCost: 18,
   },
   "validator-crate": {
     kind: "validator-crate",
@@ -123,7 +123,7 @@ export const CHESTS: Record<ChestKind, ChestDef> = {
     openTime: 1.6,
     minRarity: "epic",
     color: "#f0b429",
-    coinCost: 25,
+    coinCost: 34,
   },
   "airdrop-pod": {
     kind: "airdrop-pod",
@@ -132,38 +132,9 @@ export const CHESTS: Record<ChestKind, ChestDef> = {
     openTime: 0.95,
     minRarity: "common",
     color: "#2ee6c7",
-    coinCost: 3,
-  },
-  "grant-safe": {
-    kind: "grant-safe",
-    name: "Grant Safe",
-    radius: 60,
-    openTime: 1.45,
-    minRarity: "rare",
-    color: "#f0c14d",
-    coinCost: 18,
+    coinCost: 5,
   },
 };
-
-export const CHEST_WEAPON_POOL: WeaponKind[] = [
-  "audit-dart",
-  "rug-coin",
-  "memo-pulse",
-  "finality-beam",
-  "reorg-whip",
-  "stable-shield",
-  "patch-burst",
-  "flash-loan",
-  "validator-seal",
-  "bridge-bolt",
-  "nonce-shard",
-  "pager-ping",
-  "honeypot-trap",
-  "oracle-strike",
-  "merkle-proof",
-  "slashing-field",
-  "whale-alert",
-];
 
 export const FLOOR_CELL = 768;
 const REGION = 2600;

@@ -15,6 +15,8 @@ const CATEGORY: Partial<Record<SfxId, Category>> = {
 const MIN_GAP: Record<Category, number> = { combat: 1 / 5, pickup: 1 / 9, free: 0 };
 const FROZEN_ALLOWED = new Set<SfxId>(["ui", "cardSelect", "levelUp", "jackpot", "evolve"]);
 const MUSIC_TRIM = 0.55;
+const FROZEN_MUSIC_SHARE = 0.3;
+const LEVEL_JINGLE_GAP_SEC = 1.5;
 const LOOKAHEAD_SEC = 0.3;
 const SCHEDULE_MS = 30;
 const CROSSFADE_BARS = 2;
@@ -41,6 +43,8 @@ export class AudioEngine {
   private master: GainNode | null = null;
   private musicBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
+  private uiBus: GainNode | null = null;
+  private lastLevelJingle = -10;
   private noise: AudioBuffer | null = null;
   private tracks: ActiveTrack[] = [];
   private timer: number | null = null;
@@ -80,10 +84,15 @@ export class AudioEngine {
   }
 
   duck(on: boolean) {
+    if (this.frozen === on) return;
     this.frozen = on;
-    if (!this.ctx || !this.musicBus) return;
-    const target = on ? 0 : this.musicVolume * MUSIC_TRIM;
-    this.musicBus.gain.setTargetAtTime(target, this.ctx.currentTime, on ? 0.04 : 0.2);
+    if (!this.ctx || !this.musicBus || !this.sfxBus) return;
+    const now = this.ctx.currentTime;
+    const music = this.musicVolume * MUSIC_TRIM * (on ? FROZEN_MUSIC_SHARE : 1);
+    this.musicBus.gain.cancelScheduledValues(now);
+    this.musicBus.gain.setTargetAtTime(music, now, 0.25);
+    this.sfxBus.gain.cancelScheduledValues(now);
+    this.sfxBus.gain.setTargetAtTime(on ? 0 : this.sfxVolume, now, on ? 0.008 : 0.03);
   }
 
   setWindowActive(active: boolean) {
@@ -117,11 +126,14 @@ export class AudioEngine {
     this.master.gain.value = this.muted ? 0 : MASTER_GAIN;
     this.master.connect(comp);
     this.musicBus = ctx.createGain();
-    this.musicBus.gain.value = this.frozen ? 0 : this.musicVolume * MUSIC_TRIM;
+    this.musicBus.gain.value = this.musicVolume * MUSIC_TRIM * (this.frozen ? FROZEN_MUSIC_SHARE : 1);
     this.musicBus.connect(this.master);
     this.sfxBus = ctx.createGain();
-    this.sfxBus.gain.value = this.sfxVolume;
+    this.sfxBus.gain.value = this.frozen ? 0 : this.sfxVolume;
     this.sfxBus.connect(this.master);
+    this.uiBus = ctx.createGain();
+    this.uiBus.gain.value = this.sfxVolume;
+    this.uiBus.connect(this.master);
     const length = ctx.sampleRate;
     this.noise = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = this.noise.getChannelData(0);
@@ -279,13 +291,17 @@ export class AudioEngine {
     g.gain.setValueAtTime(gain, at);
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     osc.connect(g);
-    g.connect(this.sfxBus!);
+    g.connect(this.activeBus());
     osc.start(at);
     osc.stop(at + dur + 0.02);
   }
 
+  private activeBus(): GainNode {
+    return this.frozen ? this.uiBus! : this.sfxBus!;
+  }
+
   private seq(at: number, notes: number[], gap: number, dur: number, type: OscillatorType, gain: number) {
-    notes.forEach((f, i) => this.tone(this.sfxBus!, f, at + i * gap, dur, type, gain, 0, 0));
+    notes.forEach((f, i) => this.tone(this.activeBus(), f, at + i * gap, dur, type, gain, 0, 0));
   }
 
   play(id: SfxId) {
@@ -298,7 +314,11 @@ export class AudioEngine {
       if (now - this.lastPlayed[category] < MIN_GAP[category]) return;
       this.lastPlayed[category] = now;
     }
-    const bus = this.sfxBus;
+    if (id === "levelUp") {
+      if (now - this.lastLevelJingle < LEVEL_JINGLE_GAP_SEC) return;
+      this.lastLevelJingle = now;
+    }
+    const bus = this.activeBus();
     switch (id) {
       case "hit": this.noiseHit(bus, now, 0.04, 0.05, 2600 + Math.random() * 900, "bandpass"); this.sweep(now, 300, 140, 0.05, "square", 0.025); break;
       case "crit": this.sweep(now, 1100, 300, 0.09, "square", 0.1); this.noiseHit(bus, now, 0.07, 0.14, 3800, "highpass"); break;

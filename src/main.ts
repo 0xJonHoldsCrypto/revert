@@ -14,6 +14,11 @@ import { drawCinematic } from "./ui/cinematicOverlay";
 import { bindMute } from "./ui/muteButton";
 import { mountTouchControls, syncTouchVisible } from "./ui/touchControls";
 import { CAMEOS } from "./data/cameos";
+import { groundHalfExtents } from "./render/view";
+import { chestSprite } from "./pixel/handArt";
+import { getThreatSprite } from "./pixel/threatArt";
+import { cameoSprite, interactableSprite } from "./pixel/worldArt";
+import type { InteractableKind } from "./types";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const uiCanvas = document.createElement("canvas");
@@ -140,38 +145,79 @@ function drawEnemyTags(w: number, h: number) {
   }
 }
 
-function drawOffscreenPointers(w: number, h: number) {
-  for (const e of game.enemies) {
-    if (e.kind !== "bridge-drainer" && !e.bounty && !ENEMIES[e.kind].isBoss) continue;
-    drawPointer(e.x, e.y, ENEMIES[e.kind].isBoss ? "#ff5c48" : e.bounty ? "#ffc23d" : "#b58cff", w, h);
+function poiArrows() {
+  const p = game.player;
+  const nearest = new Map<string, { x: number; y: number; d: number; color: string; icon: HTMLCanvasElement; dim: boolean }>();
+  const offer = (key: string, x: number, y: number, color: string, icon: HTMLCanvasElement, dim = false) => {
+    const d = Math.hypot(x - p.x, y - p.y);
+    const best = nearest.get(key);
+    if (!best || d < best.d) nearest.set(key, { x, y, d, color, icon, dim });
+  };
+  for (const c of game.chests) {
+    if (!c.opened) offer(`chest:${c.kind}`, c.x, c.y, CHESTS[c.kind].color, chestSprite(c.kind), p.coins < game.chestCost(c.coinCost));
   }
+  const canMerge = game.mergeOptions().length > 0;
   for (const item of game.interactables) {
-    if (item.used) continue;
-    if (item.kind === "cameo") drawPointer(item.x, item.y, CAMEOS[item.cameo!].color, w, h);
-    if (item.kind === "airdrop") drawPointer(item.x, item.y, "#f4f3ee", w, h);
+    if (item.used || game.elapsed < item.readyAt) continue;
+    if (item.kind === "cameo") offer("cameo", item.x, item.y, CAMEOS[item.cameo!].color, cameoSprite(item.cameo!));
+    else if (item.kind === "merge-contract") offer(item.kind, item.x, item.y, "#b58cff", interactableSprite(item.kind), !canMerge);
+    else if (ARROW_ITEMS[item.kind]) offer(item.kind, item.x, item.y, ARROW_ITEMS[item.kind]!, interactableSprite(item.kind as ArrowKind));
   }
+  for (const e of game.enemies) {
+    if (ENEMIES[e.kind].isBoss) offer("boss", e.x, e.y, "#ff5c48", getThreatSprite(e.kind));
+    else if (e.bounty) offer("bounty", e.x, e.y, "#ffc23d", getThreatSprite(e.kind));
+  }
+  return nearest;
 }
 
-function drawPointer(x: number, y: number, color: string, w: number, h: number) {
-  const s = pixelEngine?.worldToScreen(x, y, w, h);
-  if (!s || (s.x > 0 && s.y > 0 && s.x < w && s.y < h)) return;
-  const a = Math.atan2(s.y - h / 2, s.x - w / 2);
+function drawOffscreenPointers(w: number, h: number) {
+  const { halfW, halfH } = groundHalfExtents(w / h);
+  const p = game.player;
+  const targets = [...poiArrows().values()].filter((t) => Math.abs(t.x - p.x) > halfW || Math.abs(t.y - p.y) > halfH * 0.9);
+  targets.sort((a, b) => a.d - b.d);
+  for (const target of targets.slice(0, MAX_ARROWS)) drawPointer(target, w, h);
+}
+
+const ARROW_ITEMS: Partial<Record<InteractableKind, string>> = {
+  airdrop: "#f4f3ee",
+  "staking-pad": "#ffc23d",
+  "hardware-rack": "#79c0ff",
+  "bounty-board": "#ffc23d",
+};
+type ArrowKind = "airdrop" | "staking-pad" | "hardware-rack" | "bounty-board";
+
+function drawPointer(target: { x: number; y: number; color: string; icon: HTMLCanvasElement; dim: boolean }, w: number, h: number) {
+  const p = game.player;
+  const a = Math.atan2((target.y - p.y) * ARROW_DEPTH_SQUASH, target.x - p.x);
   const rx = w / 2 - 34;
-  const ry = h / 2 - 54;
+  const ry = h / 2 - 76;
   const k = Math.min(rx / Math.max(Math.abs(Math.cos(a)), 1e-3), ry / Math.max(Math.abs(Math.sin(a)), 1e-3));
+  const cx = w / 2 + Math.cos(a) * k;
+  const cy = h / 2 + Math.sin(a) * k;
   uiCtx.save();
-  uiCtx.translate(w / 2 + Math.cos(a) * k, h / 2 + Math.sin(a) * k);
+  uiCtx.globalAlpha = target.dim ? 0.45 : 1;
+  uiCtx.translate(cx, cy);
+  uiCtx.fillStyle = "rgba(4,6,12,0.82)";
+  uiCtx.fillRect(-15, -15, 30, 30);
+  uiCtx.strokeStyle = target.color;
+  uiCtx.lineWidth = 2;
+  uiCtx.strokeRect(-15, -15, 30, 30);
+  const scale = Math.min(22 / target.icon.width, 22 / target.icon.height);
+  uiCtx.imageSmoothingEnabled = false;
+  uiCtx.drawImage(target.icon, (-target.icon.width * scale) / 2, (-target.icon.height * scale) / 2, target.icon.width * scale, target.icon.height * scale);
   uiCtx.rotate(a);
-  uiCtx.fillStyle = color;
+  uiCtx.fillStyle = target.color;
   uiCtx.beginPath();
-  uiCtx.moveTo(14, 0);
-  uiCtx.lineTo(-8, -9);
-  uiCtx.lineTo(-8, 9);
+  uiCtx.moveTo(28, 0);
+  uiCtx.lineTo(17, -7);
+  uiCtx.lineTo(17, 7);
   uiCtx.fill();
   uiCtx.restore();
 }
 
 const RADAR_RANGE = 1500;
+const MAX_ARROWS = 7;
+const ARROW_DEPTH_SQUASH = 0.77;
 
 function drawRadar(w: number) {
   const size = w < 640 ? 76 : 108;
@@ -223,7 +269,10 @@ const ITEM_PROMPT: Record<string, string> = {
   faucet: "Faucet · free $SAFU",
   "lp-pool": "Liquidity pool · stand to heal",
   "bridge-gate": "Bridge · jump across the map",
-  "exploit-charge": "Exploit charge · step on, run away",
+  "exploit-charge": "Exploit charge · step on to arm a big blast",
+  "staking-pad": "Staking pad · temporary boost",
+  "merge-contract": "Merge contract · bring two identical items",
+  "hardware-rack": "Hardware rack · recruit or upgrade a rig",
   "bounty-board": "Bounty board · post a whale hunt",
   airdrop: "Airdrop · free loot",
 };
