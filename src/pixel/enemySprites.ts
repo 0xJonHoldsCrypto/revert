@@ -1,5 +1,6 @@
 import type { EnemyKind, SidekickKind } from "../types";
-import { getMonsterSprite, getRigSprite } from "./gbcArt";
+import { getRigSprite } from "./gbcArt";
+import { getThreatSprite } from "./threatArt";
 
 const cache = new Map<string, HTMLCanvasElement>();
 
@@ -20,7 +21,7 @@ export function getEnemySpriteCanvas(kind: EnemyKind, size = 96): HTMLCanvasElem
   const key = `e-${kind}-${size}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const canvas = fit(getMonsterSprite(kind), size);
+  const canvas = fit(getThreatSprite(kind), size);
   cache.set(key, canvas);
   return canvas;
 }

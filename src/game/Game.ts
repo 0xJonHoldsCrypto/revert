@@ -31,6 +31,7 @@ import { SIDEKICKS } from "../data/sidekicks";
 import { TIMED_BUFFS, TIMED_BUFF_ORDER, type TimedBuffKind } from "../data/timedBuffs";
 import { WELL_STATS, type WellStatId } from "../data/wells";
 import { readViewport } from "../render/viewport";
+import { isHiddenFromWeapons, THREAT_INTEL, updateEnemyBehavior, updateHazards } from "./threats";
 import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE, type Cinematic } from "./cinematic";
 import { groundHalfExtents } from "../render/view";
 import type {
@@ -41,6 +42,7 @@ import type {
   Orbiter,
   Floater,
   Corpse,
+  Hazard,
   Shockwave,
   Particle,
   Pickup,
@@ -68,6 +70,24 @@ import {
   simRandom,
 } from "../utils/math";
 
+export const FUNDS_TOTAL = 3_840_000_000;
+const AMBIENT_DRAIN_PER_SEC = 400_000;
+const BOSS_DRAIN_PER_SEC = 500_000;
+const HIT_FUNDS_LOSS = 250_000;
+const BLOCK_START = 21_000_000;
+const BLOCK_SECONDS = 12;
+const KILL_FEED: Partial<Record<EnemyKind, string>> = {
+  "script-kiddie": "reverted · copy-paste error",
+  "phishing-bot": "approval revoked",
+  "mev-searcher": "bundle dropped",
+  "bridge-drainer": "bridge message rejected",
+  "rug-dev": "liquidity locked",
+  "oracle-manipulator": "price feed corrected",
+  "sim-swapper": "2FA restored",
+  insider: "access revoked",
+  "shadow-op": "session terminated",
+};
+const ALIVE_CURVE: [number, number][] = [[0, 10], [60, 24], [150, 55], [300, 110], [600, 190], [900, 280], [1200, 380]];
 const PLAYER_HIT_RADIUS = 11;
 const ENEMY_HIT_SCALE = 0.8;
 const HUD_TICKS = 6;
@@ -98,7 +118,18 @@ export type HudData = {
   level: number;
   time: number;
   kills: number;
-  weapons: { name: string; level: number; rarity: string }[];
+  weapons: { name: string; level: number; rarity: string; jammed: boolean }[];
+  funds: number;
+  fundsPct: number;
+  block: number;
+  gas: boolean;
+  lie: boolean;
+  swapped: boolean;
+  feed: string[];
+  banner: { title: string; text: string; until: number; tone: string } | null;
+  signers: number;
+  leverage: number;
+  flash: string | null;
   coins: number;
   biome: string;
   buffs: { label: string; remaining: number }[];
@@ -145,6 +176,32 @@ export class Game {
   cinematic: Cinematic | null = null;
   shockwaves: Shockwave[] = [];
   corpses: Corpse[] = [];
+  hazards: Hazard[] = [];
+  fundsLost = 0;
+  fundsRecovered = 0;
+  priceLieTimer = 0;
+  swapTimer = 0;
+  gasUntil = 0;
+  feed: string[] = [];
+  banner: { title: string; text: string; until: number; tone: string } | null = null;
+  signers = 0;
+  timeline: { block: number; text: string }[] = [];
+  rootCause: EnemyKind | "hazard" | "insolvent" | null = null;
+  weaponDamage = new Map<string, number>();
+  private nextGasAt = 150;
+  private seenKinds = new Set<EnemyKind>();
+  private bannerQueue: { title: string; text: string; tone: string }[] = [];
+  private lastFeedAt = -1;
+  private leverage = 0;
+  private flashUntil = 0;
+  private flashKills = 0;
+  private flashDebtUntil = 0;
+  private yieldSlashedUntil = 0;
+  private signerRegenAt = 0;
+  private swapCooldownUntil = 0;
+  private pathLog: { x: number; y: number }[] = [];
+  private pathTimer = 0;
+  private reorgAt = 0;
   hitstop = 0;
   impactFrames = 0;
   hurtPulse = 0;
@@ -247,6 +304,30 @@ export class Game {
     this.recorder.reset();
     this.shockwaves = [];
     this.corpses = [];
+    this.hazards = [];
+    this.fundsLost = 0;
+    this.fundsRecovered = 0;
+    this.priceLieTimer = 0;
+    this.swapTimer = 0;
+    this.gasUntil = 0;
+    this.nextGasAt = 150;
+    this.feed = [];
+    this.banner = null;
+    this.bannerQueue = [];
+    this.seenKinds.clear();
+    this.lastFeedAt = -1;
+    this.signers = 0;
+    this.leverage = 0;
+    this.flashUntil = 0;
+    this.flashDebtUntil = 0;
+    this.yieldSlashedUntil = 0;
+    this.swapCooldownUntil = 0;
+    this.timeline = [{ block: BLOCK_START, text: "Responder on-chain. Outflow already live." }];
+    this.rootCause = null;
+    this.weaponDamage.clear();
+    this.pathLog = [];
+    this.pathTimer = 0;
+    this.reorgAt = 0;
     this.hitstop = 0;
     this.impactFrames = 0;
     this.hurtPulse = 0;
@@ -332,10 +413,23 @@ export class Game {
         if (stat === "cooldown") this.player.cooldownMult *= 1 - amount;
         if (stat === "yield") this.player.yieldPerSec += 0.75 * amount;
       },
+      special: (id) => this.applySpecial(id),
       hasWeapon: (kind) => this.weapons.some((w) => w.kind === kind),
       weaponLevel: (kind) => this.weapons.find((w) => w.kind === kind)?.level ?? 0,
       weaponEvolved: (kind) => !!this.weapons.find((w) => w.kind === kind)?.evolved,
     };
+  }
+
+  private applySpecial(id: "leverage" | "flash-loan" | "multisig") {
+    if (id === "leverage") this.leverage++;
+    if (id === "flash-loan") {
+      this.flashUntil = this.elapsed + 8;
+      this.flashKills = this.stats.kills;
+    }
+    if (id === "multisig") {
+      this.signers = 3;
+      this.signerRegenAt = this.elapsed + 60;
+    }
   }
 
   triggerLevelUp() {
@@ -419,12 +513,14 @@ export class Game {
     }
 
     if (this.dying <= 0) this.updatePlayer(dt);
+    this.updateChain(dt);
     this.updateWells(dt);
     this.updateChests(dt);
     this.updateSidekick(dt);
     this.updateSpawner(dt);
     this.rebuildEnemySpatial();
     this.updateEnemies(dt);
+    updateHazards(this, dt);
     if (this.dying <= 0) this.updateWeapons(dt);
     this.updateProjectiles(dt);
     this.updateOrbiters(dt);
@@ -439,6 +535,10 @@ export class Game {
     if (++this.hudTick % HUD_TICKS === 0) this.pushHud();
 
     if (this.god) this.player.hp = this.player.maxHp;
+    if (this.fundsLeft <= 0 && this.dying <= 0 && (this.runDifficulty === "hard" || this.runDifficulty === "nightmare")) {
+      this.rootCause = "insolvent";
+      this.player.hp = 0;
+    }
     if (this.player.hp <= 0 && this.dying <= 0) {
       this.player.hp = 0;
       this.player.dead = true;
@@ -450,6 +550,244 @@ export class Game {
       this.audio.setMusic(null, true);
       this.burstParticles(this.player.x, this.player.y, "#ff5d7a", 28);
     }
+  }
+
+  get fundsLeft(): number {
+    return Math.max(0, FUNDS_TOTAL - this.fundsLost);
+  }
+
+  get blockHeight(): number {
+    return BLOCK_START + Math.floor(this.elapsed / BLOCK_SECONDS);
+  }
+
+  get gasActive(): boolean {
+    return this.elapsed < this.gasUntil;
+  }
+
+  gasEnemySpeedMult(): number {
+    return this.gasActive ? 1.35 : 1;
+  }
+
+  nextEntityId(): number {
+    return uid();
+  }
+
+  rand(): number {
+    return simRandom();
+  }
+
+  fakeHash(): string {
+    const hex = () => Math.floor(Math.random() * 65536).toString(16).padStart(4, "0");
+    return `0x${hex()}…${hex().slice(0, 2)}`;
+  }
+
+  addFloater(x: number, y: number, text: string, color: string) {
+    this.floaters.push({ x, y, vy: -30, life: 1.1, maxLife: 1.1, text, color, hits: 6 });
+  }
+
+  pushFeed(line: string) {
+    this.feed.unshift(line);
+    if (this.feed.length > 5) this.feed.length = 5;
+  }
+
+  private logEvent(text: string) {
+    this.timeline.push({ block: this.blockHeight, text });
+    this.pushFeed(text);
+  }
+
+  private queueBanner(title: string, text: string, tone: string) {
+    this.bannerQueue.push({ title, text, tone });
+  }
+
+  addHazard(h: Omit<Hazard, "t">) {
+    this.hazards.push({ ...h, t: 0 });
+  }
+
+  findEnemy(id: number): Enemy | undefined {
+    return this.enemyById.get(id);
+  }
+
+  spawnEnemyAt(kind: EnemyKind, x: number, y: number): Enemy {
+    const def = ENEMIES[kind];
+    const dm = this.diffMult();
+    const scale = (1 + this.elapsed * 0.002) * dm.enemyHpMult;
+    const enemy: Enemy = {
+      id: uid(),
+      kind,
+      x: clamp(x, 40, WORLD.width - 40),
+      y: clamp(y, 40, WORLD.height - 40),
+      vx: 0,
+      vy: 0,
+      radius: def.radius,
+      dead: false,
+      hp: def.hp * scale,
+      maxHp: def.hp * scale,
+      damage: def.damage * (1 + this.elapsed * 0.0015),
+      speed: def.speed * (1 + this.elapsed * 0.0008) * dm.enemySpeedMult,
+      contactCd: 0,
+      flash: 0,
+      wobble: randRange(0, Math.PI * 2),
+    };
+    this.enemies.push(enemy);
+    if (!this.seenKinds.has(kind) && THREAT_INTEL[kind]) {
+      this.seenKinds.add(kind);
+      this.queueBanner(`NEW THREAT · ${def.name.toUpperCase()}`, THREAT_INTEL[kind]!, def.color);
+    }
+    return enemy;
+  }
+
+  hurtPlayer(rawDamage: number, source: EnemyKind) {
+    const p = this.player;
+    if (p.invuln > 0 || this.dying > 0) return;
+    const dmg = rawDamage * (1 - this.totalArmor()) * this.diffMult().playerDamageTakenMult * AREA_RULES[biomeAt(p.x, p.y)].damageTaken;
+    if (p.hp - dmg <= 0 && this.signers >= 2) {
+      this.signers--;
+      this.signerRegenAt = this.elapsed + 60;
+      p.hp = 1;
+      p.invuln = 1.5;
+      this.impactFrames = 4;
+      this.addTrauma(0.6);
+      this.audio.play("txConfirmed");
+      this.addFloater(p.x, p.y - 70, `TX BLOCKED · ${this.signers}/3 SIGNERS`, "#2ee6c7");
+      return;
+    }
+    p.hp -= dmg;
+    p.invuln = 0.45;
+    this.rootCause = source;
+    this.fundsLost += dmg * HIT_FUNDS_LOSS;
+    this.yieldSlashedUntil = this.elapsed + 6;
+    this.addTrauma(clamp(0.25 + (dmg / p.maxHp) * 2, 0.25, 0.7));
+    this.hurtPulse = 1;
+    this.hitstop = Math.max(this.hitstop, 0.04);
+    this.audio.play("hurt");
+    this.burstParticles(p.x, p.y, COLORS.danger, 10);
+    if (this.leverage > 0 && p.hp / p.maxHp < 0.25) {
+      this.leverage--;
+      p.damageMult /= 1.12;
+      this.audio.play("liquidation");
+      this.addFloater(p.x, p.y - 70, "POSITION LIQUIDATED", "#ff5c48");
+    }
+    if (source === "sim-swapper" && this.elapsed > this.swapCooldownUntil) {
+      this.swapTimer = 1.6;
+      this.swapCooldownUntil = this.elapsed + 8;
+      this.audio.play("glitch");
+    }
+  }
+
+  knockPlayer(fromX: number, fromY: number, force: number) {
+    const p = this.player;
+    const n = normalize(p.x - fromX || 1, p.y - fromY);
+    p.x = clamp(p.x + n.x * force * 0.22, p.radius, WORLD.width - p.radius);
+    p.y = clamp(p.y + n.y * force * 0.22, p.radius, WORLD.height - p.radius);
+  }
+
+  beginReorg() {
+    this.reorgAt = this.elapsed + 0.9;
+    this.queueBanner("CHAIN REORG INCOMING", "Your last two seconds are about to be rewritten.", "#d05cff");
+    this.audio.play("alarm");
+  }
+
+  private performReorg() {
+    const p = this.player;
+    const path = this.pathLog;
+    const home = path[0];
+    if (!home) return;
+    this.impactFrames = 6;
+    this.addTrauma(0.7);
+    this.audio.play("glitch");
+    p.x = home.x;
+    p.y = home.y;
+    p.px = home.x;
+    p.py = home.y;
+    p.invuln = Math.max(p.invuln, 0.5);
+    path.forEach((step, i) => {
+      if (i % 3 !== 2) return;
+      this.addHazard({ shape: "circle", x: step.x, y: step.y, r: 44, windup: 0.7, active: 0, damage: 20, color: "#d05cff", source: "boss-grandmaster", knock: 0 });
+    });
+    this.logEvent("Block reorged by The Grandmaster");
+  }
+
+  private updateChain(dt: number) {
+    const p = this.player;
+    if (this.priceLieTimer > 0) this.priceLieTimer -= dt;
+    if (this.swapTimer > 0) this.swapTimer -= dt;
+    const bossAlive = this.enemies.some((e) => !e.dead && ENEMIES[e.kind].isBoss);
+    this.fundsLost += (AMBIENT_DRAIN_PER_SEC + (bossAlive ? BOSS_DRAIN_PER_SEC : 0)) * dt;
+
+    if (this.elapsed >= this.nextGasAt) {
+      this.nextGasAt = this.elapsed + randRange(95, 150);
+      this.gasUntil = this.elapsed + 8;
+      this.audio.play("gasSpike");
+      this.queueBanner("GAS SPIKE · 9,999 GWEI", "Attackers rush. Your cooldowns lag for 8 seconds.", "#ffc23d");
+      this.pushFeed("Base fee spiked. Mempool congested.");
+    }
+
+    if (this.flashUntil > 0 && this.elapsed >= this.flashUntil) {
+      this.flashUntil = 0;
+      if (this.stats.kills - this.flashKills >= 15) {
+        this.addFloater(p.x, p.y - 70, "FLASH LOAN REPAID", "#2ee6c7");
+        this.audio.play("txConfirmed");
+      } else {
+        this.flashDebtUntil = this.elapsed + 10;
+        this.addFloater(p.x, p.y - 70, "LOAN DEFAULT · COOLDOWNS UP", "#ff5c48");
+        this.audio.play("liquidation");
+      }
+    }
+
+    if (this.signers > 0 && this.signers < 3 && this.elapsed >= this.signerRegenAt) {
+      this.signers++;
+      this.signerRegenAt = this.elapsed + 60;
+    }
+
+    this.pathTimer -= dt;
+    if (this.pathTimer <= 0) {
+      this.pathTimer = 0.1;
+      this.pathLog.push({ x: p.x, y: p.y });
+      if (this.pathLog.length > 20) this.pathLog.shift();
+    }
+    if (this.reorgAt > 0 && this.elapsed >= this.reorgAt) {
+      this.reorgAt = 0;
+      this.performReorg();
+    }
+
+    if (this.banner && this.elapsed >= this.banner.until) this.banner = null;
+    if (!this.banner && this.bannerQueue.length) {
+      const next = this.bannerQueue.shift()!;
+      this.banner = { ...next, until: this.elapsed + 3.4 };
+      this.audio.play("ui");
+    }
+  }
+
+  private weaponCooldownMult(): number {
+    let m = this.player.cooldownMult;
+    if (this.gasActive) m *= 1.25;
+    if (this.elapsed < this.flashUntil) m *= 0.5;
+    if (this.elapsed < this.flashDebtUntil) m *= 1.35;
+    return m;
+  }
+
+  postMortem() {
+    const p = this.player;
+    const saved = this.fundsLeft;
+    const cause = this.rootCause === "insolvent" ? "Protocol insolvent" : this.rootCause === "hazard" ? "Environment hazard" : this.rootCause ? ENEMIES[this.rootCause].name : "None";
+    const damage = [...this.weaponDamage.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
+    return {
+      incident: `EXR-${(this.worldSeed >>> 0).toString(16).slice(0, 6).toUpperCase()}`,
+      block: this.blockHeight,
+      saved,
+      lost: Math.max(0, FUNDS_TOTAL - saved),
+      savedPct: (saved / FUNDS_TOTAL) * 100,
+      recovered: this.fundsRecovered,
+      cause,
+      level: p.level,
+      kills: this.stats.kills,
+      bosses: this.stats.bossesDefeated,
+      time: this.stats.timeSurvived,
+      timeline: this.timeline.slice(-8),
+      damage: damage.slice(0, 6),
+    };
   }
 
   addTrauma(amount: number) {
@@ -472,6 +810,7 @@ export class Game {
   private beginBossEntrance(kind: EnemyKind) {
     const p = this.player;
     this.spawnBoss(kind);
+    this.logEvent(`${ENEMIES[kind].name} entered the mempool`);
     const boss = this.enemies[this.enemies.length - 1]!;
     const side = p.x > WORLD.width - 500 ? -1 : 1;
     boss.x = clamp(p.x + side * 300, boss.radius, WORLD.width - boss.radius);
@@ -623,7 +962,8 @@ export class Game {
       p.y += p.vy * dt;
     } else {
       const mv = this.input.moveVector();
-      const n = normalize(mv.x, mv.y);
+      const swap = this.swapTimer > 0 ? -1 : 1;
+      const n = normalize(mv.x * swap, mv.y * swap);
       const spd = p.moveSpeed * this.buffMult("speed") * AREA_RULES[biomeAt(p.x, p.y)].speed;
       p.vx = n.x * spd;
       p.vy = n.y * spd;
@@ -668,6 +1008,7 @@ export class Game {
       const def = ENV_OBSTACLES[o.kind];
       if (def.damagePerSec) {
         p.hp -= def.damagePerSec * dt * (1 - this.totalArmor());
+        this.rootCause = "hazard";
       }
       if (def.blocks) this.pushOutOfObstacle(p, o);
       if (def.slowMult && p.dashTimer <= 0) {
@@ -817,7 +1158,7 @@ export class Game {
     let target: Enemy | undefined;
     let bestD = 320;
     for (const e of this.enemies) {
-      if (e.dead) continue;
+      if (e.dead || isHiddenFromWeapons(e)) continue;
       const d = dist(sk.x, sk.y, e.x, e.y);
       if (d < bestD) {
         bestD = d;
@@ -860,16 +1201,31 @@ export class Game {
     return DIFFICULTY[this.runDifficulty];
   }
 
+  private aliveCeiling(): number {
+    const t = this.elapsed;
+    let from = ALIVE_CURVE[0]!;
+    for (const point of ALIVE_CURVE) {
+      if (t < point[0]) {
+        const f = (t - from[0]) / (point[0] - from[0]);
+        return (from[1] + (point[1] - from[1]) * f) * this.diffMult().spawnMult;
+      }
+      from = point;
+    }
+    return from[1] * this.diffMult().spawnMult;
+  }
+
   private updateSpawner(dt: number) {
     this.spawnTimer -= dt;
-    const ramp = 1 + this.elapsed / 120;
-    const targetRate = Math.max(0.12, this.spawnRate / ramp / this.diffMult().spawnMult);
-
-    if (this.spawnTimer <= 0 && this.enemies.length < MAX_ENEMIES) {
-      this.spawnTimer = targetRate;
-      const batch = Math.min(3, 1 + Math.floor(this.elapsed / 180));
-      for (let i = 0; i < batch; i++) this.spawnHordeEnemy();
+    if (this.spawnTimer > 0) return;
+    const ceiling = Math.min(MAX_ENEMIES, this.aliveCeiling());
+    if (this.enemies.length >= ceiling) {
+      this.spawnTimer = 0.1;
+      return;
     }
+    const deficit = ceiling - this.enemies.length;
+    this.spawnTimer = Math.max(0.1, 0.9 - this.elapsed / 400);
+    const batch = Math.min(6, Math.ceil(deficit / 8));
+    for (let i = 0; i < batch; i++) this.spawnHordeEnemy();
   }
 
   private spawnHordeEnemy() {
@@ -882,26 +1238,7 @@ export class Game {
     const edge = Math.min(halfW * 1.25 / Math.max(Math.abs(cos), 1e-3), halfH / Math.max(Math.abs(sin), 1e-3));
     const distSpawn = edge + randRange(70, 170);
     const kind = this.pickHordeKind();
-    const def = ENEMIES[kind];
-    const dm = this.diffMult();
-    const scale = (1 + this.elapsed * 0.002) * dm.enemyHpMult;
-    this.enemies.push({
-      id: uid(),
-      kind,
-      x: clamp(p.x + cos * distSpawn, 40, WORLD.width - 40),
-      y: clamp(p.y + sin * distSpawn, 40, WORLD.height - 40),
-      vx: 0,
-      vy: 0,
-      radius: def.radius,
-      dead: false,
-      hp: def.hp * scale,
-      maxHp: def.hp * scale,
-      damage: def.damage * (1 + this.elapsed * 0.0015),
-      speed: def.speed * (1 + this.elapsed * 0.0008) * dm.enemySpeedMult,
-      contactCd: 0,
-      flash: 0,
-      wobble: randRange(0, Math.PI * 2),
-    });
+    this.spawnEnemyAt(kind, p.x + cos * distSpawn, p.y + sin * distSpawn);
   }
 
   private pickHordeKind(): EnemyKind {
@@ -970,7 +1307,7 @@ export class Game {
   }
 
   private updateYield(dt: number) {
-    if (this.player.yieldPerSec <= 0) return;
+    if (this.player.yieldPerSec <= 0 || this.elapsed < this.yieldSlashedUntil) return;
     this.player.xp += this.player.yieldPerSec * dt * this.player.xpMult;
     if (this.player.xp >= this.player.xpToNext) {
       this.player.xp -= this.player.xpToNext;
@@ -997,9 +1334,7 @@ export class Game {
       e.wobble += dt * 3;
       if (e.flash > 0) e.flash -= dt;
 
-      const ang = angleBetween(e.x, e.y, p.x, p.y);
-      e.x += Math.cos(ang) * e.speed * dt;
-      e.y += Math.sin(ang) * e.speed * dt;
+      updateEnemyBehavior(this, e, dt);
       if (e.kx || e.ky) {
         e.x += (e.kx ?? 0) * dt;
         e.y += (e.ky ?? 0) * dt;
@@ -1021,17 +1356,10 @@ export class Game {
       const e = this.enemyById.get(item.id);
       if (!e || e.dead) continue;
       const def = ENEMIES[e.kind];
-      if (p.invuln > 0 || e.contactCd > 0) continue;
+      if (p.invuln > 0 || e.contactCd > 0 || isHiddenFromWeapons(e)) continue;
       if (!rectsOverlap(p.x, p.y, PLAYER_HIT_RADIUS, e.x, e.y, e.radius * ENEMY_HIT_SCALE)) continue;
-      const dmg = e.damage * (1 - this.totalArmor()) * this.diffMult().playerDamageTakenMult * AREA_RULES[biomeAt(p.x, p.y)].damageTaken;
-      p.hp -= dmg;
-      p.invuln = 0.45;
       e.contactCd = def.contactCooldown ?? 0.5;
-      this.addTrauma(clamp(0.25 + (dmg / p.maxHp) * 2, 0.25, 0.7));
-      this.hurtPulse = 1;
-      this.hitstop = Math.max(this.hitstop, 0.04);
-      this.audio.play("hurt");
-      this.burstParticles(p.x, p.y, COLORS.danger, 10);
+      this.hurtPlayer(e.damage, e.kind);
     }
 
     this.enemies = this.enemies.filter((e) => !e.dead);
@@ -1067,7 +1395,7 @@ export class Game {
     let best: Enemy | undefined;
     let bestD = range;
     for (const e of this.enemies) {
-      if (e.dead) continue;
+      if (e.dead || isHiddenFromWeapons(e)) continue;
       const d = dist(x, y, e.x, e.y);
       if (d < bestD) {
         bestD = d;
@@ -1079,10 +1407,12 @@ export class Game {
 
   private updateWeapons(dt: number) {
     const p = this.player;
+    const cooldownMult = this.weaponCooldownMult();
     for (const w of this.weapons) {
+      if (w.jammed) continue;
       w.timer -= dt;
       const def = weaponAtLevel(w.kind, w.level);
-      const cd = def.cooldown * p.cooldownMult;
+      const cd = def.cooldown * cooldownMult;
       if (w.timer > 0) continue;
       w.timer = cd;
 
@@ -1170,7 +1500,7 @@ export class Game {
     for (const e of this.enemies) {
       if (e.dead) continue;
       if (dist(x, y, e.x, e.y) < radius + e.radius) {
-        this.damageEnemy(e, damage, e.x - x, e.y - y);
+        this.damageEnemy(e, damage, e.x - x, e.y - y, _kind);
       }
     }
   }
@@ -1194,15 +1524,23 @@ export class Game {
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
 
+      if (!pr.fromPlayer) {
+        const p = this.player;
+        if (rectsOverlap(pr.x, pr.y, pr.radius, p.x, p.y, PLAYER_HIT_RADIUS)) {
+          pr.dead = true;
+          if (pr.source) this.hurtPlayer(pr.damage, pr.source);
+        }
+      }
+
       if (pr.fromPlayer) {
         const nearby = this.spatial.query(pr.x, pr.y, pr.radius + 44, this.collisionScratch);
         for (const item of nearby) {
           const e = this.enemyById.get(item.id);
-          if (!e || e.dead) continue;
+          if (!e || e.dead || isHiddenFromWeapons(e)) continue;
           if (pr.hitIds?.includes(e.id)) continue;
           if (!rectsOverlap(pr.x, pr.y, pr.radius, e.x, e.y, e.radius)) continue;
           (pr.hitIds ??= []).push(e.id);
-          this.damageEnemy(e, pr.damage, pr.vx, pr.vy);
+          this.damageEnemy(e, pr.damage, pr.vx, pr.vy, pr.weaponKind);
           this.burstParticles(pr.x, pr.y, pr.color, 3);
           if (pr.pierce <= 0) {
             pr.dead = true;
@@ -1249,19 +1587,32 @@ export class Game {
       o.angle += dt * (2.2 + (o.weaponKind === "rug-coin" ? 0.8 : 0));
       o.x = p.x + Math.cos(o.angle) * o.dist;
       o.y = p.y + Math.sin(o.angle) * o.dist;
+      if (o.weaponKind === "rug-coin") {
+        if (this.elapsed < (o.offUntil ?? 0)) continue;
+        if (simRandom() < 0.035 * dt) {
+          o.offUntil = this.elapsed + 6;
+          this.addFloater(o.x, o.y - 26, "RUGGED", "#f778ba");
+          this.audio.play("rugPull");
+          continue;
+        }
+      }
+      if (this.weapons.find((w) => w.kind === o.weaponKind)?.jammed) continue;
 
       for (const e of this.enemies) {
         if (e.dead) continue;
         if (rectsOverlap(o.x, o.y, o.radius, e.x, e.y, e.radius)) {
-          this.damageEnemy(e, o.damage * dt * 3.5);
+          this.damageEnemy(e, o.damage * dt * 3.5, 0, 0, o.weaponKind);
         }
       }
     }
   }
 
-  private damageEnemy(e: Enemy, damage: number, pushX = 0, pushY = 0) {
-    const dealt = Math.max(1, Math.round(damage));
+  private damageEnemy(e: Enemy, damage: number, pushX = 0, pushY = 0, weapon?: WeaponKind) {
+    const shielded = e.kind === "boss-oracle" && this.enemies.some((m) => m.feedNode && !m.dead);
+    const dealt = Math.max(1, Math.round(shielded ? damage * 0.25 : damage));
     e.hp -= dealt;
+    e.revealed = true;
+    if (weapon) this.weaponDamage.set(weapon, (this.weaponDamage.get(weapon) ?? 0) + dealt);
     e.flash = 0.05;
     this.stats.damageDealt += dealt;
     this.audio.play("hit");
@@ -1282,7 +1633,7 @@ export class Game {
     if (existing) {
       existing.amount = (existing.amount ?? 0) + dealt;
       existing.hits = (existing.hits ?? 1) + 1;
-      existing.text = `${existing.amount}`;
+      existing.text = this.priceLieTimer > 0 ? String(Math.floor(Math.random() * 99999)) : `${existing.amount}`;
       existing.life = existing.maxLife;
       return;
     }
@@ -1293,8 +1644,8 @@ export class Game {
       vy: -46,
       life: 0.6,
       maxLife: 0.6,
-      text: String(dealt),
-      color: "#ffe9a8",
+      text: this.priceLieTimer > 0 ? String(Math.floor(Math.random() * 99999)) : String(dealt),
+      color: this.priceLieTimer > 0 ? "#79c0ff" : "#ffe9a8",
       enemyId: e.id,
       amount: dealt,
       hits: 1,
@@ -1306,7 +1657,26 @@ export class Game {
     this.stats.kills++;
     this.corpses.push({ x: e.x, y: e.y, kind: e.kind, life: 0.2, maxLife: 0.2, flip: this.player.x < e.x });
     this.burstParticles(e.x, e.y, def.color, def.isBoss ? 60 : 10);
+    if (e.carried) {
+      this.fundsLost = Math.max(0, this.fundsLost - e.carried);
+      this.fundsRecovered += e.carried;
+      this.addFloater(e.x, e.y - 34, `+$${(e.carried / 1e6).toFixed(1)}M RECOVERED`, "#2ee6c7");
+      this.audio.play("txConfirmed");
+    }
+    for (let i = 0; i < (e.stolen ?? 0); i++) {
+      this.spawnPickup(e.x + randRange(-18, 18), e.y + randRange(-14, 14), "xp", Math.max(1, (e.stolenXp ?? 3) / (e.stolen ?? 1)));
+    }
+    if (e.implant && !this.enemies.some((m) => m.implant && !m.dead && m !== e)) {
+      for (const w of this.weapons) w.jammed = false;
+      this.addFloater(this.player.x, this.player.y - 70, "IMPLANTS CLEARED", "#2ee6c7");
+    }
+    if (KILL_FEED[e.kind] && this.elapsed - this.lastFeedAt > 0.8) {
+      this.lastFeedAt = this.elapsed;
+      this.pushFeed(`${this.fakeHash()} ${KILL_FEED[e.kind]}`);
+    }
     if (def.isBoss) {
+      this.logEvent(`${def.name} contained`);
+      for (const w of this.weapons) w.jammed = false;
       this.stats.bossesDefeated++;
       this.hitstop = 0.22;
       this.impactFrames = 10;
@@ -1499,9 +1869,21 @@ export class Game {
         name: w.evolved ? EVOLUTIONS[w.kind].name : WEAPONS[w.kind].name,
         level: w.level,
         rarity: w.rarity,
+        jammed: !!w.jammed,
       })),
       coins: p.coins,
       biome: `${biome.name} · ${AREA_RULES[biomeAt(p.x, p.y)].rule}`,
+      funds: this.fundsLeft,
+      fundsPct: (this.fundsLeft / FUNDS_TOTAL) * 100,
+      block: this.blockHeight,
+      gas: this.gasActive,
+      lie: this.priceLieTimer > 0,
+      swapped: this.swapTimer > 0,
+      feed: this.feed,
+      banner: this.banner,
+      signers: this.signers,
+      leverage: this.leverage,
+      flash: this.elapsed < this.flashUntil ? "LOAN LIVE" : this.elapsed < this.flashDebtUntil ? "IN DEFAULT" : null,
       buffs: p.activeBuffs.map((b) => ({
         label: TIMED_BUFFS[b.kind].emoji + " " + TIMED_BUFFS[b.kind].name,
         remaining: Math.max(0, b.until - this.elapsed),

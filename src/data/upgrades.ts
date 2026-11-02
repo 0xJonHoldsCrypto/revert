@@ -69,10 +69,11 @@ export const STAT_UPGRADES: UpgradeDef[] = [
   {
     id: "damage-up",
     title: "Leverage Long",
-    description: "All weapon damage +12%.",
+    description: "Damage +12%. Take a hit under 25% HP and one stack gets liquidated.",
     maxTimes: 5,
     apply(ctx) {
       ctx.boostStat("damage", 0.12);
+      ctx.special("leverage");
       return true;
     },
   },
@@ -99,20 +100,21 @@ export const STAT_UPGRADES: UpgradeDef[] = [
   {
     id: "armor-up",
     title: "Multisig Wallet",
-    description: "Damage taken -8% (stacks).",
-    maxTimes: 4,
+    description: "3 signers. A fatal hit is blocked while 2+ are online. Armor +8%.",
+    maxTimes: 1,
     apply(ctx) {
       ctx.boostStat("armor", 0.08);
+      ctx.special("multisig");
       return true;
     },
   },
   {
     id: "cooldown-up",
     title: "Flash Loan",
-    description: "Weapon cooldowns -10%.",
-    maxTimes: 4,
+    description: "Double fire rate for 8s. Repay with 15 kills or default: cooldowns +35% for 10s.",
+    maxTimes: 6,
     apply(ctx) {
-      ctx.boostStat("cooldown", 0.1);
+      ctx.special("flash-loan");
       return true;
     },
   },

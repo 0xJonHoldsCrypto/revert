@@ -25,7 +25,7 @@ export const PLAYER_RADIUS = 18;
 
 export const MAX_ENEMIES = 500;
 
-export const BOSS_TIMES = [3 * 60, 6 * 60, 9 * 60, 12 * 60, 16 * 60, 19 * 60];
+export const BOSS_TIMES = [4 * 60, 7 * 60, 10 * 60, 13 * 60, 16 * 60, 19 * 60];
 
 export const BOSS_KINDS = [
   "boss-mev-king",

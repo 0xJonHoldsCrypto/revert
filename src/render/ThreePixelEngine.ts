@@ -5,16 +5,17 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { WORLD } from "../constants";
-import { CHESTS, ENV_OBSTACLES, type BiomeId } from "../data/environment";
+import { biomeAt, CHESTS, ENV_OBSTACLES, type BiomeId } from "../data/environment";
 import { ENEMIES } from "../data/enemies";
 import { CutscenePlayer } from "../cutscene/CutscenePlayer";
 import type { Game } from "../game/Game";
 import { makeFloorCanvases } from "../pixel/floorTiles";
+import { LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
 import type { Enemy, WeaponKind } from "../types";
-import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
+import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
 import { GradeShader } from "./gradeShader";
 import { DynamicResolution, pickQualityTier, QUALITY } from "./quality";
-import { PROP_KINDS, SpriteAtlas } from "./SpriteAtlas";
+import { SpriteAtlas } from "./SpriteAtlas";
 import { cameraBasis, cameraDistance, groundHalfExtents, VIEW } from "./view";
 import { readViewport } from "./viewport";
 
@@ -28,7 +29,6 @@ export type PixelEngine = {
 const HERO_HEIGHT = 62;
 const ENEMY_HEIGHT_PER_RADIUS = 3.1;
 const BOSS_HEIGHT = 196;
-const PROP_HEIGHT: Record<string, number> = { rack: 78, spool: 30, fan: 38, cone: 24 };
 const SPRITE_CAPACITY = 2200;
 const FX_CAPACITY = 900;
 const DECAL_CAPACITY = 1400;
@@ -124,8 +124,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     pointLights.push(light);
   }
   const spriteLights: SpriteLights = {
-    ambient: new THREE.Color(0.62, 0.68, 0.92),
-    key: new THREE.Color(0.55, 0.72, 0.9),
+    ambient: new THREE.Color(0.46, 0.5, 0.66),
+    key: new THREE.Color(0.36, 0.44, 0.52),
     pointPos: Array.from({ length: MAX_POINT_LIGHTS }, () => new THREE.Vector3(0, -9999, 0)),
     pointColor: Array.from({ length: MAX_POINT_LIGHTS }, () => new THREE.Color(0, 0, 0)),
   };
@@ -148,8 +148,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         emissiveMap: canvasTexture(floor.emissive, true, repeat),
         emissive: 0xffffff,
         emissiveIntensity: 1.5,
-        roughness: 0.82,
-        metalness: 0.1,
+        roughness: 1,
+        metalness: 0,
       })
     );
     mesh.rotation.x = -Math.PI / 2;
@@ -187,7 +187,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   composer.addPass(renderPass);
   let bloom: UnrealBloomPass | null = null;
   if (tier.bloom) {
-    bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.55, 1.0);
+    bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.5, 0.5, 1.2);
     composer.addPass(bloom);
   }
   composer.addPass(new OutputPass());
@@ -307,13 +307,14 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         const cy = gy + (hash(gx, gy + 7) - 0.5) * 120;
         const count = 1 + Math.floor(hash(gx + 1, gy + 2) * 3);
         for (let i = 0; i < count; i++) {
-          const kind = PROP_KINDS[Math.floor(hash(gx + i * 13, gy + i) * PROP_KINDS.length)]!;
           const px = cx + (hash(gx + 20 + i, gy) - 0.5) * 58;
           const py = cy + (hash(gx, gy + 30 + i) - 0.5) * 44;
           if (px < 20 || py < 20 || px > WORLD.width - 20 || py > WORLD.height - 20) continue;
-          const height = PROP_HEIGHT[kind]!;
-          decals.push(px, py + 1, height * 0.42, height * 0.2, DECAL_BLOB, 0, BLACK, 0.5);
-          sprites.push(atlas.frame(`prop:${kind}`), px, py, 0.5, height, hash(gx + i, gy + 40) > 0.5);
+          const props = ZONE_PROPS[biomeAt(px, py)];
+          const prop = props[Math.floor(hash(gx + i * 13, gy + i) * props.length)]!;
+          const frame = atlas.frame(`prop:${prop.key}`);
+          decals.push(px, py + 1, prop.height * frame.aspect * 0.55, prop.height * 0.18, DECAL_BLOB, 0, BLACK, 0.5);
+          sprites.push(frame, px, py, 0.5, prop.height, hash(gx + i, gy + 40) > 0.5);
         }
       }
     }
@@ -326,6 +327,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   const CHEST_LIGHT = new THREE.Color(1, 0.72, 0.28);
   const BOSS_LIGHT = new THREE.Color(1, 0.16, 0.2);
   const XP_COLOR = new THREE.Color(0.25, 0.85, 1);
+  const PHISH_TELL = new THREE.Color(1, 0.12, 0.1);
+  const TETHER_COLOR = new THREE.Color(0.6, 0.3, 1);
   const COIN_COLOR = new THREE.Color(1, 0.72, 0.16);
   const scratchLights: { x: number; y: number; h: number; color: THREE.Color; power: number }[] = [];
 
@@ -373,6 +376,15 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     scratchLights.push({ x: px, y: py, h: 64, color: PLAYER_LIGHT, power: 1 });
 
     emitProps(left, right, top, bottom);
+    for (const mark of LANDMARKS) {
+      const q = QUADRANTS.find((v) => v.biome === mark.biome)!;
+      const mx = q.x + 90;
+      const my = q.z - 460;
+      if (!inView(mx, my)) continue;
+      const frame = atlas.frame(`landmark:${mark.key}`);
+      decals.push(mx, my + 2, mark.height * frame.aspect * 0.6, mark.height * 0.22, DECAL_BLOB, 0, BLACK, 0.6);
+      sprites.push(frame, mx, my, 0.5, mark.height, false, 0, 0.15);
+    }
 
     const anim = elapsed;
     for (const c of game.chests) {
@@ -413,14 +425,61 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const height = enemyHeight(e);
       const hop = def.isBoss ? 0 : Math.abs(Math.sin(e.wobble * 2.4)) * 3;
       const squash = 1 + Math.sin(e.wobble * 4.8) * (def.isBoss ? 0.015 : 0.04);
+      if (e.kind === "phishing-bot" && !e.revealed) {
+        const hover = 6 + Math.sin(anim * 4 + e.id) * 2;
+        const flicker = Math.floor(anim * 3 + e.id) % 7 === 0;
+        decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
+        sprites.push(atlas.frame("pickup:xp"), x, y, hover, 13, false, flicker ? 0.25 : 0, 1.6);
+        fx.push(x, y, hover + 6, 13, 13, 0, flicker ? PHISH_TELL : XP_COLOR, 0.45);
+        continue;
+      }
       const frame = atlas.frame(`enemy:${e.kind}`);
       const width = height * frame.aspect;
+      if (e.kind === "bridge-drainer" && e.tether !== undefined) {
+        const cos = Math.cos(e.tether);
+        const sin = Math.sin(e.tether);
+        for (let i = 0; i < 16; i++) {
+          const travel = ((anim * 1.8 + i / 16) % 1) * 640;
+          fx.push(x + cos * travel, y + sin * travel, 18, 11, 11, 0, i % 3 === 0 ? COIN_COLOR : TETHER_COLOR, 1.3, 0.9);
+        }
+      }
       const lift = e.lift ?? 0;
       decals.push(x, y + 1, width * 0.5 * (lift > 0 ? 0.6 : 1), width * 0.24 * (lift > 0 ? 0.6 : 1), DECAL_BLOB, 0, BLACK, lift > 0 ? 0.3 : 0.55);
       sprites.push(frame, x, y, 0.5 + hop + lift, height * squash, p.x < e.x, e.flash > 0 ? 1 : 0);
       if (def.isBoss && !bossLightSet) {
         bossLightSet = true;
         scratchLights.splice(1, 0, { x, y: y + 20, h: 130, color: BOSS_LIGHT, power: 1.4 });
+      }
+    }
+
+    for (const h of game.hazards) {
+      if (!inView(h.x, h.y) && h.shape !== "beam") continue;
+      const f = Math.min(1, h.t / h.windup);
+      const live = h.t >= h.windup;
+      const color = cachedColor(h.color);
+      if (h.shape === "circle") {
+        const r = h.r ?? 40;
+        decals.push(h.x, h.y, r, r, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(1.4), 0.25 + f * 0.25);
+        decals.push(h.x, h.y, r * f, r * f, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(2.2), 0.7);
+      } else if (h.shape === "rect") {
+        const w = h.w ?? 100;
+        const hh = h.h ?? 100;
+        decals.push(h.x, h.y, w / 2, hh / 2, DECAL_RECT, f, scratchColor.copy(color).multiplyScalar(1.8), 0.55);
+        if (h.bars) {
+          const off = (1 - f) * (h.bars.vertical ? w : hh) * 0.5;
+          const dx = h.bars.vertical ? off : 0;
+          const dy = h.bars.vertical ? 0 : off;
+          decals.push(h.x - dx, h.y - dy, h.bars.w / 2, h.bars.h / 2, DECAL_RECT, 1, scratchColor.copy(color).multiplyScalar(2.6), 0.9);
+          decals.push(h.x + dx, h.y + dy, h.bars.w / 2, h.bars.h / 2, DECAL_RECT, 1, scratchColor.copy(color).multiplyScalar(2.6), 0.9);
+        }
+      } else {
+        const a = h.angle ?? 0;
+        const length = h.length ?? 300;
+        const count = Math.ceil(length / 26);
+        for (let i = 1; i <= count; i++) {
+          const along = (i / count) * length;
+          fx.push(h.x + Math.cos(a) * along, h.y + Math.sin(a) * along, 10, live ? 44 : 14, live ? 44 : 14, 0, color, live ? 2.2 : 1.1, live ? 0.9 : 0.35 + f * 0.4);
+        }
       }
     }
 
@@ -490,6 +549,10 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       if (!inView(x, y)) continue;
       const color = cachedColor(pr.color);
       const angle = Math.atan2(-pr.vy * cameraBasis.backY, pr.vx);
+      if (!pr.fromPlayer) {
+        fx.push(x, y, 24, 24, 24, 0, color, 2.2);
+        continue;
+      }
       const look = (pr.weaponKind && PROJECTILE_LOOK[pr.weaponKind]) || { width: 10, length: 20, glow: 2.6, trail: 2 };
       fx.push(x, y, 26, look.width, look.length, angle, color, look.glow);
       const speed = Math.hypot(pr.vx, pr.vy) || 1;
@@ -500,6 +563,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     }
 
     for (const o of game.orbiters) {
+      if (game.elapsed < (o.offUntil ?? 0)) continue;
       const color = cachedColor(ORBITER_COLOR[o.weaponKind] ?? "#f0b429");
       decals.push(o.x, o.y, o.radius, o.radius * 0.6, DECAL_BLOB, 0, BLACK, 0.35);
       if (o.weaponKind === "rug-coin") {

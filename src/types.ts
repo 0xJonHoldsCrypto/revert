@@ -101,6 +101,7 @@ export interface UpgradeContext {
   upgradeWeapon: (kind: WeaponKind) => void;
   heal: (amount: number) => void;
   boostStat: (stat: "damage" | "speed" | "pickup" | "armor" | "cooldown" | "yield", amount: number) => void;
+  special: (id: "leverage" | "flash-loan" | "multisig") => void;
   hasWeapon: (kind: WeaponKind) => boolean;
   weaponLevel: (kind: WeaponKind) => number;
   weaponEvolved: (kind: WeaponKind) => boolean;
@@ -143,9 +144,46 @@ export interface PlayerState extends Entity {
   wellBonusArmor: number;
 }
 
+export interface Hazard {
+  shape: "circle" | "rect" | "beam";
+  x: number;
+  y: number;
+  r?: number;
+  w?: number;
+  h?: number;
+  angle?: number;
+  spin?: number;
+  length?: number;
+  t: number;
+  windup: number;
+  active: number;
+  damage: number;
+  color: string;
+  source: EnemyKind;
+  knock: number;
+  label?: string;
+  follow?: number;
+  fired?: boolean;
+  dead?: boolean;
+  bars?: { w: number; h: number; vertical: boolean };
+}
+
 export interface Enemy extends Entity {
   kx?: number;
   ky?: number;
+  aiTimer?: number;
+  age?: number;
+  revealed?: boolean;
+  target?: Pickup;
+  stolen?: number;
+  stolenXp?: number;
+  tether?: number;
+  carried?: number;
+  phaseTwo?: boolean;
+  attackIndex?: number;
+  charge?: { t: number; dash: number; angle: number };
+  feedNode?: boolean;
+  implant?: boolean;
   kind: EnemyKind;
   hp: number;
   maxHp: number;
@@ -159,6 +197,7 @@ export interface Enemy extends Entity {
 export interface Projectile extends Entity {
   weaponKind?: WeaponKind;
   hitIds?: number[];
+  source?: EnemyKind;
   damage: number;
   life: number;
   pierce: number;
@@ -173,6 +212,7 @@ export interface Orbiter extends Entity {
   dist: number;
   damage: number;
   weaponKind: WeaponKind;
+  offUntil?: number;
 }
 
 export interface Pickup extends Entity {
@@ -280,6 +320,7 @@ export interface WeaponInstance {
   timer: number;
   rarity: WeaponRarity;
   evolved?: boolean;
+  jammed?: boolean;
 }
 
 export interface RunStats {

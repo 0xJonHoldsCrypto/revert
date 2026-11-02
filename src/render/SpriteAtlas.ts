@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { ENEMIES } from "../data/enemies";
 import { SIDEKICKS } from "../data/sidekicks";
-import { getChestSprite, getCryptoProp, getMonsterSprite, getRigSprite, getWellSprite, type CryptoProp } from "../pixel/gbcArt";
+import { getChestSprite, getRigSprite, getWellSprite } from "../pixel/gbcArt";
+import { getThreatSprite, LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
 import { getSideHero } from "../pixel/hdField";
 import type { CharacterId, EnemyKind, SidekickKind } from "../types";
 
@@ -10,7 +11,6 @@ export type AtlasFrame = { u0: number; v0: number; u1: number; v1: number; aspec
 const ATLAS_SIZE = 2048;
 const PADDING = 2;
 const HEROES: CharacterId[] = ["keel", "nyx", "diff", "trace"];
-export const PROP_KINDS: CryptoProp[] = ["rack", "spool", "fan", "cone"];
 
 function opaqueBounds(source: HTMLCanvasElement) {
   const ctx = source.getContext("2d")!;
@@ -102,9 +102,12 @@ export class SpriteAtlas {
       this.add(`hero:${id}:0`, getSideHero(id, 0));
       this.add(`hero:${id}:1`, getSideHero(id, 1));
     }
-    for (const kind of Object.keys(ENEMIES) as EnemyKind[]) this.add(`enemy:${kind}`, getMonsterSprite(kind));
+    for (const kind of Object.keys(ENEMIES) as EnemyKind[]) this.add(`enemy:${kind}`, getThreatSprite(kind));
     for (const kind of Object.keys(SIDEKICKS) as SidekickKind[]) this.add(`rig:${kind}`, getRigSprite(kind));
-    for (const kind of PROP_KINDS) this.add(`prop:${kind}`, getCryptoProp(kind));
+    for (const props of Object.values(ZONE_PROPS)) {
+      for (const prop of props) this.add(`prop:${prop.key}`, prop.art());
+    }
+    for (const mark of LANDMARKS) this.add(`landmark:${mark.key}`, mark.art());
     this.add("chest", getChestSprite());
     this.add("well", getWellSprite());
     for (const [kind, sprite] of Object.entries(PICKUPS)) this.add(`pickup:${kind}`, sprite);

@@ -4,9 +4,25 @@ import type { GamePhase } from "../types";
 import { formatTime } from "../utils/math";
 import type { Game, HudData } from "../game/Game";
 
+function formatFunds(value: number): string {
+  return value >= 1e9 ? `$${(value / 1e9).toFixed(2)}B` : `$${(value / 1e6).toFixed(1)}M`;
+}
+
+function mempoolTicker(): string {
+  const labels = ["swap", "approve", "bridge", "transfer", "claim", "liquidate", "mint"];
+  const lines: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    const hash = Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
+    const label = labels[Math.floor(Math.random() * labels.length)];
+    lines.push(`0x${hash} ${label} ${Math.floor(20 + Math.random() * 180)} gwei`);
+  }
+  return lines.join("   ·   ");
+}
+
 export class OverlayUI {
   private overlay: HTMLElement;
   private hudEl: HTMLElement | null = null;
+  private hudDyn: HTMLElement | null = null;
 
   constructor(private game: Game) {
     this.overlay = document.getElementById("overlay")!;
@@ -72,48 +88,44 @@ export class OverlayUI {
     if (this.game.phase !== "playing" && this.game.phase !== "paused") return;
     this.ensureHud();
     if (!this.hudEl) return;
-    const hpPct = Math.max(0, (data.hp / data.maxHp) * 100);
-    const xpPct = (data.xp / data.xpToNext) * 100;
+    const xpPct = Math.min(100, (data.xp / data.xpToNext) * 100);
+    const fundsText = data.lie ? `$${(Math.random() * 99).toFixed(2)}B` : formatFunds(data.funds);
     const weaponLines = data.weapons
-      .map((w: { name: string; level: number; rarity: string }) =>
-        `<div><span class="rarity-tag">${RARITY_LABEL[w.rarity as keyof typeof RARITY_LABEL] ?? w.rarity}</span> ${w.name} Lv${w.level}</div>`
-      )
+      .map((w) => `<div class="hud-weapon rarity-${w.rarity}${w.jammed ? " jammed" : ""}"><span>${w.jammed ? "HIJACKED" : w.name}</span><b>${"▮".repeat(Math.min(w.level, 8))}</b></div>`)
       .join("");
-    const buffLines =
-      data.buffs.length === 0
-        ? "—"
-        : data.buffs.map((b) => `${b.label} ${Math.ceil(b.remaining)}s`).join("<br/>");
-    this.hudEl.innerHTML = `
-      <div class="wordmark">Exploit<span>.run</span></div>
-      <div class="hud-block">
-        <strong>HP</strong>
-        ${Math.max(0, Math.ceil(data.hp))} / ${data.maxHp}
-        <div class="bar"><div class="bar-fill hp" style="width:${hpPct}%"></div></div>
+    const status = [
+      data.signers > 0 ? `SIGNERS ${data.signers}/3` : "",
+      data.leverage > 0 ? `LEV ${data.leverage}x` : "",
+      data.flash ?? "",
+      ...data.buffs.map((b) => `${b.label} ${Math.ceil(b.remaining)}s`),
+    ].filter(Boolean);
+    const alert = data.swapped
+      ? `<div class="hud-alert danger">SIM SWAPPED · CONTROLS INVERTED</div>`
+      : data.banner
+        ? `<div class="hud-banner" style="border-color:${data.banner.tone}"><strong style="color:${data.banner.tone}">${data.banner.title}</strong><span>${data.banner.text}</span></div>`
+        : "";
+    this.hudDyn!.innerHTML = `
+      <div class="hud-xp"><div style="width:${xpPct}%"></div></div>
+      <div class="hud-funds${data.fundsPct < 30 ? " low" : ""}${data.lie ? " lying" : ""}">
+        <label>FUNDS AT RISK</label>
+        <strong>${fundsText}</strong>
+        <div class="hud-funds-bar"><div style="width:${data.lie ? Math.random() * 100 : data.fundsPct}%"></div></div>
       </div>
-      <div class="hud-block">
-        <strong>LV ${data.level}</strong>
-        XP to next
-        <div class="bar"><div class="bar-fill xp" style="width:${xpPct}%"></div></div>
+      <div class="hud-block-clock${data.gas ? " gas" : ""}">
+        <label>${data.gas ? "GAS 9,999 GWEI" : "BLOCK"}</label>
+        <strong>${data.block.toLocaleString("en-US")}</strong>
+        <span>${formatTime(data.time)} / ${formatTime(20 * 60)}</span>
       </div>
-      <div class="hud-block">
-        <strong>ZONE</strong>
-        ${data.biome}<br/>
-        🪙 ${data.coins} SAFU
-        ${data.sidekick ? `<br/>🤖 ${data.sidekick}` : ""}
+      <div class="hud-stats">
+        <div><label>LV</label><strong>${data.level}</strong></div>
+        <div><label>REVERTED</label><strong>${data.kills}</strong></div>
+        <div><label>$SAFU</label><strong>${data.coins}</strong></div>
       </div>
-      <div class="hud-block">
-        <strong>BUFFS</strong>
-        ${buffLines}
-      </div>
-      <div class="hud-block">
-        <strong>RUN</strong>
-        ⏱ ${formatTime(data.time)} / ${formatTime(20 * 60)}<br/>
-        ☠ ${data.kills} exploits patched
-      </div>
-      <div class="hud-block">
-        <strong>LOADOUT</strong>
-        ${weaponLines || "—"}
-      </div>
+      <div class="hud-zone">${data.biome}${data.sidekick ? ` · ${data.sidekick}` : ""}</div>
+      <div class="hud-status">${status.map((t) => `<span>${t}</span>`).join("")}</div>
+      <div class="hud-loadout">${weaponLines}</div>
+      <div class="hud-feed">${data.feed.map((l) => `<div>${l}</div>`).join("")}</div>
+      ${alert}
     `;
   }
 
@@ -121,6 +133,12 @@ export class OverlayUI {
     if (this.hudEl?.isConnected) return;
     this.hudEl = document.createElement("div");
     this.hudEl.className = "hud";
+    this.hudDyn = document.createElement("div");
+    this.hudEl.appendChild(this.hudDyn);
+    const ticker = document.createElement("div");
+    ticker.className = "hud-ticker";
+    ticker.innerHTML = `<div>${mempoolTicker()} ${mempoolTicker()}</div>`;
+    this.hudEl.appendChild(ticker);
     this.overlay.appendChild(this.hudEl);
   }
 
@@ -137,24 +155,47 @@ export class OverlayUI {
     this.overlay.innerHTML = "";
     this.overlay.classList.add("interactive");
     this.hudEl = null;
-    const s = this.game.stats;
+    const m = this.game.postMortem();
+    const insolvent = m.cause === "Protocol insolvent";
     const panel = document.createElement("div");
     panel.className = "overlay-panel";
+    const top = m.damage[0]?.amount ?? 1;
     panel.innerHTML = `
-      <div class="panel-card">
-        <p class="wordmark" style="position:static;left:auto;transform:none;margin-bottom:0.6rem">Exploit<span>.run</span></p>
-        <h1>${won ? "Funds safu" : "Rekt"}</h1>
-        <p class="tagline">
-          ${won ? "You held the chain. The attacker logs off in shame." : "The exploit won this round. Re-deploy your ego."}
-        </p>
-        <p style="text-align:center;margin-bottom:1.25rem;line-height:1.8;color:#8b949e">
-          Time: ${formatTime(s.timeSurvived)} · Kills: ${s.kills} · Bosses: ${s.bossesDefeated}<br/>
-          Damage dealt: ${Math.floor(s.damageDealt).toLocaleString()}
-        </p>
+      <div class="postmortem">
+        <header>
+          <span>INCIDENT ${m.incident} · BLOCK ${m.block.toLocaleString("en-US")}</span>
+          <span class="${won ? "ok" : "bad"}">${won ? "RESOLVED" : insolvent ? "INSOLVENT" : "RESPONDER DOWN"}</span>
+        </header>
+        <h1>${won ? "Funds safu." : insolvent ? "The treasury is empty." : "Rekt."}</h1>
+        <div class="pm-hero">
+          <label>FUNDS SAVED</label>
+          <strong>${formatFunds(m.saved)}</strong>
+          <span>${m.savedPct.toFixed(1)}% of ${formatFunds(m.saved + m.lost)} · ${formatFunds(m.recovered)} recovered from drainers</span>
+        </div>
+        <div class="pm-grid">
+          <section>
+            <h2>Summary</h2>
+            <dl>
+              <dt>Root cause</dt><dd>${won ? "Contained" : m.cause}</dd>
+              <dt>Time on-chain</dt><dd>${formatTime(m.time)}</dd>
+              <dt>Attackers reverted</dt><dd>${m.kills}</dd>
+              <dt>Bosses contained</dt><dd>${m.bosses} / 6</dd>
+              <dt>Responder level</dt><dd>${m.level}</dd>
+            </dl>
+          </section>
+          <section>
+            <h2>Timeline</h2>
+            <ol>${m.timeline.map((e) => `<li><b>#${e.block.toLocaleString("en-US")}</b> ${e.text}</li>`).join("")}</ol>
+          </section>
+          <section>
+            <h2>Damage by tool</h2>
+            ${m.damage.map((d) => `<div class="pm-bar"><span>${d.name}</span><b>${Math.round(d.amount).toLocaleString("en-US")}</b><i style="width:${(d.amount / top) * 100}%"></i></div>`).join("") || "<p>No damage logged.</p>"}
+          </section>
+        </div>
         <div class="btn-row">
-          <button type="button" class="btn btn-primary" id="again-btn">PLAY AGAIN [R]</button>
+          <button type="button" class="btn btn-primary" id="again-btn">RESPOND AGAIN [R]</button>
           <button type="button" class="btn btn-secondary" id="menu-btn">TITLE</button>
-          ${won ? '<button type="button" class="btn btn-secondary" id="wallet-btn">SUBMIT SCORE (WALLET)</button>' : ""}
+          ${won ? '<button type="button" class="btn btn-secondary" id="wallet-btn">SIGN SCORE (WALLET)</button>' : ""}
         </div>
         <p class="controls-hint" id="wallet-status"></p>
       </div>

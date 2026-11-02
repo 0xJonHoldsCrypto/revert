@@ -1,7 +1,7 @@
 import { ENEMIES } from "../data/enemies";
 import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE } from "../game/cinematic";
 import type { Game } from "../game/Game";
-import { getMonsterSprite } from "../pixel/gbcArt";
+import { getThreatSprite } from "../pixel/threatArt";
 import { FONT_MONO, FONT_UI } from "./theme";
 
 type Project = (x: number, y: number) => { x: number; y: number } | null;
@@ -150,7 +150,7 @@ function drawBossEntrance(ctx: CanvasRenderingContext2D, game: Game, t: number, 
     ctx.strokeStyle = def.color;
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, boxW, boxH);
-    const sprite = getMonsterSprite(kind);
+    const sprite = getThreatSprite(kind);
     const ph = boxH - 16;
     const pw = Math.min(90, ph * (sprite.width / sprite.height));
     ctx.imageSmoothingEnabled = false;

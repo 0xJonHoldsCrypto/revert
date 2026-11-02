@@ -16,7 +16,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   {
     id: "power-lending",
     title: "Lending Vault",
-    description: "Stake yield: passive XP/sec scales with your level.",
+    description: "Passive XP while staked. Any hit slashes it for 6 seconds.",
     rarity: "epic",
     maxTimes: 1,
     apply(ctx) {
@@ -62,7 +62,7 @@ export const DEFI_PROTOCOL_UPGRADES: UpgradeDef[] = [
   {
     id: "power-restake",
     title: "Liquid Restake",
-    description: "Stake the run. Passive yield and +6% move speed.",
+    description: "Passive XP (slashed for 6s by any hit) and +6% move speed.",
     rarity: "rare",
     maxTimes: 1,
     apply(ctx) {

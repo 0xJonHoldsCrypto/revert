@@ -125,10 +125,55 @@ function drawFeetBars(w: number, h: number) {
   uiCtx.fillRect(x, y + 5, barW * ready, 2);
 }
 
+function drawEnemyTags(w: number, h: number) {
+  uiCtx.textAlign = "center";
+  uiCtx.font = `700 11px ${FONT_MONO}`;
+  for (const e of game.enemies) {
+    if (e.kind !== "insider" && !e.feedNode && !e.implant && !e.carried) continue;
+    const s = pixelEngine?.worldToScreen(e.x, e.y - e.radius * 3.6, w, h);
+    if (!s || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue;
+    let text = "";
+    let color = "#2ee6c7";
+    if (e.kind === "insider" && !e.revealed) text = "STAFF ✓";
+    else if (e.implant) { text = "IMPLANT"; color = "#ff5c48"; }
+    else if (e.feedNode) { text = "PRICE FEED"; color = "#79c0ff"; }
+    else if (e.carried) { text = `-$${(e.carried / 1e6).toFixed(1)}M`; color = "#ff5c48"; }
+    if (!text) continue;
+    uiCtx.fillStyle = "rgba(4,6,12,0.82)";
+    uiCtx.fillRect(s.x - 36, s.y - 12, 72, 16);
+    uiCtx.fillStyle = color;
+    uiCtx.fillText(text, s.x, s.y);
+  }
+}
+
+function drawOffscreenPointers(w: number, h: number) {
+  for (const e of game.enemies) {
+    if (e.kind !== "bridge-drainer" && !ENEMIES[e.kind].isBoss) continue;
+    const s = pixelEngine?.worldToScreen(e.x, e.y, w, h);
+    if (!s || (s.x > 0 && s.y > 0 && s.x < w && s.y < h)) continue;
+    const a = Math.atan2(s.y - h / 2, s.x - w / 2);
+    const rx = w / 2 - 34;
+    const ry = h / 2 - 54;
+    const k = Math.min(rx / Math.max(Math.abs(Math.cos(a)), 1e-3), ry / Math.max(Math.abs(Math.sin(a)), 1e-3));
+    uiCtx.save();
+    uiCtx.translate(w / 2 + Math.cos(a) * k, h / 2 + Math.sin(a) * k);
+    uiCtx.rotate(a);
+    uiCtx.fillStyle = ENEMIES[e.kind].isBoss ? "#ff5c48" : "#b58cff";
+    uiCtx.beginPath();
+    uiCtx.moveTo(14, 0);
+    uiCtx.lineTo(-8, -9);
+    uiCtx.lineTo(-8, 9);
+    uiCtx.fill();
+    uiCtx.restore();
+  }
+}
+
 function drawRunChrome(w: number, h: number) {
   const p = game.player;
   if (!p) return;
   drawFeetBars(w, h);
+  drawEnemyTags(w, h);
+  drawOffscreenPointers(w, h);
 
   for (const f of game.floaters) {
     const s = pixelEngine?.worldToScreen(f.x, f.y, w, h);
@@ -150,14 +195,15 @@ function drawRunChrome(w: number, h: number) {
   const boss = game.enemies.find((e) => !e.dead && ENEMIES[e.kind].isBoss);
   if (boss) {
     const pct = Math.max(0, boss.hp / boss.maxHp);
-    uiCtx.fillStyle = "rgba(0,0,0,0.55)";
-    uiCtx.fillRect(w * 0.2, 16, w * 0.6, 14);
-    uiCtx.fillStyle = "#f85149";
-    uiCtx.fillRect(w * 0.2, 16, w * 0.6 * pct, 14);
+    const shown = game.priceLieTimer > 0 ? Math.abs(Math.sin(performance.now() / 90)) : pct;
+    uiCtx.fillStyle = "rgba(4,6,12,0.82)";
+    uiCtx.fillRect(w * 0.25, 82, w * 0.5, 16);
+    uiCtx.fillStyle = "#e0303c";
+    uiCtx.fillRect(w * 0.25 + 2, 84, (w * 0.5 - 4) * shown, 12);
     uiCtx.fillStyle = "#fff";
-    uiCtx.font = `500 12px ${FONT_MONO}`;
+    uiCtx.font = `700 11px ${FONT_MONO}`;
     uiCtx.textAlign = "center";
-    uiCtx.fillText(boss ? ENEMIES[boss.kind].name : "BOSS", w / 2, 27);
+    uiCtx.fillText(ENEMIES[boss.kind].name.toUpperCase(), w / 2, 94);
   }
 
   let prompt = "";
@@ -167,7 +213,8 @@ function drawRunChrome(w: number, h: number) {
     const d = Math.hypot(p.x - c.x, p.y - c.y);
     if (d < best) {
       best = d;
-      prompt = p.coins >= c.coinCost ? `Step in · ${CHESTS[c.kind].name} · ${c.coinCost} SAFU` : `Need ${c.coinCost} SAFU`;
+      const cost = game.priceLieTimer > 0 ? 1 + Math.floor(Math.abs(Math.sin(performance.now() / 70)) * 9000) : c.coinCost;
+      prompt = p.coins >= c.coinCost ? `Step in · ${CHESTS[c.kind].name} · ${cost} SAFU` : `Need ${cost} SAFU`;
     }
   }
   for (const well of game.wells) {

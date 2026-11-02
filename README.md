@@ -21,7 +21,7 @@ npm run dev
 
 ## Goal
 
-Save the funds and survive **20 minutes**. Six bosses arrive between 3:00 and 19:00. Victory needs the clock at 20:00 and the Grandmaster dead. Collect XP gems, level up, stack weapons and upgrades.
+Save the funds and survive **20 minutes**. Six bosses arrive between 4:00 and 19:00. Victory needs the clock at 20:00 and the Grandmaster dead. Collect XP gems, level up, stack weapons and upgrades.
 
 ## X embed budget
 

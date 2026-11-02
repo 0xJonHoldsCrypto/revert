@@ -246,6 +246,7 @@ export const DECAL_BLOB = 0;
 export const DECAL_RING = 1;
 export const DECAL_DISC = 2;
 export const DECAL_ARC = 3;
+export const DECAL_RECT = 4;
 
 export class DecalBatch {
   readonly mesh: THREE.Mesh;
@@ -300,6 +301,10 @@ export class DecalBatch {
             color = mix(color, color * 2.2, filled);
           } else if (vParams.z < 2.5) {
             a = smoothstep(1.0, 0.92, d) * (0.2 + 0.8 * smoothstep(0.55, 0.95, d));
+          } else if (vParams.z > 3.5) {
+            vec2 edge = abs(vLocal);
+            float rim = smoothstep(0.86, 0.92, max(edge.x, edge.y));
+            a = max(rim, 0.22) * step(max(edge.x, edge.y), 1.0);
           } else {
             float delta = abs(mod(atan(vLocal.y, vLocal.x) - vParams.w + 3.14159265, TAU) - 3.14159265);
             a = smoothstep(1.0, 0.92, d) * smoothstep(0.35, 1.0, d) * smoothstep(1.25, 0.9, delta);

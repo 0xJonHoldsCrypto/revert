@@ -18,10 +18,10 @@ export type DifficultyDef = {
 };
 
 export const DIFFICULTY: Record<DifficultyId, DifficultyDef> = {
-  easy: { id: "easy", spawnMult: 0.72, enemyHpMult: 0.82, enemySpeedMult: 0.88, playerDamageTakenMult: 0.75 },
-  normal: { id: "normal", spawnMult: 1, enemyHpMult: 1, enemySpeedMult: 1, playerDamageTakenMult: 1 },
-  hard: { id: "hard", spawnMult: 1.22, enemyHpMult: 1.28, enemySpeedMult: 1.12, playerDamageTakenMult: 1.18 },
-  nightmare: { id: "nightmare", spawnMult: 1.55, enemyHpMult: 1.55, enemySpeedMult: 1.25, playerDamageTakenMult: 1.35 },
+  easy: { id: "easy", spawnMult: 0.72, enemyHpMult: 0.82, enemySpeedMult: 0.88, playerDamageTakenMult: 0.42 },
+  normal: { id: "normal", spawnMult: 1, enemyHpMult: 1, enemySpeedMult: 1, playerDamageTakenMult: 0.7 },
+  hard: { id: "hard", spawnMult: 1.22, enemyHpMult: 1.28, enemySpeedMult: 1.12, playerDamageTakenMult: 1 },
+  nightmare: { id: "nightmare", spawnMult: 1.55, enemyHpMult: 1.55, enemySpeedMult: 1.25, playerDamageTakenMult: 1.25 },
 };
 
 export function difficultyFromClick(mx: number, my: number, w: number, h: number): DifficultyId | null {
