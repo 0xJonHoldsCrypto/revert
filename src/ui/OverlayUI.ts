@@ -170,7 +170,7 @@ export class OverlayUI {
         <div class="pm-hero">
           <label>FUNDS SAVED</label>
           <strong>${formatFunds(m.saved)}</strong>
-          <span>${m.savedPct.toFixed(1)}% of ${formatFunds(m.saved + m.lost)} · ${formatFunds(m.recovered)} recovered from drainers</span>
+          <span>${m.savedPct.toFixed(1)}% of ${formatFunds(m.saved + m.lost)} · ${m.drainers} drainers stopped</span>
         </div>
         <div class="pm-grid">
           <section>

@@ -11,7 +11,7 @@ import {
 import { getCharacter } from "../data/characters";
 import { rollStarterCharacter } from "../pixel/portraits";
 import { ENEMIES, HORDE_WEIGHTS } from "../data/enemies";
-import { buildUpgradePool } from "../data/upgrades";
+import { buildUpgradePool, MAX_WEAPON_SLOTS } from "../data/upgrades";
 import { ENV_OBSTACLES } from "../data/environment";
 import { rarityDamageMult } from "../data/rarity";
 import { EVOLUTIONS, weaponAtLevel, WEAPONS } from "../data/weapons";
@@ -88,6 +88,8 @@ const KILL_FEED: Partial<Record<EnemyKind, string>> = {
   "shadow-op": "session terminated",
 };
 const ALIVE_CURVE: [number, number][] = [[0, 10], [60, 24], [150, 55], [300, 110], [600, 190], [900, 280], [1200, 380]];
+const MAX_DRAINERS = 5;
+const MAX_SHOOTERS = 14;
 const PLAYER_HIT_RADIUS = 11;
 const ENEMY_HIT_SCALE = 0.8;
 const HUD_TICKS = 6;
@@ -179,6 +181,7 @@ export class Game {
   hazards: Hazard[] = [];
   fundsLost = 0;
   fundsRecovered = 0;
+  drainersStopped = 0;
   priceLieTimer = 0;
   swapTimer = 0;
   gasUntil = 0;
@@ -307,6 +310,7 @@ export class Game {
     this.hazards = [];
     this.fundsLost = 0;
     this.fundsRecovered = 0;
+    this.drainersStopped = 0;
     this.priceLieTimer = 0;
     this.swapTimer = 0;
     this.gasUntil = 0;
@@ -415,6 +419,7 @@ export class Game {
       },
       special: (id) => this.applySpecial(id),
       hasWeapon: (kind) => this.weapons.some((w) => w.kind === kind),
+      weaponCount: () => this.weapons.length,
       weaponLevel: (kind) => this.weapons.find((w) => w.kind === kind)?.level ?? 0,
       weaponEvolved: (kind) => !!this.weapons.find((w) => w.kind === kind)?.evolved,
     };
@@ -610,7 +615,8 @@ export class Game {
   spawnEnemyAt(kind: EnemyKind, x: number, y: number): Enemy {
     const def = ENEMIES[kind];
     const dm = this.diffMult();
-    const scale = (1 + this.elapsed * 0.002) * dm.enemyHpMult;
+    const minutes = this.elapsed / 60;
+    const scale = (1 + minutes * 0.14 + minutes * minutes * 0.045) * dm.enemyHpMult;
     const enemy: Enemy = {
       id: uid(),
       kind,
@@ -622,8 +628,8 @@ export class Game {
       dead: false,
       hp: def.hp * scale,
       maxHp: def.hp * scale,
-      damage: def.damage * (1 + this.elapsed * 0.0015),
-      speed: def.speed * (1 + this.elapsed * 0.0008) * dm.enemySpeedMult,
+      damage: def.damage * (1 + minutes * 0.12),
+      speed: def.speed * (1 + this.elapsed * 0.0005) * dm.enemySpeedMult,
       contactCd: 0,
       flash: 0,
       wobble: randRange(0, Math.PI * 2),
@@ -779,7 +785,7 @@ export class Game {
       saved,
       lost: Math.max(0, FUNDS_TOTAL - saved),
       savedPct: (saved / FUNDS_TOTAL) * 100,
-      recovered: this.fundsRecovered,
+      drainers: this.drainersStopped,
       cause,
       level: p.level,
       kills: this.stats.kills,
@@ -1088,7 +1094,8 @@ export class Game {
     const ctx = this.makeUpgradeContext();
     if (loot.type === "weapon") {
       if (ctx.hasWeapon(loot.kind)) ctx.upgradeWeapon(loot.kind);
-      else ctx.addWeapon(loot.kind, loot.rarity);
+      else if (this.weapons.length < MAX_WEAPON_SLOTS) ctx.addWeapon(loot.kind, loot.rarity);
+      else ctx.upgradeWeapon(this.weapons[Math.floor(simRandom() * this.weapons.length)]!.kind);
       this.syncOrbiters();
       return;
     }
@@ -1244,7 +1251,15 @@ export class Game {
   private pickHordeKind(): EnemyKind {
     const biome = biomeAt(this.player.x, this.player.y);
     const bias = BIOME_HORDE_BIAS[biome];
-    const eligible = HORDE_WEIGHTS.filter((w) => this.elapsed >= w.minTime);
+    const count = (kind: EnemyKind) => this.enemies.reduce((n, e) => (e.kind === kind ? n + 1 : n), 0);
+    const drainers = count("bridge-drainer");
+    const shooters = count("shadow-op") + count("oracle-manipulator");
+    const eligible = HORDE_WEIGHTS.filter((w) => {
+      if (this.elapsed < w.minTime) return false;
+      if (w.kind === "bridge-drainer" && drainers >= MAX_DRAINERS) return false;
+      if ((w.kind === "shadow-op" || w.kind === "oracle-manipulator") && shooters >= MAX_SHOOTERS) return false;
+      return true;
+    });
     const weighted = eligible.map((w) => ({
       kind: w.kind,
       weight: w.weight * (bias[w.kind] ?? 1),
@@ -1660,6 +1675,7 @@ export class Game {
     if (e.carried) {
       this.fundsLost = Math.max(0, this.fundsLost - e.carried);
       this.fundsRecovered += e.carried;
+      this.drainersStopped++;
       this.addFloater(e.x, e.y - 34, `+$${(e.carried / 1e6).toFixed(1)}M RECOVERED`, "#2ee6c7");
       this.audio.play("txConfirmed");
     }

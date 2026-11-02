@@ -103,6 +103,7 @@ export interface UpgradeContext {
   boostStat: (stat: "damage" | "speed" | "pickup" | "armor" | "cooldown" | "yield", amount: number) => void;
   special: (id: "leverage" | "flash-loan" | "multisig") => void;
   hasWeapon: (kind: WeaponKind) => boolean;
+  weaponCount: () => number;
   weaponLevel: (kind: WeaponKind) => number;
   weaponEvolved: (kind: WeaponKind) => boolean;
 }

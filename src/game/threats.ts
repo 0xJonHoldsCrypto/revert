@@ -15,7 +15,7 @@ export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
   "shadow-op": "Keeps its distance and shoots. Flanks in groups.",
 };
 
-const DRAIN_PER_SEC = 1_600_000;
+const DRAIN_PER_SEC = 900_000;
 const DRAIN_CAP = 70_000_000;
 
 function steer(e: Enemy, tx: number, ty: number, speed: number, dt: number) {

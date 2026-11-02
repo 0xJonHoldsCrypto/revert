@@ -2,6 +2,8 @@ import type { UpgradeContext, UpgradeDef, WeaponKind } from "../types";
 import { defiUpgradePool } from "./defiProtocols";
 import { EVOLUTIONS, WEAPONS } from "./weapons";
 
+export const MAX_WEAPON_SLOTS = 6;
+
 const WEAPON_POOL: WeaponKind[] = [
   "audit-dart",
   "rug-coin",
@@ -182,7 +184,7 @@ export function buildUpgradePool(ctx: UpgradeContext): UpgradeDef[] {
 
   for (const kind of WEAPON_POOL) {
     if (!ctx.hasWeapon(kind)) {
-      pool.push(newWeapon(kind));
+      if (ctx.weaponCount() < MAX_WEAPON_SLOTS) pool.push(newWeapon(kind));
     } else if (ctx.weaponLevel(kind) < WEAPONS[kind].maxLevel || !ctx.weaponEvolved(kind)) {
       pool.push(upgradeWeapon(kind, ctx));
     }

@@ -194,9 +194,9 @@ export const HORDE_WEIGHTS: { kind: EnemyKind; weight: number; minTime: number }
   { kind: "sim-swapper", weight: 22, minTime: 30 },
   { kind: "phishing-bot", weight: 26, minTime: 45 },
   { kind: "mev-searcher", weight: 20, minTime: 70 },
-  { kind: "shadow-op", weight: 16, minTime: 120 },
-  { kind: "bridge-drainer", weight: 14, minTime: 180 },
+  { kind: "shadow-op", weight: 11, minTime: 270 },
+  { kind: "bridge-drainer", weight: 10, minTime: 150 },
   { kind: "oracle-manipulator", weight: 12, minTime: 220 },
   { kind: "insider", weight: 10, minTime: 260 },
-  { kind: "rug-dev", weight: 10, minTime: 300 },
+  { kind: "rug-dev", weight: 8, minTime: 330 },
 ];
