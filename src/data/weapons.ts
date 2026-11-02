@@ -127,6 +127,12 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
     pierce: 0,
     maxLevel: 8,
   },
+  "pager-ping": { kind: "pager-ping", name: "Incident Pager", description: "A page that jumps from attacker to attacker.", damage: 13, cooldown: 0.9, range: 340, rarity: "uncommon", maxLevel: 8 },
+  "honeypot-trap": { kind: "honeypot-trap", name: "Honeypot Trap", description: "Drops a charge at your feet. It blows after a short fuse.", damage: 46, cooldown: 2, range: 130, rarity: "uncommon", aoe: 130, maxLevel: 8 },
+  "oracle-strike": { kind: "oracle-strike", name: "Oracle Strike", description: "Calls a bad price down on a random attacker.", damage: 30, cooldown: 1.25, range: 480, rarity: "rare", aoe: 95, maxLevel: 8 },
+  "merkle-proof": { kind: "merkle-proof", name: "Merkle Proof", description: "Flies out and comes back, hitting everything twice.", damage: 15, cooldown: 1.15, range: 330, rarity: "rare", projectileSpeed: 420, maxLevel: 8 },
+  "slashing-field": { kind: "slashing-field", name: "Slashing Field", description: "A constant aura that slashes anything close to you.", damage: 7, cooldown: 0.45, range: 115, rarity: "uncommon", aoe: 115, maxLevel: 8 },
+  "whale-alert": { kind: "whale-alert", name: "Whale Alert", description: "A slow, heavy shot at the toughest attacker in range.", damage: 62, cooldown: 2.1, range: 620, rarity: "epic", projectileSpeed: 980, pierce: 2, maxLevel: 8 },
 };
 
 export const EVOLUTIONS: Record<WeaponKind, { name: string; blurb: string }> = {
@@ -141,6 +147,12 @@ export const EVOLUTIONS: Record<WeaponKind, { name: string; blurb: string }> = {
   "validator-seal": { name: "Finality Ring", blurb: "More seals. The set does not miss a slot." },
   "bridge-bolt": { name: "Light Client", blurb: "Three bolts. Every hop on the bridge is a hit." },
   "nonce-shard": { name: "Replacement Flood", blurb: "The fan widens and the shards bend toward targets." },
+  "pager-ping": { name: "All Hands", blurb: "The page reaches three more attackers." },
+  "honeypot-trap": { name: "Honeypot Field", blurb: "Three charges per drop, spread around you." },
+  "oracle-strike": { name: "Oracle Cascade", blurb: "Three strikes per call." },
+  "merkle-proof": { name: "Merkle Forest", blurb: "Three proofs at once in a wide spread." },
+  "slashing-field": { name: "Mass Slashing", blurb: "The aura grows by a third." },
+  "whale-alert": { name: "Whale Hunt", blurb: "Two extra shots at the next toughest targets." },
 };
 
 export function weaponAtLevel(kind: WeaponKind, level: number): WeaponDef {

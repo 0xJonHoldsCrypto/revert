@@ -51,7 +51,7 @@ export const CHARACTERS: CharacterDef[] = [
     name: "Trace",
     emoji: "🛡️",
     role: "Incident Responder",
-    blurb: "On call. Audit darts and more XP while you learn the chain.",
+    blurb: "On call. The pager chains between attackers, and you learn fast.",
     color: "#9b8cff",
     accent: "#1a1830",
     maxHp: 110,
@@ -59,7 +59,7 @@ export const CHARACTERS: CharacterDef[] = [
     damageMult: 1,
     xpMult: 1.25,
     dashCooldown: 2.3,
-    startWeapon: "audit-dart",
+    startWeapon: "pager-ping",
   },
 ];
 

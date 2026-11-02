@@ -21,11 +21,19 @@ export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
   "pump-bot": "Grows until it dumps on you. Kill it while it is small.",
   "wash-trader": "Heals everything near it. Priority target.",
   "honeypot-mimic": "That shiny coin is a trap. It bites when you get close.",
+  "jpeg-flipper": "Keeps its distance and throws overpriced JPEGs in threes.",
+  "bot-farm": "Barely moves and keeps printing farmers. Kill it first.",
+  "depegged-stable": "Looks stable. Hurt it and it loses the peg and bolts at you.",
+  slasher: "Winds up a blast around itself. Step out of the ring.",
+  "tg-scammer": "Touches you, steals $SAFU, vanishes. Kill it before it arrives.",
+  "leverage-degen": "Runs at you and blows up. Keep your distance.",
 };
 
 const DRAIN_PER_SEC = 900_000;
 const DRAIN_CAP = 70_000_000;
 const MAX_HAZARDS = 48;
+const MAX_FARM_POPULATION = 420;
+const SLASHER_RECOVERY_SEC = 3;
 
 function steer(e: Enemy, tx: number, ty: number, speed: number, dt: number) {
   const a = angleBetween(e.x, e.y, tx, ty);
@@ -154,6 +162,56 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
         e.aiTimer = 2.3 + (e.id % 4) * 0.2;
         fireEnemyBullet(game, e.x, e.y, angleBetween(e.x, e.y, p.x, p.y), 250, e.damage * 0.55, "#ff5c48", e.kind);
         game.audio.play("enemyShot");
+      }
+      return;
+    }
+    case "jpeg-flipper": {
+      if (d > 300) steer(e, p.x, p.y, speed, dt);
+      else if (d < 210) steer(e, e.x + (e.x - p.x), e.y + (e.y - p.y), speed, dt);
+      if ((e.aiTimer ?? 0) <= 0 && d < 430) {
+        e.aiTimer = 3.1;
+        const aim = angleBetween(e.x, e.y, p.x, p.y);
+        for (const spread of [-0.24, 0, 0.24]) fireEnemyBullet(game, e.x, e.y, aim + spread, 200, e.damage * 0.6, "#ff9f43", e.kind);
+        game.audio.play("enemyShot");
+      }
+      return;
+    }
+    case "bot-farm": {
+      steer(e, p.x, p.y, speed, dt);
+      if ((e.aiTimer ?? 2) <= 0 && game.enemies.length < MAX_FARM_POPULATION) {
+        e.aiTimer = 4.5;
+        spawnMinions(game, e, "airdrop-farmer", 3, 42);
+      }
+      return;
+    }
+    case "depegged-stable": {
+      const broken = e.hp < e.maxHp * 0.7;
+      if (broken && !e.phaseTwo) {
+        e.phaseTwo = true;
+        game.addFloater(e.x, e.y - 34, "DEPEGGED", "#ff5c48");
+      }
+      steer(e, p.x, p.y, broken ? speed * 2.3 : speed, dt);
+      return;
+    }
+    case "slasher": {
+      if ((e.aiTimer ?? 1) > SLASHER_RECOVERY_SEC) return;
+      steer(e, p.x, p.y, speed, dt);
+      if ((e.aiTimer ?? 1) <= 0 && d < 170) {
+        e.aiTimer = SLASHER_RECOVERY_SEC + 0.85;
+        game.addHazard({ shape: "circle", x: e.x, y: e.y, r: 125, windup: 0.85, active: 0, damage: e.damage, color: "#c9a0ff", source: e.kind, knock: 200, label: "SLASH" });
+      }
+      return;
+    }
+    case "leverage-degen": {
+      if (e.charge) {
+        e.charge.t -= dt;
+        if (e.charge.t <= 0) e.dead = true;
+        return;
+      }
+      steer(e, p.x, p.y, speed, dt);
+      if (d < 85) {
+        e.charge = { t: 0.55, dash: 0, angle: 0 };
+        game.addHazard({ shape: "circle", x: e.x, y: e.y, r: 105, windup: 0.55, active: 0, damage: e.damage, color: "#ff5c48", source: e.kind, knock: 240, label: "LIQUIDATED" });
       }
       return;
     }

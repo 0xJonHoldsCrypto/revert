@@ -157,6 +157,12 @@ export const CHEST_WEAPON_POOL: WeaponKind[] = [
   "validator-seal",
   "bridge-bolt",
   "nonce-shard",
+  "pager-ping",
+  "honeypot-trap",
+  "oracle-strike",
+  "merkle-proof",
+  "slashing-field",
+  "whale-alert",
 ];
 
 export const FLOOR_CELL = 768;

@@ -1,4 +1,4 @@
-import type { UpgradeContext, UpgradeDef, WeaponKind } from "../types";
+import type { PerkId, UpgradeContext, UpgradeDef, WeaponKind, WeaponRarity } from "../types";
 import { defiUpgradePool } from "./defiProtocols";
 import { EVOLUTIONS, WEAPONS } from "./weapons";
 
@@ -16,6 +16,12 @@ const WEAPON_POOL: WeaponKind[] = [
   "validator-seal",
   "bridge-bolt",
   "nonce-shard",
+  "pager-ping",
+  "honeypot-trap",
+  "oracle-strike",
+  "merkle-proof",
+  "slashing-field",
+  "whale-alert",
 ];
 
 function newWeapon(kind: WeaponKind): UpgradeDef {
@@ -56,7 +62,35 @@ function upgradeWeapon(kind: WeaponKind, ctxNow: UpgradeContext): UpgradeDef {
   };
 }
 
+function perkUpgrade(id: string, title: string, description: string, rarity: WeaponRarity, maxTimes: number, perk: PerkId, amount: number): UpgradeDef {
+  return {
+    id,
+    title,
+    description,
+    rarity,
+    maxTimes,
+    apply(ctx) {
+      ctx.perk(perk, amount);
+      return true;
+    },
+  };
+}
+
 export const STAT_UPGRADES: UpgradeDef[] = [
+  perkUpgrade("perk-pierce", "Reentrancy Guard", "Shots pass through one more attacker.", "rare", 3, "pierce", 1),
+  perkUpgrade("perk-multishot", "Batch Transaction", "Aimed tools fire one extra shot.", "epic", 2, "multishot", 1),
+  perkUpgrade("perk-area", "Wider Mempool", "Blasts and auras are 15% larger.", "rare", 3, "area", 0.15),
+  perkUpgrade("perk-crit", "Critical Bug", "12% chance for a hit to deal double damage.", "rare", 3, "crit", 0.12),
+  perkUpgrade("perk-regen", "Proof of Reserve", "Regenerate 0.6 HP every second.", "uncommon", 3, "regen", 0.6),
+  perkUpgrade("perk-thorns", "Slippage Tolerance", "Attackers that touch you take 40 damage.", "uncommon", 3, "thorns", 40),
+  perkUpgrade("perk-dash-blast", "Dash Arbitrage", "Dashing blasts everything around where you started.", "epic", 2, "dashBlast", 1),
+  perkUpgrade("perk-dash-cd", "Priority Fee", "Dash cooldown -15%.", "uncommon", 3, "dashCooldown", 0.15),
+  perkUpgrade("perk-xp", "Insider Info", "XP +15%.", "uncommon", 3, "xp", 0.15),
+  perkUpgrade("perk-coin", "Treasury Diversification", "$SAFU +30%.", "uncommon", 3, "coin", 0.3),
+  perkUpgrade("perk-kill-blast", "Liquidation Bounty", "8% chance that a kill sets off a small blast.", "rare", 3, "killBlast", 0.08),
+  perkUpgrade("perk-ability", "Timelock Bypass", "Active ability cooldown -20%.", "rare", 2, "abilityCooldown", 0.2),
+  perkUpgrade("perk-revive", "Hard Fork Insurance", "The first fatal hit forks you back at half HP.", "legendary", 1, "revive", 1),
+  perkUpgrade("perk-rerolls", "Governance Vote", "Gain 2 more reorgs for these cards.", "common", 2, "rerolls", 2),
   {
     id: "hp-up",
     title: "Cold Storage",

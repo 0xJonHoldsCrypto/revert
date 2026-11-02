@@ -9,10 +9,10 @@ export const BIOME_LABEL: Record<BiomeId, { name: string; tagline: string }> = {
 };
 
 export const BIOME_HORDE_BIAS: Record<BiomeId, Partial<Record<EnemyKind, number>>> = {
-  mempool: { "script-kiddie": 1.4, "sim-swapper": 1.6, "rug-dev": 1.2 },
-  vault: { "phishing-bot": 1.5, "mev-searcher": 1.8, "insider": 1.2 },
-  bridge: { "bridge-drainer": 1.6, "oracle-manipulator": 1.8, "rug-dev": 1.1 },
-  forest: { "shadow-op": 1.7, "insider": 1.5, "oracle-manipulator": 1.2 },
+  mempool: { "script-kiddie": 1.4, "sim-swapper": 1.6, "rug-dev": 1.2, "airdrop-farmer": 1.5, "tg-scammer": 1.4 },
+  vault: { "phishing-bot": 1.5, "mev-searcher": 1.8, "insider": 1.2, "bot-farm": 1.6, "liquidator": 1.4 },
+  bridge: { "bridge-drainer": 1.6, "oracle-manipulator": 1.8, "rug-dev": 1.1, "depegged-stable": 1.8, "wash-trader": 1.4 },
+  forest: { "shadow-op": 1.7, "insider": 1.5, "oracle-manipulator": 1.2, "slasher": 1.8, "leverage-degen": 1.5 },
 };
 
 export const AREA_RULES: Record<BiomeId, { speed: number; damageTaken: number; coin: number; xp: number; rule: string }> = {

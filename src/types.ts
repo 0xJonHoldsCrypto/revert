@@ -27,6 +27,12 @@ export type EnemyKind =
   | "pump-bot"
   | "wash-trader"
   | "honeypot-mimic"
+  | "jpeg-flipper"
+  | "bot-farm"
+  | "depegged-stable"
+  | "slasher"
+  | "tg-scammer"
+  | "leverage-degen"
   | "boss-shill"
   | "boss-rug-baron"
   | "boss-gas-golem"
@@ -48,7 +54,13 @@ export type WeaponKind =
   | "flash-loan"
   | "validator-seal"
   | "bridge-bolt"
-  | "nonce-shard";
+  | "nonce-shard"
+  | "pager-ping"
+  | "honeypot-trap"
+  | "oracle-strike"
+  | "merkle-proof"
+  | "slashing-field"
+  | "whale-alert";
 
 export interface CharacterDef {
   id: CharacterId;
@@ -111,12 +123,15 @@ export interface UpgradeDef {
   maxTimes?: number;
 }
 
+export type PerkId = "pierce" | "multishot" | "area" | "crit" | "regen" | "thorns" | "dashBlast" | "dashCooldown" | "xp" | "coin" | "killBlast" | "abilityCooldown" | "revive" | "rerolls";
+
 export interface UpgradeContext {
   addWeapon: (kind: WeaponKind, rarity?: WeaponRarity) => void;
   upgradeWeapon: (kind: WeaponKind) => void;
   heal: (amount: number) => void;
   boostStat: (stat: "damage" | "speed" | "pickup" | "armor" | "cooldown" | "yield", amount: number) => void;
   special: (id: "leverage" | "flash-loan" | "multisig") => void;
+  perk: (id: PerkId, amount: number) => void;
   hasWeapon: (kind: WeaponKind) => boolean;
   weaponCount: () => number;
   weaponLevel: (kind: WeaponKind) => number;
@@ -220,6 +235,7 @@ export interface Enemy extends Entity {
 }
 
 export interface Projectile extends Entity {
+  returnAt?: number;
   weaponKind?: WeaponKind;
   hitIds?: number[];
   source?: EnemyKind;

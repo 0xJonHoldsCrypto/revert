@@ -12,6 +12,7 @@ import { makeFloorCanvases } from "../pixel/floorTiles";
 import { LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
 import { CAMEOS } from "../data/cameos";
 import { CHANNEL_SEC } from "../game/interact";
+import { ARC_LIFE_SEC } from "../game/Game";
 import type { InteractableKind } from "../types";
 import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
@@ -40,6 +41,8 @@ const PROJECTILE_LOOK: Partial<Record<WeaponKind, { width: number; length: numbe
   "patch-burst": { width: 15, length: 15, glow: 2.6, trail: 2 },
   "bridge-bolt": { width: 9, length: 52, glow: 3.4, trail: 3 },
   "nonce-shard": { width: 12, length: 24, glow: 2.6, trail: 2 },
+  "merkle-proof": { width: 16, length: 16, glow: 3, trail: 2 },
+  "whale-alert": { width: 13, length: 92, glow: 4, trail: 2 },
 };
 const ORBITER_COLOR: Partial<Record<WeaponKind, string>> = {
   "stable-shield": "#5de2b8",
@@ -337,7 +340,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
           const prop = props[Math.floor(hash(gx + i * 13, gy + i) * props.length)]!;
           const frame = atlas.frame(`prop:${prop.key}`);
           decals.push(px, py + 1, prop.height * frame.aspect * 0.55, prop.height * 0.18, DECAL_BLOB, 0, BLACK, 0.5);
-          sprites.push(frame, px, py, 0.5, prop.height, hash(gx + i, gy + 40) > 0.5);
+          sprites.push(frame, px, py, 0.5, prop.height, !prop.key.endsWith("-sign") && hash(gx + i, gy + 40) > 0.5);
         }
       }
     }
@@ -589,6 +592,11 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       }
     }
 
+    for (const arc of game.arcs) {
+      const dx = arc.x2 - arc.x1;
+      const dy = arc.y2 - arc.y1;
+      fx.push((arc.x1 + arc.x2) / 2, (arc.y1 + arc.y2) / 2, 26, 6, Math.hypot(dx, dy * cameraBasis.backY), Math.atan2(-dy * cameraBasis.backY, dx), cachedColor(arc.color), 3.2, arc.life / ARC_LIFE_SEC);
+    }
     for (const s of game.strikes) {
       if (!inView(s.x, s.y)) continue;
       const left = Math.max(0, s.at - game.elapsed);
@@ -599,7 +607,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     const moving = Math.hypot(p.vx, p.vy) > 20;
     const step = moving ? Math.floor(anim * 6.5) % 2 : 0;
     decals.push(px, py + 1, 19, 9, DECAL_BLOB, 0, BLACK, 0.65);
-    const blink = p.invuln > 0 && p.dashTimer <= 0 && Math.floor(p.invuln * 20) % 2 === 0;
+    const blink = !game.attract && p.invuln > 0 && p.dashTimer <= 0 && Math.floor(p.invuln * 20) % 2 === 0;
     if (!blink) {
       const bob = moving ? Math.abs(Math.sin(anim * 13)) * 2 : Math.sin(anim * 2.2) * 0.5;
       const dead = p.dead;

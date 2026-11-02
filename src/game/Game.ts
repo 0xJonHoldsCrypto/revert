@@ -47,6 +47,7 @@ import type {
   Hazard,
   Shockwave,
   Particle,
+  PerkId,
   Pickup,
   PlayerState,
   Projectile,
@@ -102,11 +103,15 @@ const ARMOR_CAP = 0.7;
 const CHEST_COST_GROWTH = 0.3;
 const BEST_KEY = "best";
 const MAX_DRAINERS = 5;
+const MAX_BOT_FARMS = 2;
 const MAX_SHOOTERS = 14;
 const PLAYER_HIT_RADIUS = 11;
 const ENEMY_HIT_SCALE = 0.8;
 const HUD_TICKS = 6;
-const AOE_COLOR: Partial<Record<WeaponKind, string>> = { "reorg-whip": "#ffd166", "memo-pulse": "#b58cff", "flash-loan": "#ffb020" };
+const AOE_COLOR: Partial<Record<WeaponKind, string>> = { "reorg-whip": "#ffd166", "memo-pulse": "#b58cff", "flash-loan": "#ffb020", "slashing-field": "#c9a0ff" };
+export const ARC_LIFE_SEC = 0.16;
+const PAGER_JUMP_RANGE = 190;
+const EMPTY_PERKS: Record<PerkId, number> = { pierce: 0, multishot: 0, area: 0, crit: 0, regen: 0, thorns: 0, dashBlast: 0, dashCooldown: 0, xp: 0, coin: 0, killBlast: 0, abilityCooldown: 0, revive: 0, rerolls: 0 };
 const DASH_BUFFER_SEC = 0.1;
 const SEPARATION_STRENGTH = 42;
 const KNOCKBACK = 170;
@@ -203,7 +208,10 @@ export class Game {
   weapons: WeaponInstance[] = [];
   stream = new WorldStream(0);
   private events = new WorldEvents(this);
-  strikes: { at: number; x: number; y: number; r: number; damage: number; color: string }[] = [];
+  strikes: { at: number; x: number; y: number; r: number; damage: number; color: string; weapon?: WeaponKind }[] = [];
+  arcs: { x1: number; y1: number; x2: number; y2: number; life: number; color: string }[] = [];
+  private perks: Record<PerkId, number> = { ...EMPTY_PERKS };
+  private doubleXpUntil = 0;
   choiceMode: "levelup" | "popup" = "levelup";
   popupTitle = "";
   windowActive = true;
@@ -456,6 +464,9 @@ export class Game {
     this.stream = new WorldStream(this.worldSeed);
     this.events = new WorldEvents(this);
     this.strikes = [];
+    this.arcs = [];
+    this.perks = { ...EMPTY_PERKS };
+    this.doubleXpUntil = 0;
     this.choiceMode = "levelup";
     this.popupQueue = [];
     this.popupHoldUntil = 0;
@@ -593,6 +604,10 @@ export class Game {
         if (stat === "yield") this.player.yieldPerSec += 0.75 * amount;
       },
       special: (id) => this.applySpecial(id),
+      perk: (id, amount) => {
+        if (id === "rerolls") this.rerolls += amount;
+        else this.perks[id] += amount;
+      },
       hasWeapon: (kind) => this.weapons.some((w) => w.kind === kind),
       weaponCount: () => this.weapons.length,
       weaponLevel: (kind) => this.weapons.find((w) => w.kind === kind)?.level ?? 0,
@@ -759,6 +774,15 @@ export class Game {
     if (this.fundsLeft <= 0 && this.dying <= 0 && (this.runDifficulty === "hard" || this.runDifficulty === "nightmare")) {
       this.rootCause = "insolvent";
       this.player.hp = 0;
+    }
+    if (this.player.hp <= 0 && this.dying <= 0 && this.perks.revive > 0) {
+      this.perks.revive--;
+      this.player.hp = this.player.maxHp * 0.5;
+      this.player.invuln = 2;
+      this.impactFrames = 6;
+      this.addStrike(this.player.x, this.player.y, 320, this.strikeDamage(), "#b58cff", 0);
+      this.addToast("Hard fork: you never died", "#b58cff");
+      this.audio.play("evolve");
     }
     if (this.player.hp <= 0 && this.dying <= 0) {
       this.player.hp = 0;
@@ -1226,7 +1250,8 @@ export class Game {
         p.vx = dashDir.x * p.moveSpeed * DASH.speedMult * this.buffMult("speed");
         p.vy = dashDir.y * p.moveSpeed * DASH.speedMult * this.buffMult("speed");
         p.dashTimer = DASH.duration;
-        p.dashCooldown = getCharacter(p.characterId).dashCooldown * (1 - (this.gearStats.dash ?? 0));
+        p.dashCooldown = getCharacter(p.characterId).dashCooldown * (1 - (this.gearStats.dash ?? 0)) * Math.max(0.4, 1 - this.perks.dashCooldown);
+        if (this.perks.dashBlast > 0) this.addStrike(p.x, p.y, 120 + this.perks.dashBlast * 30, this.strikeDamage() * 0.4 * this.perks.dashBlast, "#2ee6c7", 0);
         p.invuln = DASH.iframes;
         this.burstParticles(p.x, p.y, getCharacter(p.characterId).color, 8);
       }
@@ -1326,8 +1351,8 @@ export class Game {
     }
   }
 
-  addStrike(x: number, y: number, r: number, damage: number, color: string, delay: number) {
-    this.strikes.push({ at: this.elapsed + delay, x, y, r, damage, color });
+  addStrike(x: number, y: number, r: number, damage: number, color: string, delay: number, weapon?: WeaponKind) {
+    this.strikes.push({ at: this.elapsed + delay, x, y, r, damage, color, weapon });
   }
 
   strikeDamage(): number {
@@ -1339,7 +1364,7 @@ export class Game {
     for (const s of this.strikes) {
       if (this.elapsed < s.at) continue;
       s.at = Infinity;
-      this.aoeHit(s.x, s.y, s.r, s.damage);
+      this.aoeHit(s.x, s.y, s.r, s.damage, s.weapon);
       this.shockwaves.push({ x: s.x, y: s.y, radius: s.r, life: 0.32, maxLife: 0.32, color: s.color });
       this.addTrauma(0.22);
       this.audio.play("pulse");
@@ -1364,7 +1389,7 @@ export class Game {
     const p = this.player;
     if (!p.ability || this.elapsed < p.abilityReadyAt) return;
     const def = ABILITIES[p.ability];
-    p.abilityReadyAt = this.elapsed + def.cooldown * this.weaponCooldownMult();
+    p.abilityReadyAt = this.elapsed + def.cooldown * this.weaponCooldownMult() * Math.max(0.4, 1 - this.perks.abilityCooldown);
     this.addFloater(p.x, p.y - 70, def.name.toUpperCase(), def.color);
     this.audio.play("evolve");
     if (p.ability === "emergency-pause") {
@@ -1384,6 +1409,26 @@ export class Game {
         this.addStrike(p.x + Math.cos(a) * 340, p.y + Math.sin(a) * 340, 130, this.strikeDamage(), def.color, 0.05);
         this.addStrike(p.x + Math.cos(a + 0.26) * 190, p.y + Math.sin(a + 0.26) * 190, 120, this.strikeDamage(), def.color, 0.4);
       }
+    } else if (p.ability === "mev-bundle") {
+      this.doubleXpUntil = this.elapsed + 10;
+    } else if (p.ability === "bridge-out") {
+      this.addStrike(p.x, p.y, 260, this.strikeDamage() * 1.6, def.color, 0.05);
+      p.x += Math.cos(p.facing) * 460;
+      p.y += Math.sin(p.facing) * 460;
+      p.px = p.x;
+      p.py = p.y;
+      p.invuln = Math.max(p.invuln, 1);
+      this.impactFrames = 3;
+    } else if (p.ability === "claim-all") {
+      for (const pk of this.pickups) pk.magnetized = true;
+    } else if (p.ability === "validator-slash") {
+      for (let i = 1; i <= 5; i++) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          this.addStrike(p.x + dx * i * 95, p.y + dy * i * 95, 85, this.strikeDamage() * 1.1, def.color, i * 0.08);
+        }
+      }
+    } else if (p.ability === "insurance-claim") {
+      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.35);
     } else {
       p.shieldUntil = this.elapsed + 5;
     }
@@ -1710,6 +1755,7 @@ export class Game {
     const eligible = HORDE_WEIGHTS.filter((w) => {
       if (this.elapsed < w.minTime) return false;
       if (w.kind === "bridge-drainer" && drainers >= MAX_DRAINERS) return false;
+      if (w.kind === "bot-farm" && count("bot-farm") >= MAX_BOT_FARMS) return false;
       if ((w.kind === "shadow-op" || w.kind === "oracle-manipulator") && shooters >= MAX_SHOOTERS) return false;
       return true;
     });
@@ -1775,6 +1821,7 @@ export class Game {
   }
 
   private updateYield(dt: number) {
+    if (this.perks.regen > 0 && this.dying <= 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.perks.regen * dt);
     const perSec = this.player.yieldPerSec + (this.gearStats.yield ?? 0) * 0.75;
     if (perSec <= 0 || this.elapsed < this.yieldSlashedUntil) return;
     this.player.xp += perSec * dt * this.player.xpMult;
@@ -1830,9 +1877,22 @@ export class Game {
       if (!rectsOverlap(p.x, p.y, PLAYER_HIT_RADIUS, e.x, e.y, e.radius * ENEMY_HIT_SCALE)) continue;
       e.contactCd = def.contactCooldown ?? 0.5;
       this.hurtPlayer(e.damage, e.kind);
+      if (this.perks.thorns > 0) this.damageEnemy(e, this.perks.thorns);
+      if (e.kind === "tg-scammer") this.scammerSteals(e);
     }
 
     this.enemies = this.enemies.filter((e) => !e.dead);
+  }
+
+  private scammerSteals(e: Enemy) {
+    const stolen = Math.min(this.player.coins, 6);
+    this.player.coins -= stolen;
+    if (stolen > 0) this.addFloater(this.player.x, this.player.y - 60, `-${stolen} $SAFU · SCAMMED`, "#4ab3e8");
+    const at = this.ringPoint();
+    e.x = at.x;
+    e.y = at.y;
+    e.px = at.x;
+    e.py = at.y;
   }
 
   private recycleIfFar(e: Enemy) {
@@ -1900,15 +1960,36 @@ export class Game {
 
       if (def.orbit) continue;
 
-      if (def.aoe && (w.kind === "reorg-whip" || w.kind === "memo-pulse" || w.kind === "flash-loan")) {
+      if (w.kind === "pager-ping") {
+        this.firePager(w, def.damage, def.range);
+        continue;
+      }
+      if (w.kind === "honeypot-trap") {
         const dmg = this.weaponDamageScale(w, def.damage);
-        const radius = (def.aoe ?? def.range) * (w.evolved ? 1.35 : 1);
+        const radius = (def.aoe ?? 130) * (1 + this.perks.area);
+        const drops = w.evolved ? 3 : 1;
+        for (let i = 0; i < drops; i++) this.addStrike(p.x + (drops > 1 ? randRange(-130, 130) : 0), p.y + (drops > 1 ? randRange(-100, 100) : 0), radius, dmg, "#ffc23d", 1.1, w.kind);
+        continue;
+      }
+      if (w.kind === "oracle-strike") {
+        const inRange = this.enemies.filter((e) => !e.dead && !isHiddenFromWeapons(e) && dist(p.x, p.y, e.x, e.y) < def.range);
+        const calls = w.evolved ? 3 : 1;
+        for (let i = 0; i < calls && inRange.length; i++) {
+          const e = inRange[Math.floor(simRandom() * inRange.length)]!;
+          this.addStrike(e.x, e.y, (def.aoe ?? 95) * (1 + this.perks.area), this.weaponDamageScale(w, def.damage), "#79c0ff", 0.4 + i * 0.12, w.kind);
+        }
+        continue;
+      }
+
+      if (def.aoe && (w.kind === "reorg-whip" || w.kind === "memo-pulse" || w.kind === "flash-loan" || w.kind === "slashing-field")) {
+        const dmg = this.weaponDamageScale(w, def.damage);
+        const radius = (def.aoe ?? def.range) * (w.evolved ? 1.35 : 1) * (1 + this.perks.area);
         this.aoeHit(p.x, p.y, radius, dmg, w.kind);
         const color = AOE_COLOR[w.kind] ?? COLORS.gold;
         const arc = w.kind === "reorg-whip" ? p.facing : undefined;
         this.shockwaves.push({ x: p.x, y: p.y, radius, life: 0.28, maxLife: 0.28, color, arc });
-        this.audio.play("pulse");
-        if (w.evolved) {
+        if (w.kind !== "slashing-field") this.audio.play("pulse");
+        if (w.evolved && w.kind !== "slashing-field") {
           this.aoeHit(p.x, p.y, radius * 0.62, dmg * 0.7, w.kind);
           this.shockwaves.push({ x: p.x, y: p.y, radius: radius * 0.62, life: 0.22, maxLife: 0.22, color, arc: arc === undefined ? undefined : arc + Math.PI });
         }
@@ -1925,19 +2006,63 @@ export class Game {
         continue;
       }
 
+      if (w.kind === "whale-alert") {
+        const heavy = this.enemies
+          .filter((e) => !e.dead && !isHiddenFromWeapons(e) && dist(p.x, p.y, e.x, e.y) < def.range)
+          .sort((a, b) => b.hp - a.hp)
+          .slice(0, (w.evolved ? 3 : 1) + this.perks.multishot);
+        for (const e of heavy) {
+          const a = angleBetween(p.x, p.y, e.x, e.y);
+          this.spawnProjectile(p.x, p.y, Math.cos(a), Math.sin(a), def, w, e.id);
+        }
+        if (heavy.length) this.audio.play("enemyShot");
+        continue;
+      }
       const target = this.nearestEnemy(p.x, p.y, def.range);
       if (!target) continue;
       const ang = angleBetween(p.x, p.y, target.x, target.y);
       const spreads =
         w.evolved && (w.kind === "finality-beam" || w.kind === "bridge-bolt")
           ? [-0.16, 0, 0.16]
-          : w.evolved && w.kind === "audit-dart"
-            ? [-0.1, 0.1]
-            : [0];
+          : w.evolved && w.kind === "merkle-proof"
+            ? [-0.45, 0, 0.45]
+            : w.evolved && w.kind === "audit-dart"
+              ? [-0.1, 0.1]
+              : [0];
+      for (let extra = 1; extra <= this.perks.multishot; extra++) spreads.push(extra * (extra % 2 ? 0.2 : -0.2));
       for (const spread of spreads) {
         this.spawnProjectile(p.x, p.y, Math.cos(ang + spread), Math.sin(ang + spread), def, w, target.id);
       }
     }
+  }
+
+  private firePager(w: WeaponInstance, baseDamage: number, range: number) {
+    const hits = 3 + Math.floor(w.level / 2) + (w.evolved ? 3 : 0) + this.perks.pierce;
+    const damage = this.weaponDamageScale(w, baseDamage);
+    const visited = new Set<number>();
+    let fromX = this.player.x;
+    let fromY = this.player.y;
+    let reach = range;
+    for (let i = 0; i < hits; i++) {
+      let next: Enemy | undefined;
+      let best = reach;
+      for (const e of this.enemies) {
+        if (e.dead || visited.has(e.id) || isHiddenFromWeapons(e)) continue;
+        const d = dist(fromX, fromY, e.x, e.y);
+        if (d < best) {
+          best = d;
+          next = e;
+        }
+      }
+      if (!next) break;
+      visited.add(next.id);
+      this.arcs.push({ x1: fromX, y1: fromY, x2: next.x, y2: next.y, life: ARC_LIFE_SEC, color: "#9b8cff" });
+      fromX = next.x;
+      fromY = next.y;
+      reach = PAGER_JUMP_RANGE;
+      this.damageEnemy(next, damage, 0, 0, w.kind);
+    }
+    if (visited.size) this.audio.play("blip");
   }
 
   private spawnProjectile(
@@ -1958,7 +2083,11 @@ export class Game {
       "bridge-bolt": "#2ee6c7",
       "nonce-shard": "#f0c14d",
       "flash-loan": "#ffb020",
+      "merkle-proof": "#7ee787",
+      "whale-alert": "#ff9f43",
     };
+    const life = def.range / speed + 0.5;
+    const isProof = kind === "merkle-proof";
     this.projectiles.push({
       id: uid(),
       x,
@@ -1968,8 +2097,9 @@ export class Game {
       radius: kind === "finality-beam" ? 6 : 5,
       dead: false,
       damage: this.weaponDamageScale(w, def.damage),
-      life: def.range / speed + 0.5,
-      pierce: def.pierce ?? 0,
+      life: isProof ? life * 1.8 : life,
+      returnAt: isProof ? life * 0.9 : undefined,
+      pierce: isProof ? 999 : (def.pierce ?? 0) + this.perks.pierce,
       fromPlayer: true,
       weaponKind: kind,
       color: colors[kind] ?? "#58a6ff",
@@ -2003,6 +2133,15 @@ export class Game {
         }
       }
 
+      if (pr.returnAt !== undefined && pr.life <= pr.returnAt) {
+        const back = angleBetween(pr.x, pr.y, this.player.x, this.player.y);
+        const spd = Math.hypot(pr.vx, pr.vy);
+        pr.vx = Math.cos(back) * spd;
+        pr.vy = Math.sin(back) * spd;
+        if (pr.returnAt !== Infinity) pr.hitIds = undefined;
+        pr.returnAt = Infinity;
+        if (dist(pr.x, pr.y, this.player.x, this.player.y) < 24) pr.dead = true;
+      }
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
 
@@ -2091,7 +2230,8 @@ export class Game {
 
   private damageEnemy(e: Enemy, damage: number, pushX = 0, pushY = 0, weapon?: WeaponKind) {
     const shielded = e.kind === "boss-oracle" && this.enemies.some((m) => m.feedNode && !m.dead);
-    const dealt = Math.max(1, Math.round(shielded ? damage * 0.25 : damage));
+    const crit = weapon !== undefined && this.perks.crit > 0 && simRandom() < this.perks.crit;
+    const dealt = Math.max(1, Math.round((shielded ? damage * 0.25 : damage) * (crit ? 2 : 1)));
     e.hp -= dealt;
     e.revealed = true;
     if (weapon) this.weaponDamage.set(weapon, (this.weaponDamage.get(weapon) ?? 0) + dealt);
@@ -2139,6 +2279,7 @@ export class Game {
     this.stats.kills++;
     if (this.gearStats.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.gearStats.healOnKill);
     if (this.gearStats.fundsOnKill) this.fundsLost = Math.max(0, this.fundsLost - this.gearStats.fundsOnKill);
+    if (this.perks.killBlast > 0 && simRandom() < this.perks.killBlast) this.addStrike(e.x, e.y, 90, this.strikeDamage() * 0.35, "#ff8552", 0);
     if (e.kind === "sybil") {
       for (let i = 0; i < 3; i++) this.spawnEnemyAt("sybil-mini", e.x + randRange(-22, 22), e.y + randRange(-22, 22));
     }
@@ -2237,7 +2378,7 @@ export class Game {
     for (const pk of this.pickups) {
       if (pk.dead) continue;
       const d = dist(p.x, p.y, pk.x, pk.y);
-      if (d < pickupReach) pk.magnetized = true;
+      if (d < pickupReach || this.attract) pk.magnetized = true;
       if (pk.magnetized) {
         const ang = angleBetween(pk.x, pk.y, p.x, p.y);
         const pull = clamp(180 + (pickupReach - d) * 4, 180, 520);
@@ -2256,7 +2397,7 @@ export class Game {
         }
         if (pk.kind === "coin") {
           this.audio.play("coin");
-          p.coins += Math.round(pk.value * (1 + (this.gearStats.coin ?? 0)));
+          p.coins += Math.round(pk.value * (1 + (this.gearStats.coin ?? 0) + this.perks.coin));
         }
         if (pk.kind === "buff" && pk.buffKind) {
           this.audio.play("chest");
@@ -2269,7 +2410,7 @@ export class Game {
   }
 
   private gainXp(amount: number) {
-    this.player.xp += amount * (1 + (this.gearStats.xp ?? 0));
+    this.player.xp += amount * (1 + (this.gearStats.xp ?? 0) + this.perks.xp) * (this.elapsed < this.doubleXpUntil ? 2 : 1);
     if (this.phase !== "playing") return;
     if (this.player.xp >= this.player.xpToNext) {
       this.player.xp -= this.player.xpToNext;
@@ -2293,6 +2434,8 @@ export class Game {
     }
     this.floaters = this.floaters.filter((f) => f.life > 0);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 1.5);
+    for (const a of this.arcs) a.life -= dt;
+    this.arcs = this.arcs.filter((a) => a.life > 0);
     for (const c of this.corpses) c.life -= dt;
     this.corpses = this.corpses.filter((c) => c.life > 0);
     this.updateShockwaves(dt);
