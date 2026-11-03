@@ -195,12 +195,14 @@ function catalystTag(id: string, ctx: UpgradeContext): string | undefined {
   return tool ? `EVOLVES ${WEAPONS[tool].name.toUpperCase()}` : undefined;
 }
 
-export function buildUpgradePool(ctx: UpgradeContext): UpgradeDef[] {
+const NOTHING_LOCKED: ReadonlySet<WeaponKind> = new Set();
+
+export function buildUpgradePool(ctx: UpgradeContext, locked: ReadonlySet<WeaponKind> = NOTHING_LOCKED): UpgradeDef[] {
   const pool: UpgradeDef[] = [...STAT_UPGRADES, ...defiUpgradePool()].map((u) => ({ ...u, tag: catalystTag(u.id, ctx) }));
 
   for (const kind of WEAPON_POOL) {
     if (!ctx.hasWeapon(kind)) {
-      if (ctx.weaponCount() < MAX_WEAPON_SLOTS) pool.push(newWeapon(kind, ctx));
+      if (ctx.weaponCount() < MAX_WEAPON_SLOTS && !locked.has(kind)) pool.push(newWeapon(kind, ctx));
     } else if (ctx.weaponLevel(kind) < WEAPONS[kind].maxLevel) {
       pool.push(upgradeWeapon(kind, ctx));
     } else if (!ctx.weaponEvolved(kind) && ctx.hasUpgrade(EVOLUTIONS[kind].needs)) {

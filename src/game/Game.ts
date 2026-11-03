@@ -45,6 +45,10 @@ import { RunTracker, type AchEvent, type AchPayload } from "./achievements";
 import { gasCloud, isHiddenFromWeapons, THREAT_INTEL, updateEnemyBehavior, updateHazards } from "./threats";
 import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE, type Cinematic } from "./cinematic";
 import { groundHalfExtents } from "../render/view";
+import { defaultSetup, runEffects, setupDigest, cleanSetup, type RunEffects, type RunSetup } from "./runSetup";
+import { lockedTools } from "../data/unlocks";
+import { shardsForRun } from "../data/metaPerks";
+import type { DailyRecord } from "../daily";
 import type {
   CharacterId,
   Enemy,
@@ -207,8 +211,19 @@ export type HudData = {
   neverSell: boolean;
 };
 
+export type RunPlan = { setup: RunSetup; seed?: number; hero?: CharacterId; difficulty?: DifficultyId };
+
+export type RunReward = { shards: number; daily: DailyRecord | null };
+
 export class Game {
   phase: GamePhase = "menu";
+  setup: RunSetup = defaultSetup();
+  effects: RunEffects = runEffects("normal", this.setup);
+  runPlan: RunPlan = { setup: defaultSetup() };
+  reward: RunReward | null = null;
+  private lockedToolSet = new Set<WeaponKind>();
+  private setupHash = 0;
+  private nextHuntAt = 0;
   selectedCharacter: CharacterId = "keel";
   attract = false;
   rerolls = 2;
@@ -263,7 +278,7 @@ export class Game {
   private upgradeCounts = new Map<string, number>();
   shake = 0;
 
-  private recorder = new RunRecorder(0, "keel", "normal");
+  private recorder = new RunRecorder(0, "keel", "normal", defaultSetup());
   private moveCode = 0;
   private spawnAspect = 16 / 9;
   runTick = 0;
@@ -399,7 +414,8 @@ export class Game {
     });
   }
 
-  requestStartRun(fromTitle = false) {
+  requestStartRun(fromTitle = false, plan?: RunPlan) {
+    if (plan) this.runPlan = plan;
     this.attract = false;
     this.audio.silenced = false;
     this.audio.unlock();
@@ -413,15 +429,16 @@ export class Game {
   }
 
   startRun() {
-    this.startReplayableRun((Math.random() * 2 ** 31) | 0, this.selectedCharacter, this.runDifficulty);
+    const plan = this.runPlan;
+    this.startReplayableRun(plan.seed ?? (Math.random() * 2 ** 31) | 0, plan.hero ?? this.selectedCharacter, plan.difficulty ?? this.runDifficulty, plan.setup);
   }
 
-  startReplayableRun(seed: number, hero: CharacterId, difficulty: DifficultyId) {
+  startReplayableRun(seed: number, hero: CharacterId, difficulty: DifficultyId, setup: RunSetup = defaultSetup()) {
     this.selectedCharacter = hero;
     this.runDifficulty = difficulty;
     this.attract = false;
     this.audio.silenced = false;
-    this.resetRun(seed);
+    this.resetRun(seed, setup);
     this.stream.update(this.player.x, this.player.y);
     this.resetTutorial();
     this.beginLanding();
@@ -498,7 +515,7 @@ export class Game {
   beginAttract() {
     this.attract = true;
     this.audio.silenced = true;
-    this.resetRun();
+    this.resetRun(undefined, defaultSetup());
     this.elapsed = 300;
     this.nextGasAt = Infinity;
     this.attractClock = 0;
@@ -575,8 +592,14 @@ export class Game {
     this.codexKills.clear();
   }
 
-  private resetRun(seed = (Math.random() * 2 ** 31) | 0) {
+  private resetRun(seed = (Math.random() * 2 ** 31) | 0, setup: RunSetup = defaultSetup()) {
     this.flushCodex();
+    this.setup = cleanSetup(setup);
+    this.effects = runEffects(this.runDifficulty, this.setup);
+    this.setupHash = setupDigest(this.setup);
+    this.lockedToolSet = new Set(lockedTools(this.setup.unlocked));
+    this.nextHuntAt = this.effects.huntEverySec;
+    this.reward = null;
     this.codexSeen.clear();
     this.bossTools.clear();
     this.runAchievements = [];
@@ -594,6 +617,8 @@ export class Game {
     this.moveCode = 0;
     this.spawnAspect = roundAspect(this.aspectSource());
     const ch = getCharacter(this.selectedCharacter);
+    const fx = this.effects;
+    const startHp = Math.max(1, Math.round((ch.maxHp + fx.maxHpBonus) * fx.maxHpMult));
     this.player = {
       id: uid(),
       characterId: ch.id,
@@ -603,8 +628,8 @@ export class Game {
       vy: 0,
       radius: PLAYER_RADIUS,
       dead: false,
-      hp: ch.maxHp,
-      maxHp: ch.maxHp,
+      hp: startHp,
+      maxHp: startHp,
       level: 1,
       xp: 0,
       xpToNext: 25,
@@ -615,11 +640,11 @@ export class Game {
       damageMult: ch.damageMult,
       xpMult: ch.xpMult,
       moveSpeed: ch.moveSpeed,
-      pickupRadius: 72,
+      pickupRadius: 72 * fx.pickupMult,
       armor: 0,
       cooldownMult: 1,
       yieldPerSec: 0,
-      coins: 0,
+      coins: fx.startCoins,
       stash: [],
       activeBuffs: [],
       wellBonusArmor: 0,
@@ -661,7 +686,7 @@ export class Game {
     this.stillTime = 0;
     this.fieldRadius = 0;
     this.lastHurtAt = 0;
-    this.banishes = 1;
+    this.banishes = fx.banishes;
     this.banished.clear();
     this.nextLevelAt = 0;
     this.aaveTimer = 0;
@@ -671,7 +696,7 @@ export class Game {
     this.spawnRate = 0.85;
     this.bossesSpawned = 0;
     this.upgradeCounts.clear();
-    this.recorder = new RunRecorder(seed, ch.id, this.runDifficulty);
+    this.recorder = new RunRecorder(seed, ch.id, this.runDifficulty, this.setup);
     this.recorder.aspect(0, this.spawnAspect);
     if (this.godMode) this.recorder.taint();
     this.noteCodex(`t:${ch.startWeapon}`);
@@ -708,7 +733,7 @@ export class Game {
     this.dying = 0;
     this.dashBuffer = 0;
     this.cameraFocus = null;
-    this.rerolls = 2;
+    this.rerolls = fx.rerolls;
     this.input.focus();
     this.syncOrbiters();
   }
@@ -791,9 +816,7 @@ export class Game {
           this.emit("evolve");
         }
       },
-      heal: (amount) => {
-        this.player.hp = Math.min(this.player.maxHp, this.player.hp + amount);
-      },
+      heal: (amount) => this.healPlayer(amount),
       maxHp: (amount) => {
         this.player.maxHp += amount;
         this.player.hp += amount;
@@ -833,7 +856,7 @@ export class Game {
 
   private rollChoices() {
     const ctx = this.makeUpgradeContext();
-    const pool = buildUpgradePool(ctx).filter((u) => (this.upgradeCounts.get(u.id) ?? 0) < (u.maxTimes ?? 99) && !this.banished.has(u.id));
+    const pool = buildUpgradePool(ctx, this.lockedToolSet).filter((u) => (this.upgradeCounts.get(u.id) ?? 0) < (u.maxTimes ?? 99) && !this.banished.has(u.id));
     const chosen: UpgradeDef[] = [];
     while (chosen.length < 3 && pool.length) {
       const total = pool.reduce((sum, u) => sum + RARITY_WEIGHT[u.rarity ?? "common"], 0);
@@ -877,7 +900,7 @@ export class Game {
   skipCards() {
     if (this.phase !== "levelup" || this.choiceMode !== "levelup") return;
     this.recorder.choice(this.runTick, "skip", 0);
-    this.player.hp = Math.min(this.player.maxHp, this.player.hp + 15);
+    this.healPlayer(15);
     this.audio.play("ui");
     this.setPhase("playing");
   }
@@ -1021,6 +1044,7 @@ export class Game {
     this.updateYield(dt);
     this.syncMusic();
     this.checkBossSchedule();
+    this.updateHunt();
     if (++this.hudTick % HUD_TICKS === 0) this.pushHud();
 
     if (this.god) this.player.hp = this.player.maxHp;
@@ -1084,8 +1108,29 @@ export class Game {
     };
   }
 
-  score(): number {
+  baseScore(): number {
     return Math.floor(this.stats.timeSurvived * 10 + this.stats.kills + this.stats.bossesDefeated * 500 + this.fundsLeft / 1e6);
+  }
+
+  score(): number {
+    return Math.floor(this.baseScore() * this.effects.scoreMult);
+  }
+
+  healPlayer(amount: number) {
+    const p = this.player;
+    if (amount <= 0 || p.hp >= p.maxHp) return;
+    p.hp = Math.min(p.maxHp, p.hp + amount * this.effects.healMult);
+  }
+
+  private updateHunt() {
+    const every = this.effects.huntEverySec;
+    if (every <= 0 || this.attract || this.elapsed < this.nextHuntAt) return;
+    this.nextHuntAt += every;
+    const at = this.ringPoint(40);
+    const e = this.spawnEnemyAt(this.pickHordeKind(), at.x, at.y, true);
+    this.makeWhale(e);
+    e.speed *= 1.15;
+    this.addToast("DOXXED · a whale is tracking you", "#ff5c48");
   }
 
   get fundsLeft(): number {
@@ -1356,6 +1401,11 @@ export class Game {
       achievements: [...this.runAchievements],
       score: this.score(),
       best: this.recordRun(damage),
+      reward: this.reward,
+      mods: [...this.setup.mods],
+      mode: this.setup.mode,
+      date: this.setup.date,
+      scoreMult: this.effects.scoreMult,
       timeline: this.timeline.slice(-8),
       damage: damage.slice(0, 6),
     };
@@ -1367,6 +1417,10 @@ export class Game {
     if (this.runRecorded || this.recorder.tainted || this.attract) return Math.max(stored.best, score);
     this.runRecorded = true;
     const cause = this.rootCause === "insolvent" ? "Protocol insolvent" : this.rootCause === "hazard" ? "Environment hazard" : this.rootCause ? ENEMIES[this.rootCause].name : "None";
+    const shards = shardsForRun({ timeSec: this.stats.timeSurvived, baseScore: this.baseScore(), bosses: this.stats.bossesDefeated, tainted: this.recorder.tainted, shardMult: this.effects.shardMult });
+    save.awardShards(shards);
+    const daily = this.setup.mode === "daily" && this.setup.date ? save.recordDaily(this.setup.date, score) : null;
+    this.reward = { shards, daily };
     return save.recordRun(
       {
         date: Date.now(),
@@ -1663,7 +1717,7 @@ export class Game {
     if (this.perks.launchpool > 0) total += Math.min(0.3, Math.floor(p.coins / 5) * 0.01);
     if (this.perks.eigen > 0) total += this.totalArmor();
     if (this.buffActive("rebase")) total += 0.6 * (1 - p.hp / p.maxHp);
-    return total;
+    return total * this.effects.damageMult;
   }
 
   private buffMult(stat: "damage" | "speed" | "pickup"): number {
@@ -1784,7 +1838,7 @@ export class Game {
         }
       }
     } else if (p.ability === "insurance-claim") {
-      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.35);
+      this.healPlayer(p.maxHp * 0.35);
     } else {
       p.shieldUntil = this.elapsed + 5;
     }
@@ -2070,7 +2124,7 @@ export class Game {
   }
 
   private rigUpgradeCost(rig: SidekickState): number {
-    return 20 * (rig.tier + 1) * (rig.tier + 1);
+    return Math.ceil(20 * (rig.tier + 1) * (rig.tier + 1) * this.effects.costMult);
   }
 
   private addRig(kind: SidekickKind) {
@@ -2252,7 +2306,7 @@ export class Game {
   }
 
   chestCost(base: number): number {
-    return Math.ceil(base * (1 + this.chestsOpened * CHEST_COST_GROWTH));
+    return Math.ceil(base * (1 + this.chestsOpened * CHEST_COST_GROWTH) * this.effects.costMult);
   }
 
   weaponDamageScale(w: WeaponInstance, baseDamage: number): number {
@@ -2260,8 +2314,8 @@ export class Game {
     return baseDamage * this.damageTotal() * this.buffMult("damage") * rarityDamageMult(w.rarity) * sailor;
   }
 
-  private diffMult() {
-    return DIFFICULTY[this.runDifficulty];
+  private diffMult(): RunEffects {
+    return this.effects;
   }
 
   private aliveCeiling(): number {
@@ -2302,7 +2356,7 @@ export class Game {
     const distSpawn = edge + 70 + spawnRandom() * 100;
     const kind = this.pickHordeKind();
     const e = this.spawnEnemyAt(kind, p.x + cos * distSpawn, p.y + sin * distSpawn);
-    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE && this.whaleCount() < MAX_WHALES) this.makeWhale(e);
+    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE * this.effects.eliteChanceMult && this.whaleCount() < MAX_WHALES + this.effects.extraWhales) this.makeWhale(e);
   }
 
   private ringPoint(extra = 0): { x: number; y: number } {
@@ -2436,6 +2490,7 @@ export class Game {
   stateHash(): number {
     const p = this.player;
     let hash = 2166136261;
+    hash = mixHash(hash, this.setupHash);
     hash = mixHash(hash, this.runTick);
     hash = mixHash(hash, p.x);
     hash = mixHash(hash, p.y);
@@ -2497,7 +2552,7 @@ export class Game {
   }
 
   private updateYield(dt: number) {
-    if (this.perks.regen > 0 && this.dying <= 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.perks.regen * dt);
+    if (this.perks.regen > 0 && this.dying <= 0) this.healPlayer(this.perks.regen * dt);
     if (this.elapsed < this.yieldSlashedUntil) return;
     const stake = this.perks.lido > 0 && this.stillTime > 1 ? this.player.xpToNext * 0.02 : 0;
     const perSec = this.player.yieldPerSec + (this.gearStats.yield ?? 0) * 0.75 + stake;
@@ -2904,7 +2959,7 @@ export class Game {
     const def = ENEMIES[e.kind];
     this.stats.kills++;
     this.recordKill(e, def.isBoss === true);
-    if (this.gearStats.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.gearStats.healOnKill);
+    if (this.gearStats.healOnKill) this.healPlayer(this.gearStats.healOnKill);
     if (this.gearStats.fundsOnKill) this.fundsLost = Math.max(0, this.fundsLost - this.gearStats.fundsOnKill);
     if (this.perks.killBlast > 0 && simRandom() < this.perks.killBlast) this.addStrike(e.x, e.y, 90, this.strikeDamage() * 0.35, "#ff8552", 0);
     if (e.kind === "sybil") {
@@ -3036,13 +3091,13 @@ export class Game {
         }
         if (pk.kind === "health") {
           this.audio.play("txConfirmed");
-          p.hp = Math.min(p.maxHp, p.hp + pk.value);
+          this.healPlayer(pk.value);
         }
         if (pk.kind === "coin") {
           this.audio.play("coin");
           const coins = Math.round(pk.value * (1 + (this.gearStats.coin ?? 0) + this.perks.coin));
           p.coins += coins;
-          if (this.perks.curve > 0) p.hp = Math.min(p.maxHp, p.hp + coins);
+          if (this.perks.curve > 0) this.healPlayer(coins);
         }
         if (pk.kind === "buff" && pk.buffKind) {
           this.audio.play("chest");
@@ -3055,7 +3110,7 @@ export class Game {
   }
 
   private gainXp(amount: number) {
-    this.player.xp += amount * (1 + (this.gearStats.xp ?? 0) + this.perks.xp) * (this.elapsed < this.doubleXpUntil ? 2 : 1);
+    this.player.xp += amount * (1 + (this.gearStats.xp ?? 0) + this.perks.xp) * (this.elapsed < this.doubleXpUntil ? 2 : 1) * this.effects.xpMult;
   }
 
   private updateParticles(dt: number) {

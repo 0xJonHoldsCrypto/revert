@@ -358,8 +358,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     obstacleVersion = game.stream.version;
     obstacleCounts.clear();
     for (const o of game.obstacles) obstacleCounts.set(o.kind, (obstacleCounts.get(o.kind) ?? 0) + 1);
-    for (const mesh of obstacleLayers.values()) mesh.count = 0;
     for (const [kind, needed] of obstacleCounts) obstacleLayer(kind, needed);
+    for (const mesh of obstacleLayers.values()) mesh.count = 0;
     for (const o of game.obstacles) {
       const def = ENV_OBSTACLES[o.kind];
       const mesh = obstacleLayers.get(o.kind)!;

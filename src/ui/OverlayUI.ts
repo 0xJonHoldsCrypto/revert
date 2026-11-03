@@ -7,6 +7,24 @@ import type { Game, HudData } from "../game/Game";
 import { syncTouchAbility } from "./touchControls";
 import { openCodex, openSettings } from "./gearButton";
 import { ACHIEVEMENT_BY_ID } from "../data/achievements";
+import { MODIFIER_BY_ID } from "../data/modifiers";
+import { UNLOCKS } from "../data/unlocks";
+import { CHARACTERS } from "../data/characters";
+import { WEAPONS } from "../data/weapons";
+import type { WeaponKind } from "../types";
+
+type MetaSummary = { tainted: boolean; achievements: string[]; reward: { shards: number; daily: { best: number; streak: number } | null } | null; mods: string[]; mode: string; date: string | null; scoreMult: number };
+
+function metaLine(m: MetaSummary): string {
+  const parts: string[] = [];
+  if (m.tainted) parts.push("Debug run · no shards");
+  else if (m.reward) parts.push(`<b>+◆${m.reward.shards}</b> Bounty Shards`);
+  if (m.mode === "daily" && m.date) parts.push(`Daily ${m.date}${m.reward?.daily ? ` · best <b>${m.reward.daily.best.toLocaleString("en-US")}</b> · streak <b>${m.reward.daily.streak}</b>` : ""}`);
+  if (m.mods.length) parts.push(`Contracts: ${m.mods.map((id) => MODIFIER_BY_ID[id as keyof typeof MODIFIER_BY_ID]?.name ?? id).join(", ")} · score ×${m.scoreMult.toFixed(2)}`);
+  const fresh = UNLOCKS.filter((u) => m.achievements.includes(u.achievement));
+  if (fresh.length) parts.push(`Unlocked: <b>${fresh.map((u) => (u.kind === "hero" ? CHARACTERS.find((c) => c.id === u.target)?.name : WEAPONS[u.target as WeaponKind]?.name) ?? u.target).join(", ")}</b>`);
+  return parts.length ? `<div class="pm-meta">${parts.map((p) => `<span>${p}</span>`).join("")}</div>` : "";
+}
 import { serializeRunLog } from "../replay/runLog";
 import type { ShareData } from "./shareCard";
 import * as save from "../save";
@@ -306,6 +324,7 @@ export class OverlayUI {
             ${m.damage.map((d) => `<div class="pm-bar"><span>${d.name}</span><b>${Math.round(d.amount).toLocaleString("en-US")}</b><i style="width:${(d.amount / top) * 100}%"></i></div>`).join("") || "<p>No damage logged.</p>"}
           </section>
         </div>
+        ${metaLine(m)}
         ${m.achievements.length ? `<section class="pm-feats"><h2>Achievements unlocked</h2>${m.achievements.map((id) => `<p><b>${ACHIEVEMENT_BY_ID[id]?.name ?? id}</b> ${ACHIEVEMENT_BY_ID[id]?.desc ?? ""}</p>`).join("")}</section>` : ""}
         <div class="pm-share">
           <div class="pm-card" id="pm-card"></div>
@@ -396,7 +415,7 @@ export class OverlayUI {
     });
     panel.querySelector("#seed-btn")!.addEventListener("click", () => {
       this.game.audio.unlock();
-      this.game.startReplayableRun(data.seed, data.hero, data.difficulty);
+      this.game.startReplayableRun(data.seed, data.hero, data.difficulty, this.game.setup);
     });
   }
 

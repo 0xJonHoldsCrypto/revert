@@ -7,6 +7,28 @@ import { openCodex } from "./gearButton";
 import { ACHIEVEMENTS } from "../data/achievements";
 import * as save from "../save";
 import { formatTime } from "../utils/math";
+import { heroAvailable, heroUnlockId, requirementText, UNLOCK_BY_ID } from "../data/unlocks";
+import { MODIFIER_BY_ID, rewardMults } from "../data/modifiers";
+import { currentStreak, dailyPlan, utcDate } from "../daily";
+import type { RunPlan } from "../game/Game";
+import type { CharacterId } from "../types";
+
+let panelOpening = false;
+
+function openPanel(game: Game, load: () => Promise<{ open(game: Game, onChange: () => void): void }>, onChange: () => void) {
+  if (panelOpening) return;
+  panelOpening = true;
+  game.audio.unlock();
+  void load()
+    .then((m) => m.open(game, onChange))
+    .finally(() => {
+      panelOpening = false;
+    });
+}
+
+export function standardPlan(data: save.SaveData = save.get()): RunPlan {
+  return { setup: { perks: { ...data.meta.perks }, mods: [...data.contracts], unlocked: save.unlockedNow(data), mode: "standard", date: null } };
+}
 
 const DIFF_BLURB: Record<DifficultyId, string> = {
   easy: "Testnet. Forgiving hits.",
@@ -48,8 +70,14 @@ export class TitleScreen {
     const k = e.key;
     const current = CHARACTERS.findIndex((c) => c.id === this.game.selectedCharacter);
     if (k === "ArrowRight" || k === "ArrowLeft") {
-      const next = (current + (k === "ArrowRight" ? 1 : CHARACTERS.length - 1)) % CHARACTERS.length;
-      this.pickHero(next);
+      const unlocked = save.unlockedNow();
+      for (let step = 1; step < CHARACTERS.length; step++) {
+        const next = (current + (k === "ArrowRight" ? step : CHARACTERS.length * step - step)) % CHARACTERS.length;
+        if (heroAvailable(CHARACTERS[next]!.id, unlocked)) {
+          this.pickHero(next);
+          break;
+        }
+      }
     } else if (k >= "1" && k <= "4") {
       this.pickHero(Number(k) - 1);
     } else if (k === "ArrowUp" || k === "ArrowDown") {
@@ -62,6 +90,11 @@ export class TitleScreen {
   private pickHero(index: number) {
     const hero = CHARACTERS[index];
     if (!hero) return;
+    if (!heroAvailable(hero.id, save.unlockedNow())) {
+      this.game.audio.play("ui");
+      this.openShop();
+      return;
+    }
     this.game.chooseHero(hero.id);
     this.game.audio.play("ui");
     this.sync();
@@ -73,8 +106,66 @@ export class TitleScreen {
     this.sync();
   }
 
+  private openShop() {
+    openPanel(this.game, () => import("./MetaShop"), () => this.sync());
+  }
+
+  private openContracts() {
+    openPanel(this.game, () => import("./ContractsPicker"), () => this.sync());
+  }
+
+  private startDaily() {
+    this.game.requestStartRun(true, dailyPlan(utcDate()));
+  }
+
+  private ensureHeroAvailable(data: save.SaveData) {
+    const unlocked = save.unlockedNow(data);
+    const stored = data.hero as CharacterId | null;
+    const wanted = stored && CHARACTERS.some((c) => c.id === stored) && heroAvailable(stored, unlocked) ? stored : this.game.selectedCharacter;
+    const pick = heroAvailable(wanted, unlocked) ? wanted : CHARACTERS[0]!.id;
+    if (pick !== this.game.selectedCharacter || pick !== stored) this.game.chooseHero(pick);
+  }
+
+  private syncMeta(data: save.SaveData) {
+    const el = this.el!;
+    const unlocked = save.unlockedNow(data);
+    el.querySelectorAll<HTMLElement>(".t-hero").forEach((card) => {
+      const def = UNLOCK_BY_ID[heroUnlockId(card.dataset.id!)];
+      const locked = !heroAvailable(card.dataset.id!, unlocked);
+      card.classList.toggle("locked", locked);
+      const tag = card.querySelector<HTMLElement>(".t-lock")!;
+      tag.hidden = !locked;
+      const text = def ? `LOCKED · ${requirementText(def)}` : "";
+      if (tag.textContent !== text) tag.textContent = text;
+    });
+    const shop = el.querySelector<HTMLElement>('[data-open="shop"]')!;
+    const shopText = `SHOP ◆${data.meta.shards.toLocaleString("en-US")}`;
+    if (shop.textContent !== shopText) shop.textContent = shopText;
+    const mult = rewardMults(data.contracts);
+    const contracts = el.querySelector<HTMLElement>('[data-open="contracts"]')!;
+    const contractText = data.contracts.length ? `CONTRACTS ${data.contracts.length} · ×${mult.score.toFixed(2)}` : "CONTRACTS";
+    if (contracts.textContent !== contractText) contracts.textContent = contractText;
+    contracts.classList.toggle("on", data.contracts.length > 0);
+    const active = el.querySelector<HTMLElement>(".t-contracts")!;
+    const activeText = data.contracts.length ? `Signed: ${data.contracts.map((id) => MODIFIER_BY_ID[id].name).join(", ")}` : "";
+    active.hidden = !activeText;
+    if (active.textContent !== activeText) active.textContent = activeText;
+    const today = utcDate();
+    const plan = dailyPlan(today);
+    const daily = data.daily;
+    const streak = currentStreak(daily, today);
+    const best = daily.date === today ? ` · best ${daily.best.toLocaleString("en-US")}` : "";
+    const dailyText = `DAILY ${today} · ${heroName(plan.hero)} + ${MODIFIER_BY_ID[plan.setup.mods[0]!].name}${best}${streak ? ` · streak ${streak}` : ""}`;
+    const dailyBtn = el.querySelector<HTMLElement>(".t-daily")!;
+    if (dailyBtn.textContent !== dailyText) dailyBtn.textContent = dailyText;
+  }
+
   private sync() {
     if (!this.el) return;
+    const data = save.get();
+    this.ensureHeroAvailable(data);
+    this.game.runPlan = standardPlan(data);
+    this.syncMeta(data);
     this.el.querySelectorAll<HTMLElement>(".t-hero").forEach((card) => {
       card.classList.toggle("on", card.dataset.id === this.game.selectedCharacter);
     });
@@ -129,6 +220,9 @@ export class TitleScreen {
           <p class="t-diff-blurb"></p>
           <div class="t-record"><p class="t-best"></p><details class="t-history"><summary></summary><ol></ol></details></div>
           <div class="t-links"><button type="button" data-open="threats">CODEX</button><button type="button" data-open="feats"></button></div>
+          <div class="t-links"><button type="button" data-open="shop"></button><button type="button" data-open="contracts"></button></div>
+          <p class="t-contracts" hidden></p>
+          <button type="button" class="t-daily"></button>
           <button type="button" class="t-start"><span>SIGN &amp; REVERT</span><kbd>ENTER</kbd></button>
           <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>ESC</kbd> pause</p>
         </div>
@@ -151,6 +245,7 @@ export class TitleScreen {
         ${stat("HP", c.maxHp / 125)}${stat("SPD", (c.moveSpeed - 160) / 60)}${stat("DMG", (c.damageMult - 0.7) / 0.6)}
         <p>${WEAPONS[c.startWeapon].name}</p>
         <p class="t-passive">${c.blurb}</p>
+        <p class="t-lock" hidden></p>
       `;
       const source = heroPortrait(c.id);
       const portrait = document.createElement("canvas");
@@ -166,8 +261,11 @@ export class TitleScreen {
     });
     const feats = el.querySelector<HTMLElement>('[data-open="feats"]')!;
     feats.textContent = `ACHIEVEMENTS ${Object.keys(save.get().achievements).length}/${ACHIEVEMENTS.length}`;
-    el.querySelectorAll<HTMLElement>("[data-open]").forEach((b) => b.addEventListener("click", () => openCodex(this.game, b.dataset.open)));
-    el.querySelector(".t-start")!.addEventListener("click", () => this.game.requestStartRun(true));
+    el.querySelectorAll<HTMLElement>('[data-open="threats"], [data-open="feats"]').forEach((b) => b.addEventListener("click", () => openCodex(this.game, b.dataset.open)));
+    el.querySelector('[data-open="shop"]')!.addEventListener("click", () => this.openShop());
+    el.querySelector('[data-open="contracts"]')!.addEventListener("click", () => this.openContracts());
+    el.querySelector(".t-daily")!.addEventListener("click", () => this.startDaily());
+    el.querySelector(".t-start")!.addEventListener("click", () => this.game.requestStartRun(true, standardPlan()));
     this.mountHistory(el);
     parent.appendChild(el);
     this.el = el;

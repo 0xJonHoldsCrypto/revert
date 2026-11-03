@@ -1,8 +1,13 @@
 import type { CharacterId } from "../types";
 import type { DifficultyId } from "../data/difficulty";
+import { isDailyDate } from "../daily";
+import { perksAreValid, type MetaPerkRanks } from "../data/metaPerks";
+import { modifiersAreValid, type ModifierId } from "../data/modifiers";
+import { unlockedListIsValid } from "../data/unlocks";
+import { cleanSetup, isRanked, type RunMode, type RunSetup } from "../game/runSetup";
 
-export const SIM_VERSION = 2;
-export const RUN_LOG_FORMAT = 1;
+export const SIM_VERSION = 3;
+export const RUN_LOG_FORMAT = 2;
 export const CHECKPOINT_TICKS = 600;
 const MOVE_DIRECTIONS = 256;
 const MAX_LOG_CHARS = 8_000_000;
@@ -17,6 +22,12 @@ export type RunLog = {
   hero: CharacterId;
   difficulty: DifficultyId;
   tainted: boolean;
+  perks: MetaPerkRanks;
+  mods: ModifierId[];
+  unlocked: string[];
+  mode: RunMode;
+  date: string | null;
+  ranked: boolean;
   ticks: number;
   moves: number[];
   dashes: number[];
@@ -48,8 +59,30 @@ export class RunRecorder {
   private moveCode = -1;
   private moveTicks = 0;
 
-  constructor(seed: number, hero: CharacterId, difficulty: DifficultyId) {
-    this.log = { format: RUN_LOG_FORMAT, sim: SIM_VERSION, seed, hero, difficulty, tainted: false, ticks: 0, moves: [], dashes: [], abilities: [], choices: [], aspects: [], checkpoints: [], finalHash: 0 };
+  constructor(seed: number, hero: CharacterId, difficulty: DifficultyId, setup: RunSetup) {
+    const clean = cleanSetup(setup);
+    this.log = {
+      format: RUN_LOG_FORMAT,
+      sim: SIM_VERSION,
+      seed,
+      hero,
+      difficulty,
+      tainted: false,
+      perks: clean.perks,
+      mods: clean.mods,
+      unlocked: clean.unlocked,
+      mode: clean.mode,
+      date: clean.date,
+      ranked: isRanked(clean),
+      ticks: 0,
+      moves: [],
+      dashes: [],
+      abilities: [],
+      choices: [],
+      aspects: [],
+      checkpoints: [],
+      finalHash: 0,
+    };
   }
 
   move(code: number) {
@@ -125,5 +158,13 @@ export function parseRunLog(text: string): RunLog | null {
   if (!isIntList(raw.moves) || !isIntList(raw.dashes) || !isIntList(raw.abilities) || !isIntList(raw.checkpoints)) return null;
   if (raw.moves.length % 2 !== 0 || raw.moves.some((n, i) => (i % 2 === 0 ? n > MOVE_DIRECTIONS : n < 1))) return null;
   if (!Array.isArray(raw.choices) || !Array.isArray(raw.aspects)) return null;
+  if (!perksAreValid(raw.perks) || !modifiersAreValid(raw.mods) || !unlockedListIsValid(raw.unlocked)) return null;
+  if (raw.mode !== "standard" && raw.mode !== "daily") return null;
+  if (raw.mode === "daily" ? !isDailyDate(raw.date) : raw.date !== null) return null;
+  if (typeof raw.ranked !== "boolean" || raw.ranked !== isRanked(setupOf(raw as RunLog))) return null;
   return raw as RunLog;
+}
+
+export function setupOf(log: RunLog): RunSetup {
+  return { perks: { ...log.perks }, mods: [...log.mods], unlocked: [...log.unlocked], mode: log.mode, date: log.date };
 }

@@ -4,12 +4,17 @@ import type { Game } from "../game/Game";
 import type { Input } from "../engine/Input";
 import { replayInput, replayRun } from "./replayRun";
 import { encodeMove, decodeMove, parseRunLog, serializeRunLog, SIM_VERSION, type RunLog } from "./runLog";
+import type { RunPlan } from "../game/Game";
+import { defaultSetup } from "../game/runSetup";
+import { dailyPlan } from "../daily";
+import { heroUnlockId, toolUnlockId } from "../data/unlocks";
 
-function scriptedRun(seconds: number, aspect = 16 / 9, idle = 0) {
+function scriptedRun(seconds: number, aspect = 16 / 9, idle = 0, plan?: RunPlan) {
   let tick = 0;
   const game = headlessGame(() => ({ x: Math.cos(tick / 90) + (tick % 700 < 90 ? 1 : 0), y: Math.sin(tick / 130) }));
   game.aspectSource = () => aspect;
   game.chooseHero("keel");
+  if (plan) game.runPlan = plan;
   startRun(game);
   const input = game["input"] as unknown as { consumeDash: () => boolean; consumeAbility: () => boolean };
   input.consumeDash = () => tick % 170 === 0;
@@ -108,6 +113,58 @@ describe("replay", () => {
     expect(parseRunLog("{}")).toBeNull();
     expect(parseRunLog("not json")).toBeNull();
     expect(parseRunLog(serializeRunLog({ ...log, moves: [999, 1] }))).toBeNull();
+  });
+
+  it("replays runs with meta perks, contracts and locked tools from the log alone", () => {
+    const setup = { ...defaultSetup(), perks: { edge: 3, vault: 2, reorg: 2, blocklist: 1, seed: 2 }, mods: ["glass-cannon" as const, "hunted" as const, "inflation" as const], unlocked: [heroUnlockId("diff")] };
+    const { game, log } = scriptedRun(120, 16 / 9, 0, { setup });
+    expect(log).toMatchObject({ perks: setup.perks, mods: setup.mods, unlocked: setup.unlocked, mode: "standard", date: null, ranked: false });
+    const parsed = parseRunLog(serializeRunLog(log))!;
+    expect(parsed).not.toBeNull();
+    expect(replayRun(replayerFor(parsed), parsed)).toMatchObject({ ok: true, kills: game.stats.kills, ranked: false, mode: "standard" });
+    const fresh = replayerFor(parsed);
+    expect(replayRun(fresh, { ...parsed, perks: { edge: 2, vault: 2, reorg: 2, blocklist: 1, seed: 2 } })).toMatchObject({ ok: false });
+    expect(replayRun(replayerFor(parsed), { ...parsed, mods: ["glass-cannon", "hunted"] })).toMatchObject({ ok: false });
+    expect(replayRun(replayerFor(parsed), { ...parsed, unlocked: [...parsed.unlocked, toolUnlockId("whale-alert")] })).toMatchObject({ ok: false });
+  });
+
+  it("never offers a locked tool", () => {
+    const { game } = scriptedRun(1, 16 / 9, 0, { setup: { ...defaultSetup(), unlocked: [] } });
+    for (let i = 0; i < 40; i++) {
+      game.triggerLevelUp();
+      expect(game.levelUpChoices.map((c) => c.id)).not.toContain("weapon-whale-alert");
+      expect(game.levelUpChoices.map((c) => c.id)).not.toContain("weapon-nonce-shard");
+      if (game.phase === "levelup") game.skipCards();
+    }
+  });
+
+  it("replays a daily run and pins it to the date", () => {
+    const plan = dailyPlan("2026-11-03");
+    const { game, log } = scriptedRun(90, 16 / 9, 0, plan);
+    expect(game.player.characterId).toBe(plan.hero);
+    expect(log).toMatchObject({ seed: plan.seed, hero: plan.hero, mode: "daily", date: "2026-11-03", mods: plan.setup.mods, ranked: true });
+    expect(replayRun(replayerFor(log), log).ok).toBe(true);
+    expect(replayRun(replayerFor(log), { ...log, date: "2026-11-04" })).toMatchObject({ ok: false, reason: "daily-mismatch" });
+    expect(replayRun(replayerFor(log), { ...log, mods: [] })).toMatchObject({ ok: false, reason: "daily-mismatch" });
+  });
+
+  it("rejects a standard run with a hero that was locked", () => {
+    const { log } = scriptedRun(2);
+    expect(replayRun(replayerFor(log), { ...log, hero: "trace", unlocked: [] })).toMatchObject({ ok: false, reason: "locked-hero" });
+  });
+
+  it("rejects logs with perks over the cap, unknown contracts or a lying ranked flag", () => {
+    const { log } = scriptedRun(2);
+    const bad = (patch: Partial<Record<keyof RunLog, unknown>>) => parseRunLog(JSON.stringify({ ...log, ...patch }));
+    expect(bad({})).not.toBeNull();
+    expect(bad({ perks: { edge: 5, vault: 5, alpha: 4 } })).toBeNull();
+    expect(bad({ perks: { edge: 9 } })).toBeNull();
+    expect(bad({ perks: { edge: 1 } })).toBeNull();
+    expect(bad({ perks: { edge: 1 }, ranked: false })).not.toBeNull();
+    expect(bad({ mods: ["moon-mode"] })).toBeNull();
+    expect(bad({ mode: "daily", date: null })).toBeNull();
+    expect(bad({ unlocked: ["hero:keel"] })).toBeNull();
+    expect(bad({ format: 1 })).toBeNull();
   });
 
   it("keeps a three minute log small", () => {

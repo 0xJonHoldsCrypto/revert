@@ -2,6 +2,7 @@ export type HashItem = { id: number; x: number; y: number; radius: number };
 
 const KEY_BIAS = 32768;
 const KEY_STRIDE = 65536;
+const MAX_IDLE_BUCKETS = 4096;
 
 export class SpatialHash {
   private buckets = new Map<number, HashItem[]>();
@@ -18,6 +19,7 @@ export class SpatialHash {
     for (const bucket of this.used) bucket.length = 0;
     this.used.length = 0;
     this.poolCount = 0;
+    if (this.buckets.size > MAX_IDLE_BUCKETS) this.buckets.clear();
   }
 
   private key(cx: number, cy: number) {

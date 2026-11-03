@@ -7,6 +7,8 @@ const HEROES = ["keel", "nyx", "diff", "trace"];
 const DT = 1 / 60;
 const CAP_MINUTES = Number(process.env.CAP ?? 30);
 const RUNS = Number(process.env.RUNS ?? 5);
+const MOD_RUNS = Number(process.env.MOD_RUNS ?? 2);
+const ONLY_MODS = process.env.ONLY_MODS === "1";
 
 const dir = mkdtempSync(join(tmpdir(), "revert-balance-"));
 const out = join(dir, "game.mjs");
@@ -91,12 +93,13 @@ const SKILLS = {
   good: { sight: 260, dodge: true, seek: 900, reaction: 4, dash: 200 },
 };
 
-function run(hero, skillName, picker, difficulty) {
+function run(hero, skillName, picker, difficulty, mods = []) {
   const skill = SKILLS[skillName];
   let move = { x: 0, y: 0 };
   const { game: g, input } = makeGame(() => move);
   g.chooseHero(hero);
   g.chooseDifficulty(difficulty);
+  g.runPlan = { setup: { ...g.runPlan.setup, mods } };
   g.startRun();
   g.cinematic = null;
   g.player.lift = 0;
@@ -133,7 +136,7 @@ function run(hero, skillName, picker, difficulty) {
     lastBossAlive = bossAlive;
   }
   const damage = [...g.weaponDamage.entries()].sort((a, b) => b[1] - a[1]);
-  return { t: g.elapsed, level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, damage };
+  return { t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, damage };
 }
 
 function median(values) {
@@ -142,7 +145,7 @@ function median(values) {
 }
 
 const toolShare = new Map();
-for (const [skill, picker, difficulty] of [["casual", "naive", "normal"], ["good", "smart", "normal"], ["good", "smart", "easy"], ["good", "smart", "hard"]]) {
+for (const [skill, picker, difficulty] of ONLY_MODS ? [] : [["casual", "naive", "normal"], ["good", "smart", "normal"], ["good", "smart", "easy"], ["good", "smart", "hard"]]) {
   console.log(`\n${skill} / ${picker} / ${difficulty}`);
   for (const hero of HEROES) {
     const runs = [];
@@ -156,6 +159,14 @@ for (const [skill, picker, difficulty] of [["casual", "naive", "normal"], ["good
     const kills = runs.flatMap((r) => r.bossKillSec);
     console.log(`  ${hero.padEnd(6)} survive ${minutes.toFixed(1).padStart(5)}m  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  popups/min ${perMin("popups")}  coins ${median(runs.map((r) => r.coins))}  firstBossKill ${median(runs.map((r) => r.bossKillSec[0] ?? -1))}s  bossKill(med) ${kills.length ? median(kills) : "-"}s  causes ${[...new Set(runs.map((r) => r.cause))].join(",")}`);
   }
+}
+const MODS = ["", "glass-cannon", "immutable", "hunted", "dark-forest", "whale-season", "inflation", "low-latency", "bull-market", "thin-margin", "hardened"];
+console.log(`\ncontracts · good / smart / normal · ${MOD_RUNS} runs per hero`);
+for (const mod of MODS) {
+  const runs = [];
+  for (const hero of HEROES) for (let i = 0; i < MOD_RUNS; i++) runs.push(run(hero, "good", "smart", "normal", mod ? [mod] : []));
+  const perMin = (key) => median(runs.map((r) => r[key] / (r.t / 60))).toFixed(1);
+  console.log(`  ${(mod || "(none)").padEnd(13)} survive ${median(runs.map((r) => r.t / 60)).toFixed(1).padStart(5)}m  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  kills/min ${perMin("kills")}  score ${median(runs.map((r) => r.score))}`);
 }
 console.log("\nAverage damage share when owned:");
 for (const [kind, shares] of [...toolShare.entries()].sort((a, b) => median(b[1]) - median(a[1]))) {

@@ -56,6 +56,7 @@ const uiBridge: { overlay: OverlayUI | null } = { overlay: null };
 const game = new Game(canvas, input, {
   onPhaseChange: (phase) => {
     document.body.dataset.phase = phase;
+    document.body.classList.toggle("mod-dark", phase !== "menu" && phase !== "cutscene" && game.effects.darkness);
     uiBridge.overlay?.onPhaseChange(phase);
     syncTouchVisible(phase);
   },

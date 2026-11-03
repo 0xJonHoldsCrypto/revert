@@ -1,7 +1,13 @@
+import { advanceDaily, emptyDaily, isDailyDate, type DailyRecord } from "./daily";
+import { canBuyPerk, clampPerks, spentOn, type MetaPerkId, type MetaPerkRanks } from "./data/metaPerks";
+import { cleanModifiers, type ModifierId } from "./data/modifiers";
+import { isUnlockId, UNLOCK_BY_ID, unlockedIds } from "./data/unlocks";
+
 export const SAVE_KEY = "revert.save";
 export const LEGACY_PREFS_KEY = "revert.prefs.v1";
 export const LEGACY_AUDIO_KEY = "revert.audio.v1";
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
+export const MAX_SHARDS = 1_000_000;
 export const CODEX_LIMIT = 400;
 export const HISTORY_LIMIT = 20;
 
@@ -45,6 +51,8 @@ export type RunSummary = {
 
 export type BestEntry = { score: number; time: number };
 
+export type MetaData = { shards: number; earned: number; perks: MetaPerkRanks };
+
 export type SaveData = {
   v: number;
   best: number;
@@ -57,6 +65,10 @@ export type SaveData = {
   bests: Record<string, BestEntry>;
   achievements: Record<string, number>;
   codex: CodexData;
+  meta: MetaData;
+  unlocks: Record<string, number>;
+  contracts: ModifierId[];
+  daily: DailyRecord;
 };
 
 export type StorageLike = Pick<Storage, "getItem" | "setItem">;
@@ -164,6 +176,37 @@ export function defaultSave(): SaveData {
     bests: Object.create(null) as Record<string, BestEntry>,
     achievements: Object.create(null) as Record<string, number>,
     codex: { seen: Object.create(null) as Record<string, number>, killed: Object.create(null) as Record<string, number> },
+    meta: { shards: 0, earned: 0, perks: {} },
+    unlocks: Object.create(null) as Record<string, number>,
+    contracts: [],
+    daily: emptyDaily(),
+  };
+}
+
+function cleanMeta(raw: unknown): MetaData {
+  const r = isRecord(raw) ? raw : {};
+  return { shards: Math.floor(num(r.shards, 0, 0, MAX_SHARDS)), earned: Math.floor(num(r.earned, 0, 0, 1e12)), perks: clampPerks(r.perks) };
+}
+
+function cleanUnlockMap(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = Object.create(null) as Record<string, number>;
+  if (!isRecord(raw)) return out;
+  for (const [key, value] of Object.entries(raw)) {
+    if (isUnlockId(key) && typeof value === "number" && Number.isFinite(value) && value > 0) out[key] = Math.min(value, Number.MAX_SAFE_INTEGER);
+  }
+  return out;
+}
+
+function cleanDaily(raw: unknown): DailyRecord {
+  const r = isRecord(raw) ? raw : {};
+  const streak = Math.floor(num(r.streak, 0, 0, 1e6));
+  return {
+    date: isDailyDate(r.date) ? r.date : "",
+    best: num(r.best, 0, 0, 1e12),
+    streak,
+    bestStreak: Math.max(streak, Math.floor(num(r.bestStreak, 0, 0, 1e6))),
+    bestEver: num(r.bestEver, 0, 0, 1e12),
+    plays: Math.floor(num(r.plays, 0, 0, 1e9)),
   };
 }
 
@@ -191,6 +234,10 @@ export function sanitize(raw: unknown): SaveData {
     bests: cleanBests(r.bests),
     achievements: cleanCounts(r.achievements, Number.MAX_SAFE_INTEGER),
     codex: { seen: cleanCounts(codex.seen, 1e9), killed: cleanCounts(codex.killed, 1e12) },
+    meta: cleanMeta(r.meta),
+    unlocks: cleanUnlockMap(r.unlocks),
+    contracts: cleanModifiers(r.contracts),
+    daily: cleanDaily(r.daily),
   };
 }
 
@@ -225,6 +272,7 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
     const bestTime = Math.max(0, ...history.map((h) => h.time));
     return { ...data, stats: { ...stats, bestTime }, achievements: {}, codex: { seen: {}, killed: {} } };
   },
+  2: (data) => ({ ...data, meta: { shards: 0, earned: 0, perks: {} }, unlocks: {}, contracts: [], daily: emptyDaily() }),
 };
 
 export function migrate(raw: unknown): SaveData | null {
@@ -360,4 +408,63 @@ export function recordCodex(seen: Iterable<string>, kills: ReadonlyMap<string, n
       d.codex.killed[key] = (d.codex.killed[key] ?? 0) + count;
     }
   });
+}
+
+export function unlockedNow(data: SaveData = get()): string[] {
+  return unlockedIds(data.achievements, data.unlocks);
+}
+
+export function awardShards(amount: number): number {
+  const n = Math.max(0, Math.floor(amount));
+  if (n <= 0) return get().meta.shards;
+  patch((d) => {
+    d.meta.shards = Math.min(MAX_SHARDS, d.meta.shards + n);
+    d.meta.earned += n;
+  });
+  return get().meta.shards;
+}
+
+export function buyPerk(id: MetaPerkId): boolean {
+  const meta = get().meta;
+  const check = canBuyPerk(meta.perks, meta.shards, id);
+  if (!check.ok) return false;
+  patch((d) => {
+    d.meta.shards -= check.cost;
+    d.meta.perks[id] = (d.meta.perks[id] ?? 0) + 1;
+  });
+  return true;
+}
+
+export function refundPerks(): number {
+  const refund = spentOn(get().meta.perks);
+  if (refund <= 0) return 0;
+  patch((d) => {
+    d.meta.shards = Math.min(MAX_SHARDS, d.meta.shards + refund);
+    d.meta.perks = {};
+  });
+  return refund;
+}
+
+export function buyUnlock(id: string, at = Date.now()): boolean {
+  const def = UNLOCK_BY_ID[id];
+  const data = get();
+  if (!def || unlockedNow(data).includes(id) || data.meta.shards < def.shards) return false;
+  patch((d) => {
+    d.meta.shards -= def.shards;
+    d.unlocks[id] = Math.max(1, at);
+  });
+  return true;
+}
+
+export function setContracts(ids: readonly ModifierId[]): void {
+  patch((d) => {
+    d.contracts = cleanModifiers(ids);
+  });
+}
+
+export function recordDaily(date: string, score: number): DailyRecord {
+  patch((d) => {
+    d.daily = advanceDaily(d.daily, date, score);
+  });
+  return get().daily;
 }

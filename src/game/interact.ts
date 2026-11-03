@@ -119,9 +119,9 @@ export class WorldEvents {
     }
     const near = dist(p.x, p.y, item.x, item.y) <= item.radius + p.radius && g.elapsed >= item.readyAt;
     if (item.kind === "lp-pool") {
-      if (near && p.hp < p.maxHp) {
+      if (near && p.hp < p.maxHp && g.effects.healMult > 0) {
         const heal = Math.min(LP_HEAL_PER_SEC * dt, item.charge ?? 0);
-        p.hp = Math.min(p.maxHp, p.hp + heal);
+        g.healPlayer(heal);
         item.charge = (item.charge ?? 0) - heal;
         if (item.charge <= 0) {
           item.used = true;
@@ -153,7 +153,7 @@ export class WorldEvents {
       }
       case "bridge-gate": {
         item.readyAt = g.elapsed + BRIDGE_COOLDOWN_SEC * (g.perks.wormhole > 0 ? 0.5 : 1);
-        if (g.perks.wormhole > 0) p.hp = Math.min(p.maxHp, p.hp + 25);
+        if (g.perks.wormhole > 0) g.healPlayer(25);
         p.x = item.destX ?? p.x;
         p.y = item.destY ?? p.y;
         p.px = p.x;
@@ -236,7 +236,7 @@ export class WorldEvents {
       }
     } else if (id === "cz-four") {
       g.fundsLost = Math.max(0, g.fundsLost - 200_000_000);
-      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.4);
+      g.healPlayer(p.maxHp * 0.4);
       g.addToast("Next boss gets stronger: the attackers noticed", "#f0c14d");
       g.nextBossHpBonus = 1.25;
       p.invuln = Math.max(p.invuln, 3);

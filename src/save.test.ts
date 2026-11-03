@@ -15,6 +15,7 @@ import {
   unlockAchievement,
   recordRun,
   SAVE_KEY,
+  SAVE_VERSION,
   sanitize,
   type RunSummary,
   type StorageLike,
@@ -117,7 +118,7 @@ describe("store", () => {
     const fresh = createStore(() => storage);
     expect(fresh.get().settings.shake).toBe(0.2);
     expect(fresh.get().settings.music).toBe(0.3);
-    expect(JSON.parse(storage.data[SAVE_KEY]!).v).toBe(2);
+    expect(JSON.parse(storage.data[SAVE_KEY]!).v).toBe(SAVE_VERSION);
   });
 
   it("clamps out-of-range patches", () => {
@@ -188,7 +189,7 @@ describe("v1 to v2 migration", () => {
 
   it("keeps old data and adds empty achievements and codex", () => {
     const out = migrate(v1)!;
-    expect(out.v).toBe(2);
+    expect(out.v).toBe(SAVE_VERSION);
     expect(out.best).toBe(700);
     expect(out.hero).toBe("nyx");
     expect(out.stats).toMatchObject({ runs: 3, kills: 90, bosses: 2, timeSec: 400 });
