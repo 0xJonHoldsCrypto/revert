@@ -16,6 +16,20 @@ export function openSettings(game: Game) {
     });
 }
 
+let codexOpening = false;
+
+export function openCodex(game: Game, tab?: string) {
+  if (codexOpening) return;
+  codexOpening = true;
+  game.audio.unlock();
+  game.autoPause();
+  void import("./Codex")
+    .then((m) => m.showCodex(game, tab))
+    .finally(() => {
+      codexOpening = false;
+    });
+}
+
 export function mountGearButton(game: Game) {
   const button = document.createElement("button");
   button.id = "gear-btn";

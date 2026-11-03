@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampSettings,
+  CODEX_LIMIT,
   createStore,
   DEFAULT_SETTINGS,
   HISTORY_LIMIT,
@@ -8,7 +9,10 @@ import {
   HUD_SCALE_MIN,
   LEGACY_AUDIO_KEY,
   LEGACY_PREFS_KEY,
+  migrate,
   parseSave,
+  recordCodex,
+  unlockAchievement,
   recordRun,
   SAVE_KEY,
   sanitize,
@@ -70,7 +74,7 @@ describe("save migration", () => {
     });
     expect(save.best).toBe(0);
     expect(save.hero).toBeNull();
-    expect(save.stats).toEqual({ runs: 0, kills: 0, bosses: 3, timeSec: 0 });
+    expect(save.stats).toEqual({ runs: 0, kills: 0, bosses: 3, timeSec: 0, bestTime: 0 });
     expect(save.history).toHaveLength(1);
     expect(Object.keys(save.bests)).toEqual(["keel:normal"]);
   });
@@ -113,7 +117,7 @@ describe("store", () => {
     const fresh = createStore(() => storage);
     expect(fresh.get().settings.shake).toBe(0.2);
     expect(fresh.get().settings.music).toBe(0.3);
-    expect(JSON.parse(storage.data[SAVE_KEY]!).v).toBe(1);
+    expect(JSON.parse(storage.data[SAVE_KEY]!).v).toBe(2);
   });
 
   it("clamps out-of-range patches", () => {
@@ -165,6 +169,65 @@ describe("run history", () => {
       expect(saved.bests["keel:normal"].score).toBe(HISTORY_LIMIT + 4);
       expect(saved.bests["nyx:hard"].score).toBe(5);
       expect(saved.stats.runs).toBe(HISTORY_LIMIT + 6);
+    } finally {
+      if (original) Object.defineProperty(globalThis, "localStorage", original);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  });
+});
+
+describe("v1 to v2 migration", () => {
+  const v1 = {
+    v: 1,
+    best: 700,
+    hero: "nyx",
+    stats: { runs: 3, kills: 90, bosses: 2, timeSec: 400 },
+    history: [run(10), { ...run(20), time: 333 }, { ...run(30), time: 150 }],
+    bests: { "keel:normal": { score: 30, time: 150 } },
+  };
+
+  it("keeps old data and adds empty achievements and codex", () => {
+    const out = migrate(v1)!;
+    expect(out.v).toBe(2);
+    expect(out.best).toBe(700);
+    expect(out.hero).toBe("nyx");
+    expect(out.stats).toMatchObject({ runs: 3, kills: 90, bosses: 2, timeSec: 400 });
+    expect(out.achievements).toEqual({});
+    expect(out.codex).toEqual({ seen: {}, killed: {} });
+  });
+
+  it("derives best time from history", () => {
+    expect(migrate(v1)!.stats.bestTime).toBe(333);
+  });
+
+  it("cleans malformed achievement and codex data", () => {
+    const out = sanitize({ v: 2, achievements: { a: 5, b: "x", c: -3 }, codex: { seen: { "e:x": 1, bad: null }, killed: { "e:x": "9", "e:y": 4 } } });
+    expect(out.achievements).toEqual({ a: 5, c: 0 });
+    expect(out.codex.seen).toEqual({ "e:x": 1 });
+    expect(out.codex.killed).toEqual({ "e:y": 4 });
+  });
+
+  it("caps the number of codex keys", () => {
+    const seen = Object.fromEntries(Array.from({ length: CODEX_LIMIT + 50 }, (_, i) => [`k${i}`, 1]));
+    expect(Object.keys(sanitize({ codex: { seen } }).codex.seen)).toHaveLength(CODEX_LIMIT);
+  });
+});
+
+describe("achievement and codex persistence", () => {
+  it("unlocks once and accumulates codex counters", () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const storage = memory();
+    Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
+    try {
+      expect(unlockAchievement("first-boss", 1234)).toBe(true);
+      expect(unlockAchievement("first-boss", 9999)).toBe(false);
+      recordCodex(["t:audit-dart"], new Map([["e:sybil", 3]]));
+      recordCodex([], new Map([["e:sybil", 2]]));
+      const saved = JSON.parse(storage.data[SAVE_KEY]!);
+      expect(saved.achievements).toEqual({ "first-boss": 1234 });
+      expect(saved.codex.killed["e:sybil"]).toBe(5);
+      expect(saved.codex.seen["e:sybil"]).toBe(1);
+      expect(saved.codex.seen["t:audit-dart"]).toBe(1);
     } finally {
       if (original) Object.defineProperty(globalThis, "localStorage", original);
       else delete (globalThis as { localStorage?: unknown }).localStorage;

@@ -30,6 +30,12 @@ The gear button (next to mute, and in the pause menu) opens a lazy-loaded settin
 
 Everything persists in one versioned `localStorage` entry (`revert.save`, see `src/save.ts`), which also holds your last 20 runs and your best score per hero and difficulty (shown on the title screen). Older `revert.prefs.v1` and `revert.audio.v1` values are migrated on first load.
 
+## Share card, achievements and codex
+
+After a death the post-mortem offers a 1200x630 share card drawn in code (`src/ui/shareCard.ts`, lazy): Share uses the Web Share API with the PNG where supported and otherwise copies or downloads it. COPY RUN CODE puts the serialized run log on the clipboard (a text box appears if the clipboard is blocked), and REPLAY THIS SEED restarts with the same seed, hero and difficulty.
+
+25 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is now version 2 and migrates v1 saves.
+
 ## Checks
 
 ```bash

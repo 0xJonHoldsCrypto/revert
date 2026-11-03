@@ -5,7 +5,10 @@ import type { GamePhase } from "../types";
 import { formatTime } from "../utils/math";
 import type { Game, HudData } from "../game/Game";
 import { syncTouchAbility } from "./touchControls";
-import { openSettings } from "./gearButton";
+import { openCodex, openSettings } from "./gearButton";
+import { ACHIEVEMENT_BY_ID } from "../data/achievements";
+import { serializeRunLog } from "../replay/runLog";
+import type { ShareData } from "./shareCard";
 import * as save from "../save";
 
 function formatFunds(value: number): string {
@@ -79,6 +82,7 @@ export class OverlayUI {
         <p>The attacker is not paused. Kidding. Take your time.</p>
         <button type="button" class="btn btn-primary" data-a="resume">RESUME <kbd>ESC</kbd></button>
         <button type="button" class="btn btn-secondary" data-a="mute"></button>
+        <button type="button" class="btn btn-secondary" data-a="codex">CODEX</button>
         <button type="button" class="btn btn-secondary" data-a="settings">SETTINGS</button>
         <button type="button" class="btn btn-secondary" data-a="restart">RESTART RUN</button>
         <button type="button" class="btn btn-secondary" data-a="quit">QUIT TO TITLE</button>
@@ -97,6 +101,7 @@ export class OverlayUI {
         if (action === "restart") this.game.requestStartRun();
         if (action === "quit") this.game.setPhase("menu");
         if (action === "settings") openSettings(this.game);
+        if (action === "codex") openCodex(this.game);
         if (action === "mute") {
           this.game.audio.toggleMute();
           label();
@@ -301,6 +306,17 @@ export class OverlayUI {
             ${m.damage.map((d) => `<div class="pm-bar"><span>${d.name}</span><b>${Math.round(d.amount).toLocaleString("en-US")}</b><i style="width:${(d.amount / top) * 100}%"></i></div>`).join("") || "<p>No damage logged.</p>"}
           </section>
         </div>
+        ${m.achievements.length ? `<section class="pm-feats"><h2>Achievements unlocked</h2>${m.achievements.map((id) => `<p><b>${ACHIEVEMENT_BY_ID[id]?.name ?? id}</b> ${ACHIEVEMENT_BY_ID[id]?.desc ?? ""}</p>`).join("")}</section>` : ""}
+        <div class="pm-share">
+          <div class="pm-card" id="pm-card"></div>
+          <div class="pm-share-actions">
+            <button type="button" class="btn btn-secondary" id="share-btn">SHARE</button>
+            <button type="button" class="btn btn-secondary" id="code-btn">COPY RUN CODE</button>
+            <button type="button" class="btn btn-secondary" id="seed-btn">REPLAY THIS SEED</button>
+            <p class="pm-note" id="pm-note" role="status"></p>
+            <textarea class="pm-code" id="pm-code" readonly hidden aria-label="Run code"></textarea>
+          </div>
+        </div>
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="again-btn">RESPOND AGAIN [R]</button>
           <button type="button" class="btn btn-secondary" id="menu-btn">TITLE</button>
@@ -310,6 +326,78 @@ export class OverlayUI {
     this.overlay.appendChild(panel);
     panel.querySelector("#again-btn")!.addEventListener("click", () => this.game.requestStartRun());
     panel.querySelector("#menu-btn")!.addEventListener("click", () => this.game.setPhase("menu"));
+    this.wireShare(panel, {
+      incident: m.incident,
+      hero: m.hero,
+      difficulty: m.difficulty,
+      time: m.time,
+      savedPct: m.savedPct,
+      tools: m.damage.slice(0, 3).map((d) => d.name),
+      cause: m.cause,
+      score: m.score,
+      seed: m.seed,
+    });
+  }
+
+  private wireShare(panel: HTMLElement, data: ShareData) {
+    const note = panel.querySelector<HTMLElement>("#pm-note")!;
+    const slot = panel.querySelector<HTMLElement>("#pm-card")!;
+    const code = panel.querySelector<HTMLTextAreaElement>("#pm-code")!;
+    let card: HTMLCanvasElement | null = null;
+    const say = (text: string) => {
+      note.textContent = text;
+    };
+    const lazy = () => import("./shareCard");
+    const draw = async () => {
+      if (card) return card;
+      const m = await lazy();
+      card = await m.renderShareCard(data);
+      card.className = "pm-card-img";
+      slot.textContent = "";
+      slot.appendChild(card);
+      return card;
+    };
+    draw().catch(() => {
+      slot.hidden = true;
+    });
+    panel.querySelector("#share-btn")!.addEventListener("click", () => {
+      say("Preparing image...");
+      Promise.all([lazy(), draw()])
+        .then(([m, canvas]) => m.shareImage(canvas, data))
+        .then((outcome) => {
+          const text = { shared: "Shared.", copied: "Image copied to clipboard.", downloaded: "Image saved to downloads.", cancelled: "", failed: "Could not share the image on this device." }[outcome];
+          say(text);
+        })
+        .catch(() => say("Could not share the image on this device."));
+    });
+    panel.querySelector("#code-btn")!.addEventListener("click", () => {
+      let text: string;
+      try {
+        text = serializeRunLog(this.game.runLog());
+      } catch {
+        say("Could not read the run log.");
+        return;
+      }
+      lazy()
+        .then((m) => m.copyText(text))
+        .catch(() => false)
+        .then((ok) => {
+          if (ok) {
+            code.hidden = true;
+            say("Run code copied.");
+            return;
+          }
+          code.value = text;
+          code.hidden = false;
+          code.focus();
+          code.select();
+          say("Clipboard blocked. Copy the run code below.");
+        });
+    });
+    panel.querySelector("#seed-btn")!.addEventListener("click", () => {
+      this.game.audio.unlock();
+      this.game.startReplayableRun(data.seed, data.hero, data.difficulty);
+    });
   }
 
 }

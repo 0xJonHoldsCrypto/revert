@@ -3,6 +3,8 @@ import { DIFFICULTY_LABEL, DIFFICULTY_ORDER, type DifficultyId } from "../data/d
 import { WEAPONS } from "../data/weapons";
 import type { Game } from "../game/Game";
 import { heroPortrait, paintLogo } from "../pixel/handArt";
+import { openCodex } from "./gearButton";
+import { ACHIEVEMENTS } from "../data/achievements";
 import * as save from "../save";
 import { formatTime } from "../utils/math";
 
@@ -126,6 +128,7 @@ export class TitleScreen {
           <div class="t-diff">${DIFFICULTY_ORDER.map((d) => `<button type="button" data-id="${d}">${DIFFICULTY_LABEL[d]}</button>`).join("")}</div>
           <p class="t-diff-blurb"></p>
           <div class="t-record"><p class="t-best"></p><details class="t-history"><summary></summary><ol></ol></details></div>
+          <div class="t-links"><button type="button" data-open="threats">CODEX</button><button type="button" data-open="feats"></button></div>
           <button type="button" class="t-start"><span>SIGN &amp; REVERT</span><kbd>ENTER</kbd></button>
           <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>ESC</kbd> pause</p>
         </div>
@@ -161,6 +164,9 @@ export class TitleScreen {
     el.querySelectorAll<HTMLElement>(".t-diff button").forEach((b) => {
       b.addEventListener("click", () => this.pickDifficulty(b.dataset.id as DifficultyId));
     });
+    const feats = el.querySelector<HTMLElement>('[data-open="feats"]')!;
+    feats.textContent = `ACHIEVEMENTS ${Object.keys(save.get().achievements).length}/${ACHIEVEMENTS.length}`;
+    el.querySelectorAll<HTMLElement>("[data-open]").forEach((b) => b.addEventListener("click", () => openCodex(this.game, b.dataset.open)));
     el.querySelector(".t-start")!.addEventListener("click", () => this.game.requestStartRun(true));
     this.mountHistory(el);
     parent.appendChild(el);

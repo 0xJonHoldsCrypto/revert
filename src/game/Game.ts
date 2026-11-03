@@ -40,6 +40,8 @@ import { readViewport } from "../render/viewport";
 import * as save from "../save";
 import type { ColorblindMode } from "../save";
 import type { HapticKind } from "../haptics";
+import { ACHIEVEMENT_BY_ID } from "../data/achievements";
+import { RunTracker, type AchEvent, type AchPayload } from "./achievements";
 import { gasCloud, isHiddenFromWeapons, THREAT_INTEL, updateEnemyBehavior, updateHazards } from "./threats";
 import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE, type Cinematic } from "./cinematic";
 import { groundHalfExtents } from "../render/view";
@@ -302,6 +304,13 @@ export class Game {
   private tutorialDid: Record<TutorialAction, boolean> = { moved: false, dashed: false, picked: false, chest: false };
   private hintBanner = false;
   private runRecorded = false;
+  private achTracker = new RunTracker();
+  private achOwned = new Set<string>();
+  private runAchievements: string[] = [];
+  private endEmitted = false;
+  private bossTools = new Map<number, Set<string>>();
+  private codexSeen = new Set<string>();
+  private codexKills = new Map<string, number>();
   cosmetics: { shake: number; calm: boolean; colorblind: ColorblindMode } = { shake: 1, calm: false, colorblind: "off" };
   onHaptic: ((kind: HapticKind) => void) | null = null;
   private nextGasAt = 150;
@@ -345,6 +354,7 @@ export class Game {
   ) {
     this.cutscene.setAudio(this.audio);
     this.audio.setMusic("title");
+    window.addEventListener("pagehide", () => this.flushCodex());
     const { hero, difficulty } = save.get();
     if (CHARACTERS.some((c) => c.id === hero)) this.selectedCharacter = hero as CharacterId;
     if (difficulty && Object.prototype.hasOwnProperty.call(DIFFICULTY, difficulty)) this.runDifficulty = difficulty as DifficultyId;
@@ -541,7 +551,38 @@ export class Game {
     this.impactFrames = 0;
   }
 
+  emit(event: AchEvent, payload: AchPayload = {}) {
+    if (this.attract || this.recorder.tainted) return;
+    const unlocked = this.achTracker.step(event, this.elapsed, payload, this.achOwned);
+    for (const id of unlocked) {
+      this.achOwned.add(id);
+      this.runAchievements.push(id);
+      save.unlockAchievement(id);
+      this.addToast(`ACHIEVEMENT · ${ACHIEVEMENT_BY_ID[id]!.name}`, "#ffc23d");
+    }
+  }
+
+  noteCodex(key: string) {
+    if (!this.attract) this.codexSeen.add(key);
+  }
+
+  private flushCodex() {
+    if (!this.recorder || this.recorder.tainted) {
+      this.codexKills.clear();
+      return;
+    }
+    save.recordCodex(this.codexSeen, this.codexKills);
+    this.codexKills.clear();
+  }
+
   private resetRun(seed = (Math.random() * 2 ** 31) | 0) {
+    this.flushCodex();
+    this.codexSeen.clear();
+    this.bossTools.clear();
+    this.runAchievements = [];
+    this.endEmitted = false;
+    this.achOwned = new Set(Object.keys(save.get().achievements));
+    this.achTracker = new RunTracker(this.runDifficulty === "hard" || this.runDifficulty === "nightmare");
     nextId = 1;
     this.runTick = 0;
     this.checkpointCount = 0;
@@ -633,6 +674,7 @@ export class Game {
     this.recorder = new RunRecorder(seed, ch.id, this.runDifficulty);
     this.recorder.aspect(0, this.spawnAspect);
     if (this.godMode) this.recorder.taint();
+    this.noteCodex(`t:${ch.startWeapon}`);
     this.shockwaves = [];
     this.corpses = [];
     this.hazards = [];
@@ -676,6 +718,7 @@ export class Game {
     this.input.clearEdges();
     this.cutsceneHold = 0;
     if (phase === "menu") {
+      this.flushCodex();
       this.audio.setMusic("title");
       this.beginAttract();
     }
@@ -706,6 +749,7 @@ export class Game {
     this.tutorialDid.picked = true;
     if (this.choiceMode === "popup") {
       up.apply(this.makeUpgradeContext());
+      this.emit("pick", { level: this.player.level, weapons: this.weapons.length });
       this.choiceMode = "levelup";
       this.nextLevelAt = Math.max(this.nextLevelAt, this.elapsed + 1.5);
       this.input.clearEdges();
@@ -718,6 +762,7 @@ export class Game {
     if (this.player.characterId === "trace") for (const w of this.weapons) w.timer = 0;
     this.input.clearEdges();
     this.upgradeCounts.set(up.id, (this.upgradeCounts.get(up.id) ?? 0) + 1);
+    this.emit("pick", { level: this.player.level, weapons: this.weapons.length });
     this.audio.play(up.id.startsWith("upgrade-") && up.title.indexOf("·") < 0 ? "evolve" : "cardSelect");
     this.syncOrbiters();
     this.setPhase("playing");
@@ -727,6 +772,7 @@ export class Game {
     return {
       addWeapon: (kind, rarity) => {
         if (!this.weapons.find((w) => w.kind === kind)) {
+          this.noteCodex(`t:${kind}`);
           this.weapons.push({
             kind,
             level: 1,
@@ -739,7 +785,11 @@ export class Game {
         const w = this.weapons.find((x) => x.kind === kind);
         if (!w) return;
         if (w.level < WEAPONS[kind].maxLevel) w.level += 1;
-        else w.evolved = true;
+        else {
+          w.evolved = true;
+          this.noteCodex(`v:${kind}`);
+          this.emit("evolve");
+        }
       },
       heal: (amount) => {
         this.player.hp = Math.min(this.player.maxHp, this.player.hp + amount);
@@ -1120,6 +1170,7 @@ export class Game {
       return enemy;
     }
     this.enemies.push(enemy);
+    this.noteCodex(`e:${kind}`);
     this.spawnedSinceRebuild = true;
     if (def.isBoss) this.bosses.push(enemy);
     if (!this.seenKinds.has(kind) && THREAT_INTEL[kind]) {
@@ -1277,6 +1328,11 @@ export class Game {
   postMortem() {
     const p = this.player;
     const saved = this.fundsLeft;
+    this.flushCodex();
+    if (!this.endEmitted) {
+      this.endEmitted = true;
+      this.emit("end", { savedPct: (saved / FUNDS_TOTAL) * 100 });
+    }
     const cause = this.rootCause === "insolvent" ? "Protocol insolvent" : this.rootCause === "hazard" ? "Environment hazard" : this.rootCause ? ENEMIES[this.rootCause].name : "None";
     const damage = [...this.weaponDamage.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -1293,6 +1349,11 @@ export class Game {
       kills: this.stats.kills,
       bosses: this.stats.bossesDefeated,
       time: this.stats.timeSurvived,
+      hero: p.characterId,
+      difficulty: this.runDifficulty,
+      seed: this.worldSeed,
+      tainted: this.recorder.tainted,
+      achievements: [...this.runAchievements],
       score: this.score(),
       best: this.recordRun(damage),
       timeline: this.timeline.slice(-8),
@@ -1511,6 +1572,7 @@ export class Game {
       if (this.dashBuffer > 0 && p.dashCooldown <= 0 && this.elapsed >= p.neverSellUntil) {
         this.dashBuffer = 0;
         this.audio.play("dash");
+        this.emit("dash");
         this.tutorialDid.dashed = true;
         this.onHaptic?.("dash");
         const dashDir =
@@ -1787,6 +1849,7 @@ export class Game {
   }
 
   openChest(title: string, minRarity: WeaponRarity, color: string, x: number, y: number) {
+    this.emit("chest");
     this.burstParticles(x, y, color, 14);
     const owned = this.allGear();
     const gearId = rollGear(minRarity, owned);
@@ -1864,11 +1927,13 @@ export class Game {
     const current = this.player.gear[slot];
     if (current) this.stashItem(current);
     this.player.gear[slot] = item;
+    this.noteCodex(`g:${item.id}`);
     this.recomputeGear();
   }
 
   private stashItem(item: GearItem) {
     const p = this.player;
+    this.noteCodex(`g:${item.id}`);
     p.stash.push(item);
     if (p.stash.length <= MAX_STASH) return;
     const dropped = p.stash.shift()!;
@@ -1925,6 +1990,7 @@ export class Game {
     if (p.gear[slot]) this.stashItem(upgraded);
     else p.gear[slot] = upgraded;
     this.recomputeGear();
+    this.emit("merge", { tier: upgraded.tier });
     this.impactFrames = 4;
     this.audio.play("evolve");
     this.addToast(`Merged: ${gearName(upgraded)}`, "#b58cff");
@@ -2010,6 +2076,7 @@ export class Game {
   private addRig(kind: SidekickKind) {
     if (this.rigs.length >= MAX_RIGS) this.rigs.shift();
     this.rigs.push({ kind, tier: 0, x: this.player.x, y: this.player.y, angle: this.rigs.length * Math.PI, attackTimer: 1 });
+    this.emit("rig", { rigs: this.rigs.length });
     this.ringParticle(this.player.x, this.player.y, SIDEKICKS[kind].orbit, SIDEKICKS[kind].color);
     this.audio.play("txConfirmed");
   }
@@ -2779,7 +2846,14 @@ export class Game {
     const dealt = Math.max(1, Math.round((shielded ? damage * 0.25 : damage) * multiplier));
     e.hp -= dealt;
     e.revealed = true;
-    if (weapon) this.weaponDamage.set(weapon, (this.weaponDamage.get(weapon) ?? 0) + dealt);
+    if (weapon) {
+      this.weaponDamage.set(weapon, (this.weaponDamage.get(weapon) ?? 0) + dealt);
+      if (ENEMIES[e.kind].isBoss) {
+        let tools = this.bossTools.get(e.id);
+        if (!tools) this.bossTools.set(e.id, (tools = new Set()));
+        tools.add(weapon);
+      }
+    }
     e.flash = 0.05;
     this.stats.damageDealt += dealt;
     this.audio.play("hit");
@@ -2819,9 +2893,17 @@ export class Game {
     });
   }
 
+  private recordKill(e: Enemy, boss: boolean) {
+    if (this.attract) return;
+    const key = `e:${e.kind}`;
+    this.codexKills.set(key, (this.codexKills.get(key) ?? 0) + 1);
+    this.emit("kill", { boss, solo: boss && this.bossTools.get(e.id)?.size === 1, elite: !!e.elite, bounty: !!e.bounty });
+  }
+
   private onEnemyKilled(e: Enemy) {
     const def = ENEMIES[e.kind];
     this.stats.kills++;
+    this.recordKill(e, def.isBoss === true);
     if (this.gearStats.healOnKill) this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.gearStats.healOnKill);
     if (this.gearStats.fundsOnKill) this.fundsLost = Math.max(0, this.fundsLost - this.gearStats.fundsOnKill);
     if (this.perks.killBlast > 0 && simRandom() < this.perks.killBlast) this.addStrike(e.x, e.y, 90, this.strikeDamage() * 0.35, "#ff8552", 0);

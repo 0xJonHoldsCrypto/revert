@@ -1,7 +1,8 @@
 export const SAVE_KEY = "revert.save";
 export const LEGACY_PREFS_KEY = "revert.prefs.v1";
 export const LEGACY_AUDIO_KEY = "revert.audio.v1";
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+export const CODEX_LIMIT = 400;
 export const HISTORY_LIMIT = 20;
 
 export type ColorblindMode = "off" | "deut" | "prot" | "trit";
@@ -24,6 +25,12 @@ export type LifetimeStats = {
   kills: number;
   bosses: number;
   timeSec: number;
+  bestTime: number;
+};
+
+export type CodexData = {
+  seen: Record<string, number>;
+  killed: Record<string, number>;
 };
 
 export type RunSummary = {
@@ -48,6 +55,8 @@ export type SaveData = {
   stats: LifetimeStats;
   history: RunSummary[];
   bests: Record<string, BestEntry>;
+  achievements: Record<string, number>;
+  codex: CodexData;
 };
 
 export type StorageLike = Pick<Storage, "getItem" | "setItem">;
@@ -129,6 +138,19 @@ function cleanBests(raw: unknown): Record<string, BestEntry> {
   return out;
 }
 
+function cleanCounts(raw: unknown, max: number): Record<string, number> {
+  const out: Record<string, number> = Object.create(null) as Record<string, number>;
+  if (!isRecord(raw)) return out;
+  let count = 0;
+  for (const [key, value] of Object.entries(raw)) {
+    if (count >= CODEX_LIMIT) break;
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    out[key.slice(0, 60)] = num(value, 0, 0, max);
+    count++;
+  }
+  return out;
+}
+
 export function defaultSave(): SaveData {
   return {
     v: SAVE_VERSION,
@@ -137,9 +159,11 @@ export function defaultSave(): SaveData {
     difficulty: null,
     tutorial: { done: false, levelHint: false },
     settings: { ...DEFAULT_SETTINGS },
-    stats: { runs: 0, kills: 0, bosses: 0, timeSec: 0 },
+    stats: { runs: 0, kills: 0, bosses: 0, timeSec: 0, bestTime: 0 },
     history: [],
     bests: Object.create(null) as Record<string, BestEntry>,
+    achievements: Object.create(null) as Record<string, number>,
+    codex: { seen: Object.create(null) as Record<string, number>, killed: Object.create(null) as Record<string, number> },
   };
 }
 
@@ -147,6 +171,7 @@ export function sanitize(raw: unknown): SaveData {
   const r = isRecord(raw) ? raw : {};
   const stats = isRecord(r.stats) ? r.stats : {};
   const tutorial = isRecord(r.tutorial) ? r.tutorial : {};
+  const codex = isRecord(r.codex) ? r.codex : {};
   const history = Array.isArray(r.history) ? r.history.map(cleanSummary).filter((s): s is RunSummary => s !== null) : [];
   return {
     v: SAVE_VERSION,
@@ -160,9 +185,12 @@ export function sanitize(raw: unknown): SaveData {
       kills: num(stats.kills, 0, 0, 1e12),
       bosses: num(stats.bosses, 0, 0, 1e9),
       timeSec: num(stats.timeSec, 0, 0, 1e12),
+      bestTime: num(stats.bestTime, 0, 0, 1e7),
     },
     history: history.slice(0, HISTORY_LIMIT),
     bests: cleanBests(r.bests),
+    achievements: cleanCounts(r.achievements, Number.MAX_SAFE_INTEGER),
+    codex: { seen: cleanCounts(codex.seen, 1e9), killed: cleanCounts(codex.killed, 1e12) },
   };
 }
 
@@ -190,7 +218,14 @@ export function fromLegacy(prefsRaw: string | null, audioRaw: string | null): Sa
   });
 }
 
-const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {};
+const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<string, unknown>> = {
+  1: (data) => {
+    const stats = isRecord(data.stats) ? data.stats : {};
+    const history = Array.isArray(data.history) ? data.history.map(cleanSummary).filter((h): h is RunSummary => h !== null) : [];
+    const bestTime = Math.max(0, ...history.map((h) => h.time));
+    return { ...data, stats: { ...stats, bestTime }, achievements: {}, codex: { seen: {}, killed: {} } };
+  },
+};
 
 export function migrate(raw: unknown): SaveData | null {
   if (!isRecord(raw) || typeof raw.v !== "number" || !Number.isFinite(raw.v) || raw.v < 1) return null;
@@ -296,6 +331,7 @@ export function recordRun(summary: RunSummary, kills: number, bosses: number): {
     d.stats.kills += kills;
     d.stats.bosses += bosses;
     d.stats.timeSec += summary.time;
+    d.stats.bestTime = Math.max(d.stats.bestTime, summary.time);
     d.best = Math.max(d.best, summary.score);
     const key = bestKey(summary.hero, summary.difficulty);
     const prior = d.bests[key];
@@ -303,4 +339,25 @@ export function recordRun(summary: RunSummary, kills: number, bosses: number): {
     result = { best: d.best, comboBest: d.bests[key]! };
   });
   return result;
+}
+
+export function unlockAchievement(id: string, at = Date.now()): boolean {
+  if (get().achievements[id]) return false;
+  patch((d) => {
+    d.achievements[id] = Math.max(1, at);
+  });
+  return true;
+}
+
+export function recordCodex(seen: Iterable<string>, kills: ReadonlyMap<string, number>): void {
+  const known = get().codex;
+  const fresh = [...seen].filter((key) => !known.seen[key]);
+  if (!fresh.length && !kills.size) return;
+  patch((d) => {
+    for (const key of fresh) d.codex.seen[key] = 1;
+    for (const [key, count] of kills) {
+      d.codex.seen[key] = Math.max(1, d.codex.seen[key] ?? 0);
+      d.codex.killed[key] = (d.codex.killed[key] ?? 0) + count;
+    }
+  });
 }

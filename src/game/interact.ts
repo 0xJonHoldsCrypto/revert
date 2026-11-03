@@ -89,6 +89,7 @@ export class WorldEvents {
     const a = g.rand() * Math.PI * 2;
     const d = randRange(420, 620);
     g.stream.addDynamic({ kind: "cameo", cameo: id, x: g.player.x + Math.cos(a) * d, y: g.player.y + Math.sin(a) * d, radius: 72, until: g.elapsed + 30 });
+    g.noteCodex(`c:${id}`);
     const def = CAMEOS[id];
     g.queueBanner(`${def.name.toUpperCase()} ${def.handle}`, def.arrival, def.color);
     g.audio.play("sting");
@@ -223,6 +224,7 @@ export class WorldEvents {
     const p = g.player;
     const def = CAMEOS[id];
     g.addToast(`Deal: ${def.name}`, def.color);
+    g.emit("cameo", { cameo: id });
     g.audio.play("jackpot");
     if (id === "elon-tusk") {
       for (let i = 0; i < 16; i++) {
