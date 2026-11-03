@@ -21,7 +21,9 @@ import type { MusicTrackId } from "../audio/music";
 import { WorldStream } from "./worldGen";
 import { compact, compactDead, compactLife } from "./compact";
 import { WorldEvents } from "./interact";
-import { applyLure, fireHotfix, fireTool, TOOL_COLORS, updateToolState, DEFAULT_TOOL_COLOR, type Loan, type Lure, type Seal } from "./tools";
+import { applyLure, emptyVault, fireHotfix, fireTool, spreadDrain, TOOL_COLORS, updateToolState, DEFAULT_TOOL_COLOR, type Loan, type Lure, type Seal, type Vault } from "./tools";
+import { absorbShield, affixOnDeath, affixOnHit, grantAffixes, updateAffixes } from "./affixes";
+import { MINI_EVENT_ORDER, MiniEvents } from "./events";
 import { ABILITIES, type AbilityId } from "../data/abilities";
 import { compareGear, gearDef, gearName, gearStats, MAX_GEAR_TIER, RARITY_ORDER, rollGear, SLOT_LABEL, type GearItem, type GearStats } from "../data/gear";
 import { ABILITY_ORDER } from "../data/abilities";
@@ -123,6 +125,7 @@ const RARITY_WEIGHT: Record<WeaponRarity, number> = { common: 40, uncommon: 30, 
 const TOOL_TARGETS: Record<WeaponKind, number> = {
   "audit-dart": 1.2, "reorg-whip": 5, "finality-beam": 3.5, "stable-shield": 1.5, "patch-burst": 3, "rug-coin": 2, "memo-pulse": 3.2, "flash-loan": 4,
   "validator-seal": 7, "bridge-bolt": 3, "nonce-shard": 2.5, "pager-ping": 4, "honeypot-trap": 7, "oracle-strike": 5, "merkle-proof": 3.5, "slashing-field": 5, "whale-alert": 1.5,
+  "keeper-bot": 2.5, "air-gap-vault": 1.5, "infinite-approval": 9,
 };
 const PERK_VALUE: Record<PerkId, number> = {
   pierce: 0.1, multishot: 0.3, area: 0.12, crit: 0.12, regen: 0.08, thorns: 0.05, dashBlast: 0.1, dashCooldown: 0.05, xp: 0.06, coin: 0.04, killBlast: 0.1, abilityCooldown: 0.05, revive: 0.3, rerolls: 0.03,
@@ -153,6 +156,9 @@ const KNOCKBACK = 170;
 const KNOCKBACK_DECAY = 9;
 const MAX_PARTICLES = 420;
 const CUTSCENE_SKIP_HOLD_SEC = 1;
+const DUST_SLOW_PER_STACK = 0.12;
+const DUST_MAX_STACKS = 4;
+const DUST_SEC = 4;
 
 const COARSE_POINTER = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 type TutorialAction = "moved" | "dashed" | "picked" | "chest";
@@ -206,6 +212,8 @@ export type HudData = {
   nextBoss: number;
   gear: { slot: string; name: string | null; rarity: string }[];
   ability: { name: string; remaining: number; color: string } | null;
+  event: { name: string; remaining: number; color: string } | null;
+  dust: number;
   toasts: { text: string; color: string; until: number }[];
   shielded: boolean;
   neverSell: boolean;
@@ -244,6 +252,10 @@ export class Game {
   loans: Loan[] = [];
   seals: Seal[] = [];
   lures: Lure[] = [];
+  vault: Vault = emptyVault();
+  miniEvents = new MiniEvents(this);
+  dustStacks = 0;
+  private dustUntil = 0;
   rigs: SidekickState[] = [];
   stillTime = 0;
   fieldRadius = 0;
@@ -683,6 +695,10 @@ export class Game {
     this.loans = [];
     this.seals = [];
     this.lures = [];
+    this.vault = emptyVault();
+    this.miniEvents = new MiniEvents(this);
+    this.dustStacks = 0;
+    this.dustUntil = 0;
     this.stillTime = 0;
     this.fieldRadius = 0;
     this.lastHurtAt = 0;
@@ -1026,6 +1042,7 @@ export class Game {
       }
     }
     this.events.update(dt);
+    this.miniEvents.update(dt, this.anyBossAlive(), this.bossesSpawned);
     this.updateStrikes();
     this.updateChain(dt);
     this.updateWells(dt);
@@ -1146,7 +1163,14 @@ export class Game {
   }
 
   gasEnemySpeedMult(): number {
-    return this.gasActive ? 1.35 : 1;
+    return (this.gasActive ? 1.35 : 1) * this.miniEvents.speedMult();
+  }
+
+  spawnHuntWhale(): Enemy {
+    const at = this.ringPoint(40);
+    const e = this.spawnEnemyAt(this.pickHordeKind(), at.x, at.y, true);
+    this.makeWhale(e);
+    return e;
   }
 
   nextEntityId(): number {
@@ -1259,6 +1283,10 @@ export class Game {
       p.damageMult -= 0.12;
       this.audio.play("liquidation");
       this.addFloater(p.x, p.y - 70, "POSITION LIQUIDATED", "#ff5c48");
+    }
+    if (source === "dust-spammer") {
+      this.dustStacks = Math.min(DUST_MAX_STACKS, this.dustStacks + 1);
+      this.dustUntil = this.elapsed + DUST_SEC;
     }
     if (source === "sim-swapper" && this.elapsed > this.swapCooldownUntil) {
       this.swapTimer = 1.6;
@@ -1625,6 +1653,7 @@ export class Game {
       else if (this.dashBuffer > 0) this.dashBuffer -= dt;
       if (this.dashBuffer > 0 && p.dashCooldown <= 0 && this.elapsed >= p.neverSellUntil) {
         this.dashBuffer = 0;
+        this.dustStacks = 0;
         this.audio.play("dash");
         this.emit("dash");
         this.tutorialDid.dashed = true;
@@ -1707,7 +1736,9 @@ export class Game {
 
   private currentSpeed(): number {
     const base = getCharacter(this.player.characterId).moveSpeed;
-    return Math.min(base * MAX_SPEED_MULT, this.player.moveSpeed * this.buffMult("speed") * (1 + (this.gearStats.speed ?? 0)));
+    if (this.dustStacks > 0 && this.elapsed >= this.dustUntil) this.dustStacks = 0;
+    const drag = (1 - this.dustStacks * DUST_SLOW_PER_STACK) * this.miniEvents.speedMult();
+    return Math.min(base * MAX_SPEED_MULT, this.player.moveSpeed * this.buffMult("speed") * (1 + (this.gearStats.speed ?? 0))) * drag;
   }
 
   damageTotal(): number {
@@ -2324,11 +2355,11 @@ export class Game {
     for (const point of ALIVE_CURVE) {
       if (t < point[0]) {
         const f = (t - from[0]) / (point[0] - from[0]);
-        return (from[1] + (point[1] - from[1]) * f) * this.diffMult().spawnMult;
+        return (from[1] + (point[1] - from[1]) * f) * this.diffMult().spawnMult * this.miniEvents.spawnMult();
       }
       from = point;
     }
-    return from[1] * this.diffMult().spawnMult;
+    return from[1] * this.diffMult().spawnMult * this.miniEvents.spawnMult();
   }
 
   private updateSpawner(dt: number) {
@@ -2387,9 +2418,10 @@ export class Game {
     e.elite = true;
     e.hp *= 7;
     e.maxHp *= 7;
-    e.damage *= 1.4;
+    e.damage *= 1.4 * this.effects.eliteDamageMult;
     e.scale = 1.5;
     e.radius *= 1.3;
+    grantAffixes(this, e);
   }
 
   postBounty() {
@@ -2503,6 +2535,9 @@ export class Game {
     hash = mixHash(hash, this.pickups.length);
     hash = mixHash(hash, this.projectiles.length);
     hash = mixHash(hash, this.hazards.length);
+    hash = mixHash(hash, this.miniEvents.active ? MINI_EVENT_ORDER.indexOf(this.miniEvents.active) + 1 : 0);
+    hash = mixHash(hash, this.vault.charge);
+    hash = mixHash(hash, this.dustStacks);
     for (let i = 0; i < this.weapons.length; i++) {
       const w = this.weapons[i]!;
       hash = mixHash(hash, w.level);
@@ -2585,6 +2620,7 @@ export class Game {
       if (e.dead) continue;
       e.wobble += dt * 3;
       if (e.flash > 0) e.flash -= dt;
+      if (e.affixes) updateAffixes(this, e, dt);
 
       if ((e.id + this.runTick) % 30 === 0) this.recycleIfFar(e);
       if (this.elapsed >= (e.frozenUntil ?? 0) && !applyLure(this, e, e.speed, dt)) updateEnemyBehavior(this, e, dt);
@@ -2613,6 +2649,7 @@ export class Game {
       if (!rectsOverlap(p.x, p.y, PLAYER_HIT_RADIUS, e.x, e.y, e.radius * ENEMY_HIT_SCALE)) continue;
       e.contactCd = def.contactCooldown ?? 0.5;
       this.hurtPlayer(e.damage, e.kind);
+      if (e.affixes) affixOnHit(e);
       const thorns = this.perks.thorns + (this.buffActive("thorns") ? 120 : 0);
       if (thorns > 0) this.damageEnemy(e, thorns);
       if (e.kind === "tg-scammer") this.scammerSteals(e);
@@ -2898,7 +2935,15 @@ export class Game {
       if (e.auditHits % 3 === 0) multiplier *= 3;
     }
     if (weapon && this.player.characterId === "diff" && e.hp >= e.maxHp) multiplier *= 2;
-    const dealt = Math.max(1, Math.round((shielded ? damage * 0.25 : damage) * multiplier));
+    let dealt = Math.max(1, Math.round((shielded ? damage * 0.25 : damage) * multiplier));
+    if ((e.shield ?? 0) > 0) {
+      dealt = Math.round(absorbShield(this, e, dealt));
+      if (dealt <= 0) {
+        e.flash = 0.05;
+        this.audio.play("hit");
+        return;
+      }
+    }
     e.hp -= dealt;
     e.revealed = true;
     if (weapon) {
@@ -2952,7 +2997,7 @@ export class Game {
     if (this.attract) return;
     const key = `e:${e.kind}`;
     this.codexKills.set(key, (this.codexKills.get(key) ?? 0) + 1);
-    this.emit("kill", { boss, solo: boss && this.bossTools.get(e.id)?.size === 1, elite: !!e.elite, bounty: !!e.bounty });
+    this.emit("kill", { boss, solo: boss && this.bossTools.get(e.id)?.size === 1, elite: !!e.elite, bounty: !!e.bounty, affixes: e.affixes?.length ?? 0 });
   }
 
   private onEnemyKilled(e: Enemy) {
@@ -2966,6 +3011,9 @@ export class Game {
       for (let i = 0; i < 3; i++) this.spawnEnemyAt("sybil-mini", e.x + randRange(-22, 22), e.y + randRange(-22, 22));
     }
     if (e.kind === "gas-guzzler") gasCloud(this, e.x, e.y, 96, e.damage * 0.5, e.kind);
+    if (e.affixes) affixOnDeath(this, e);
+    if ((e.drainUntil ?? 0) > this.elapsed) spreadDrain(this, e);
+    this.miniEvents.onKill(e);
     if (e.elite) {
       const title = e.bounty ? "BOUNTY COLLECTED" : "WHALE LIQUIDATED";
       this.addToast(title, "#ffc23d");
@@ -3110,7 +3158,7 @@ export class Game {
   }
 
   private gainXp(amount: number) {
-    this.player.xp += amount * (1 + (this.gearStats.xp ?? 0) + this.perks.xp) * (this.elapsed < this.doubleXpUntil ? 2 : 1) * this.effects.xpMult;
+    this.player.xp += amount * (1 + (this.gearStats.xp ?? 0) + this.perks.xp) * (this.elapsed < this.doubleXpUntil ? 2 : 1) * this.effects.xpMult * this.miniEvents.xpMult();
   }
 
   private updateParticles(dt: number) {
@@ -3218,6 +3266,8 @@ export class Game {
       }),
       toasts: this.toasts,
       ability: p.ability ? { name: ABILITIES[p.ability].short, remaining: Math.max(0, p.abilityReadyAt - this.elapsed), color: ABILITIES[p.ability].color } : null,
+      event: this.miniEvents.def ? { name: this.miniEvents.def.name, remaining: this.miniEvents.remaining, color: this.miniEvents.def.color } : null,
+      dust: this.dustStacks,
       shielded: this.elapsed < p.shieldUntil,
       neverSell: this.elapsed < p.neverSellUntil,
     });

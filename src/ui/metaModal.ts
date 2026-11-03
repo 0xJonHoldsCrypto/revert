@@ -1,4 +1,5 @@
 import type { Game } from "../game/Game";
+import { trapTab } from "./focusTrap";
 
 export type MetaModal = { card: HTMLElement; body: HTMLElement; close(): void };
 
@@ -22,7 +23,7 @@ export function openMetaModal(game: Game, id: string, title: string, onClose: ()
     if (e.key === "Escape") {
       e.preventDefault();
       close();
-    }
+    } else trapTab(card, e);
   };
   window.addEventListener("keydown", onKey, true);
   backdrop.addEventListener("pointerdown", (e) => {

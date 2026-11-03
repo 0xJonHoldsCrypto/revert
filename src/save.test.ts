@@ -235,3 +235,38 @@ describe("achievement and codex persistence", () => {
     }
   });
 });
+
+describe("save store across tabs", () => {
+  it("keeps writes from another tab when patching", () => {
+    const storage = memory();
+    const tabA = createStore(() => storage);
+    const tabB = createStore(() => storage);
+    expect(tabA.get().best).toBe(0);
+    tabB.patch((d) => {
+      d.achievements["first-boss"] = 5;
+    });
+    tabA.patch((d) => {
+      d.best = 77;
+    });
+    const stored = JSON.parse(storage.data[SAVE_KEY]!);
+    expect(stored.best).toBe(77);
+    expect(stored.achievements["first-boss"]).toBe(5);
+    expect(tabA.get().achievements["first-boss"]).toBe(5);
+  });
+
+  it("refresh picks up another tab's write and notifies listeners", () => {
+    const storage = memory();
+    const tabA = createStore(() => storage);
+    const tabB = createStore(() => storage);
+    tabA.get();
+    const seen: number[] = [];
+    tabA.subscribe((d) => seen.push(d.best));
+    tabB.patch((d) => {
+      d.best = 12;
+    });
+    expect(tabA.get().best).toBe(0);
+    tabA.refresh();
+    expect(tabA.get().best).toBe(12);
+    expect(seen).toEqual([12]);
+  });
+});

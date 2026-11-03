@@ -1,6 +1,6 @@
 import type { PerkId, UpgradeContext, UpgradeDef, WeaponKind, WeaponRarity } from "../types";
 import { defiUpgradePool } from "./defiProtocols";
-import { EVOLUTIONS, weaponAtLevel, WEAPONS } from "./weapons";
+import { EVOLUTIONS, toolTrait, toolTraitLine, weaponAtLevel, WEAPONS } from "./weapons";
 
 export const MAX_WEAPON_SLOTS = 6;
 
@@ -16,7 +16,7 @@ function newWeapon(kind: WeaponKind, ctx: UpgradeContext): UpgradeDef {
     description: w.description,
     rarity: w.rarity,
     maxTimes: 1,
-    compare: recipe ? [`Evolves with ${recipe}${ctx.hasUpgrade(EVOLUTIONS[kind].needs) ? " (owned)" : ""}`] : undefined,
+    compare: [...(toolTrait(kind, 1) ? [toolTrait(kind, 1)!] : []), ...(recipe ? [`Evolves with ${recipe}${ctx.hasUpgrade(EVOLUTIONS[kind].needs) ? " (owned)" : ""}`] : [])],
     apply(c) {
       if (c.hasWeapon(kind)) return false;
       c.addWeapon(kind);
@@ -35,6 +35,8 @@ function patchLines(kind: WeaponKind, level: number): string[] {
   const lines = [`Damage ${round(now.damage)} → ${round(next.damage)}`];
   if (!WEAPONS[kind].orbit) lines.push(`Cooldown ${round(now.cooldown)}s → ${round(next.cooldown)}s`);
   if (now.aoe) lines.push(`Radius ${Math.round(now.aoe)} → ${Math.round(next.aoe ?? now.aoe)}`);
+  const trait = toolTraitLine(kind, level);
+  if (trait) lines.push(trait);
   return lines;
 }
 

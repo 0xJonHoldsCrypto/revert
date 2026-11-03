@@ -28,7 +28,26 @@ export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
   slasher: "Winds up a blast around itself. Step out of the ring.",
   "tg-scammer": "Touches you, steals $SAFU, vanishes. Kill it before it arrives.",
   "leverage-degen": "Runs at you and blows up. Keep your distance.",
+  frontrunner: "Reads where you are heading and blinks there first. Change direction.",
+  censor: "Fences you in with a burning ring. Stay inside until it drops.",
+  "dust-spammer": "Sprays dust that sticks and slows you. Dash to shake it off.",
+  griefer: "Leaves timelocked mines behind. They arm, then wait for you.",
 };
+
+export const FRONTRUN_LEAD_SEC = 0.85;
+export const FRONTRUN_WINDUP_SEC = 0.55;
+const FRONTRUN_EVERY_SEC = 4.2;
+const FRONTRUN_MIN_GAP = 95;
+const FRONTRUN_MAX_REACH = 280;
+const CENSOR_RING_RADIUS = 150;
+const CENSOR_EVERY_SEC = 7.5;
+const DUST_EVERY_SEC = 2.8;
+const DUST_SPEED = 165;
+const MINE_EVERY_SEC = 3.4;
+const MINE_RADIUS = 36;
+const MINE_ARM_SEC = 1.2;
+const MINE_LIFE_SEC = 14;
+const MAX_MINES = 18;
 
 const DRAIN_PER_SEC = 900_000;
 const DRAIN_CAP = 70_000_000;
@@ -36,6 +55,7 @@ const MAX_HAZARDS = 48;
 const AI_START_DELAY_SEC = 1.2;
 const MAX_FARM_POPULATION = 420;
 const SLASHER_RECOVERY_SEC = 3;
+const RING_WIDTH = 16;
 
 function steer(e: Enemy, tx: number, ty: number, speed: number, dt: number) {
   const a = angleBetween(e.x, e.y, tx, ty);
@@ -214,6 +234,61 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
       if (d < 85) {
         e.charge = { t: 0.55, dash: 0, angle: 0 };
         game.addHazard({ shape: "circle", x: e.x, y: e.y, r: 105, windup: 0.55, active: 0, damage: e.damage, color: "#ff5c48", source: e.kind, knock: 240, label: "LIQUIDATED" });
+      }
+      return;
+    }
+    case "frontrunner": {
+      if (e.blink) {
+        e.blink.t -= dt;
+        if (e.blink.t > 0) return;
+        e.x = e.px = e.blink.x;
+        e.y = e.py = e.blink.y;
+        e.blink = undefined;
+        game.burstParticles(e.x, e.y, "#e6f03c", 8);
+        game.audio.play("nearMiss");
+        return;
+      }
+      steer(e, p.x, p.y, speed, dt);
+      const moving = Math.hypot(p.vx, p.vy);
+      if ((e.aiTimer ?? 0) <= 0 && d < 560 && moving > 40) {
+        e.aiTimer = FRONTRUN_EVERY_SEC;
+        const reach = Math.min(FRONTRUN_MAX_REACH, Math.max(FRONTRUN_MIN_GAP, moving * FRONTRUN_LEAD_SEC));
+        e.blink = { x: p.x + (p.vx / moving) * reach, y: p.y + (p.vy / moving) * reach, t: FRONTRUN_WINDUP_SEC };
+        game.addFloater(e.x, e.y - 34, "FRONT-RUNNING", "#e6f03c");
+      }
+      return;
+    }
+    case "censor": {
+      if (d > 280) steer(e, p.x, p.y, speed, dt);
+      else if (d < 200) steer(e, e.x + (e.x - p.x), e.y + (e.y - p.y), speed, dt);
+      if ((e.aiTimer ?? 0) <= 0 && d < 440 && game.hazards.length < MAX_HAZARDS) {
+        e.aiTimer = CENSOR_EVERY_SEC;
+        game.addHazard({ shape: "circle", ring: true, once: true, x: p.x, y: p.y, r: CENSOR_RING_RADIUS, windup: 1.2, active: 3.2, damage: e.damage * 0.6, color: "#ff4f9a", source: e.kind, knock: 0, label: "CENSORED" });
+        game.audio.play("alarm");
+      }
+      return;
+    }
+    case "dust-spammer": {
+      if (d > 320) steer(e, p.x, p.y, speed, dt);
+      else if (d < 230) steer(e, e.x + (e.x - p.x), e.y + (e.y - p.y), speed, dt);
+      if ((e.aiTimer ?? 0) <= 0 && d < 460) {
+        e.aiTimer = DUST_EVERY_SEC;
+        const aim = angleBetween(e.x, e.y, p.x, p.y);
+        for (const spread of [-0.35, 0, 0.35]) fireEnemyBullet(game, e.x, e.y, aim + spread, DUST_SPEED, e.damage * 0.5, "#c8b48a", e.kind);
+        game.audio.play("enemyShot");
+      }
+      return;
+    }
+    case "griefer": {
+      if (d > 190) steer(e, p.x, p.y, speed, dt);
+      else steer(e, e.x + (p.y - e.y), e.y - (p.x - e.x), speed * 0.8, dt);
+      if ((e.aiTimer ?? 0) <= 0) {
+        e.aiTimer = MINE_EVERY_SEC;
+        let mines = 0;
+        for (const h of game.hazards) if (h.label === "MINE") mines++;
+        if (mines < MAX_MINES && game.hazards.length < MAX_HAZARDS) {
+          game.addHazard({ shape: "circle", once: true, x: e.x, y: e.y, r: MINE_RADIUS, windup: MINE_ARM_SEC, active: MINE_LIFE_SEC, damage: e.damage, color: "#ff7a1a", source: e.kind, knock: 260, label: "MINE" });
+        }
       }
       return;
     }
@@ -489,7 +564,7 @@ function updateBoss(game: Game, boss: Enemy, dt: number, speed: number) {
 }
 
 function hazardHitsPlayer(h: Hazard, x: number, y: number): boolean {
-  if (h.shape === "circle") return dist(h.x, h.y, x, y) < (h.r ?? 0);
+  if (h.shape === "circle") return h.ring ? Math.abs(dist(h.x, h.y, x, y) - (h.r ?? 0)) < RING_WIDTH : dist(h.x, h.y, x, y) < (h.r ?? 0);
   if (h.shape === "rect") return Math.abs(x - h.x) < (h.w ?? 0) / 2 && Math.abs(y - h.y) < (h.h ?? 0) / 2;
   const a = h.angle ?? 0;
   const dx = x - h.x;
@@ -514,17 +589,29 @@ export function updateHazards(game: Game, dt: number) {
     }
     if (h.t < h.windup) continue;
     if (h.spin) h.angle = (h.angle ?? 0) + h.spin * dt;
+    if (!h.fired && h.once) h.fired = true;
     if (!h.fired) {
       h.fired = true;
       game.addTrauma(0.3);
       game.audio.play("pulse");
-      if (h.shape !== "beam") game.shockwaves.push({ x: h.x, y: h.y, radius: h.r ?? Math.max(h.w ?? 0, h.h ?? 0) / 2, life: 0.3, maxLife: 0.3, color: h.color });
+      if (h.shape !== "beam" && !h.ring) game.shockwaves.push({ x: h.x, y: h.y, radius: h.r ?? Math.max(h.w ?? 0, h.h ?? 0) / 2, life: 0.3, maxLife: 0.3, color: h.color });
       if (h.active <= 0.02 && hazardHitsPlayer(h, p.x, p.y)) {
         game.hurtPlayer(h.damage, h.source);
         if (h.knock) game.knockPlayer(h.x, h.y, h.knock);
       }
     }
-    if (h.active > 0.02 && hazardHitsPlayer(h, p.x, p.y)) game.hurtPlayer(h.damage, h.source);
+    if (h.active > 0.02 && hazardHitsPlayer(h, p.x, p.y)) {
+      if (h.once) {
+        h.dead = true;
+        game.addTrauma(0.35);
+        game.audio.play("pulse");
+        game.shockwaves.push({ x: h.x, y: h.y, radius: (h.r ?? 0) * 2.4, life: 0.3, maxLife: 0.3, color: h.color });
+        game.hurtPlayer(h.damage, h.source);
+        if (h.knock) game.knockPlayer(h.x, h.y, h.knock);
+        continue;
+      }
+      game.hurtPlayer(h.damage, h.source);
+    }
     if (h.t >= h.windup + Math.max(h.active, 0.08)) h.dead = true;
   }
   compactDead(game.hazards);

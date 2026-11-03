@@ -21,7 +21,8 @@ function metaLine(m: MetaSummary): string {
   else if (m.reward) parts.push(`<b>+◆${m.reward.shards}</b> Bounty Shards`);
   if (m.mode === "daily" && m.date) parts.push(`Daily ${m.date}${m.reward?.daily ? ` · best <b>${m.reward.daily.best.toLocaleString("en-US")}</b> · streak <b>${m.reward.daily.streak}</b>` : ""}`);
   if (m.mods.length) parts.push(`Contracts: ${m.mods.map((id) => MODIFIER_BY_ID[id as keyof typeof MODIFIER_BY_ID]?.name ?? id).join(", ")} · score ×${m.scoreMult.toFixed(2)}`);
-  const fresh = UNLOCKS.filter((u) => m.achievements.includes(u.achievement));
+  const bought = save.get().unlocks;
+  const fresh = UNLOCKS.filter((u) => m.achievements.includes(u.achievement) && !bought[u.id]);
   if (fresh.length) parts.push(`Unlocked: <b>${fresh.map((u) => (u.kind === "hero" ? CHARACTERS.find((c) => c.id === u.target)?.name : WEAPONS[u.target as WeaponKind]?.name) ?? u.target).join(", ")}</b>`);
   return parts.length ? `<div class="pm-meta">${parts.map((p) => `<span>${p}</span>`).join("")}</div>` : "";
 }
@@ -200,6 +201,8 @@ export class OverlayUI {
     const rigLines = data.rigs.map((r) => `<div class="hud-weapon hud-rig"><span>${r}</span><b>R</b></div>`).join("");
     syncTouchAbility(data.ability);
     const status = [
+      data.event ? `<i style="color:${data.event.color}">${data.event.name} ${Math.ceil(data.event.remaining)}s</i>` : "",
+      data.dust > 0 ? `DUSTED ×${data.dust} · DASH TO SHAKE` : "",
       data.signers > 0 ? `SIGNERS ${data.signers}/3` : "",
       data.leverage > 0 ? `LEV ${data.leverage}x` : "",
       data.flash ?? "",

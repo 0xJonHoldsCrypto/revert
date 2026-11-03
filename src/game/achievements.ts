@@ -1,12 +1,13 @@
 import { ACHIEVEMENTS, type AchievementMetric } from "../data/achievements";
 
-export type AchEvent = "kill" | "chest" | "merge" | "pick" | "evolve" | "dash" | "rig" | "cameo" | "end";
+export type AchEvent = "kill" | "chest" | "merge" | "pick" | "evolve" | "dash" | "rig" | "cameo" | "event" | "end";
 
 export type AchPayload = {
   boss?: boolean;
   solo?: boolean;
   elite?: boolean;
   bounty?: boolean;
+  affixes?: number;
   tier?: number;
   level?: number;
   weapons?: number;
@@ -39,6 +40,8 @@ export function emptyMetrics(): Metrics {
     whales: 0,
     bounties: 0,
     savedPct: 0,
+    events: 0,
+    affixWhale: 0,
   };
 }
 
@@ -73,6 +76,7 @@ export class RunTracker {
         if (p.elite && !p.boss) {
           if (p.bounty) m.bounties++;
           else m.whales++;
+          m.affixWhale = Math.max(m.affixWhale, p.affixes ?? 0);
         }
         break;
       case "chest":
@@ -98,6 +102,9 @@ export class RunTracker {
       case "cameo":
         if (p.cameo && p.cameo !== "satoshi") this.cameos.add(p.cameo);
         m.cameoKinds = this.cameos.size;
+        break;
+      case "event":
+        m.events++;
         break;
       case "end":
         m.savedPct = Math.max(m.savedPct, p.savedPct ?? 0);

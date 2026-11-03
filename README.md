@@ -34,7 +34,38 @@ Everything persists in one versioned `localStorage` entry (`revert.save`, see `s
 
 After a death the post-mortem offers a 1200x630 share card drawn in code (`src/ui/shareCard.ts`, lazy): Share uses the Web Share API with the PNG where supported and otherwise copies or downloads it. COPY RUN CODE puts the serialized run log on the clipboard (a text box appears if the clipboard is blocked), and REPLAY THIS SEED restarts with the same seed, hero and difficulty.
 
-25 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is now version 2 and migrates v1 saves.
+27 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, affixes and network events, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is version 3 and migrates older saves. Every write re-reads storage first and other tabs' writes are picked up through the `storage` event, so two open tabs do not overwrite each other.
+
+## Threat intel: affixes, network events, new tools and attackers
+
+**Elite affixes** (`src/data/affixes.ts`, runtime in `src/game/affixes.ts`). Every whale (random elites, Doxxed hunters, bounties and Whale Hunt targets) rolls one affix with the spawn RNG, and two after 8:00. Each affix has a coloured ring around the whale and a tag in its name plate (`WHALE · SHIELD · HASTE`):
+
+| Affix | Effect |
+|-------|--------|
+| Shielded | A barrier soaks the first 30% of its HP and returns after 5s without a hit |
+| Splitting | Dies into three smaller copies |
+| Hasted | Moves 45% faster |
+| Volatile | Leaves a blast that goes off a second after death |
+| Mender | Heals nearby attackers a little each second |
+| Vampiric | Heals itself when it hits you |
+
+**Network events** (`src/game/events.ts`). Between bosses (never while one is alive, never within 25s of the next) a timed event starts from 1:20, then every 70 to 110 seconds, chosen with the sim RNG and never the same twice in a row. A banner announces it and the HUD shows the countdown.
+
+| Event | Effect |
+|-------|--------|
+| Domino Defaults | 12s: every kill detonates |
+| Mempool Surge | 18s: twice the attackers, XP worth 60% more |
+| Airdrop Rain | 10s: crates fall on telegraphed spots and leave XP and $SAFU |
+| Network Congestion | 10s: you and every attacker move 35% slower |
+| Whale Hunt | 30s: two affixed whales surface; the first kill pays a purse, XP and 20 HP |
+
+**Tools** (17 to 20). Keeper Bot executes attackers under 15% HP (bosses never; whales at half the threshold) and otherwise nicks the weakest one; evolves into Keeper Network with Treasury Diversification. Air-Gap Vault is a vault that circles you and shoves off what it touches, bursting every 8 shoves to freeze and hit everything nearby; evolves into Deep Freeze with Cold Storage. Infinite Approval tags attackers with a 4s drain that jumps to the two nearest when the host dies; evolves into Unlimited Allowance with Private Orderflow. Level-up cards show their thresholds, tag counts and burst rules.
+
+**Attackers** (hand-drawn in `src/pixel/handArt.ts`). The Frontrunner reads your heading and blinks ahead of you after a telegraph. The Censor drops a burning ring around you that hurts once if you cross it. The Dust Spammer fires slow dust that stacks a 12% slow (dash to shake it). The Griefer leaves timelocked mines that arm, then wait.
+
+**Contracts** (`src/data/modifiers.ts`) are tuned with the paired-seed contract section of `npm run balance` so that each one lowers bot survival and still pays a higher median score than no contract: Glass Cannon is +35% damage at 40% max HP, Immutable Ledger pays ×1.8, Doxxed hunts every 60s, Dark Forest pays ×1.4, Whale Season whales hit 60% harder, Low Latency is +25% attacker speed for ×1.4, and Bull Market is 60% more attackers for only 10% more XP.
+
+The Codex has an INTEL tab for affixes and events, and two achievements cover them (Mempool Weather, Stacked Odds).
 
 ## Checks
 
@@ -44,7 +75,7 @@ npm run balance
 npm run formal
 ```
 
-`npm run balance` plays headless bots across heroes and difficulties. Set `CAP` (minutes) and `RUNS` to change its size.
+`npm run balance` plays headless bots across heroes and difficulties, then every contract, and prints tool damage shares, network event counts, affixed whales per run and causes of death. Runs use fixed seeds per hero and run index (`SEED` changes the base), so contracts are compared on the same seeds. Set `CAP` (minutes), `RUNS` and `MOD_RUNS` to change its size, `ONLY_MODS=1` to run only the contracts and `SKIP_MODS=1` to skip them.
 
 ## Goal
 

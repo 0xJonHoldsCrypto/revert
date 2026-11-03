@@ -33,6 +33,10 @@ export type EnemyKind =
   | "slasher"
   | "tg-scammer"
   | "leverage-degen"
+  | "frontrunner"
+  | "censor"
+  | "dust-spammer"
+  | "griefer"
   | "boss-shill"
   | "boss-rug-baron"
   | "boss-gas-golem"
@@ -60,7 +64,10 @@ export type WeaponKind =
   | "oracle-strike"
   | "merkle-proof"
   | "slashing-field"
-  | "whale-alert";
+  | "whale-alert"
+  | "keeper-bot"
+  | "air-gap-vault"
+  | "infinite-approval";
 
 export interface CharacterDef {
   id: CharacterId;
@@ -96,6 +103,7 @@ import type { WeaponRarity } from "./data/rarity";
 import type { GearItem, GearSlot } from "./data/gear";
 import type { AbilityId } from "./data/abilities";
 import type { CameoId } from "./data/cameos";
+import type { AffixId } from "./data/affixes";
 
 export type { WeaponRarity };
 
@@ -210,6 +218,8 @@ export interface Hazard {
   fired?: boolean;
   dead?: boolean;
   bars?: { w: number; h: number; vertical: boolean };
+  ring?: boolean;
+  once?: boolean;
 }
 
 export interface Enemy extends Entity {
@@ -235,6 +245,14 @@ export interface Enemy extends Entity {
   bounty?: boolean;
   scale?: number;
   frozenUntil?: number;
+  affixes?: AffixId[];
+  shield?: number;
+  shieldMax?: number;
+  shieldAt?: number;
+  drainUntil?: number;
+  drainTick?: number;
+  drainDamage?: number;
+  blink?: { x: number; y: number; t: number };
   kind: EnemyKind;
   hp: number;
   maxHp: number;

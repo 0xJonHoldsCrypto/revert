@@ -1,6 +1,7 @@
 import type { Game } from "../game/Game";
 import * as save from "../save";
 import { COLORBLIND_MODES, HUD_SCALE_MAX, HUD_SCALE_MIN, type ColorblindMode } from "../save";
+import { trapTab } from "./focusTrap";
 
 const COLORBLIND_LABEL: Record<ColorblindMode, string> = {
   off: "Off",
@@ -112,25 +113,12 @@ export function showSettings(game: Game) {
     showSettings(game);
   });
 
-  const focusable = () => Array.from(card.querySelectorAll<HTMLElement>("input, select, button")).filter((el) => !el.hasAttribute("disabled"));
   const onKey = (e: KeyboardEvent) => {
     e.stopImmediatePropagation();
     if (e.key === "Escape") {
       e.preventDefault();
       close();
-    } else if (e.key === "Tab") {
-      const items = focusable();
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-      const active = document.activeElement;
-      if (e.shiftKey && active === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && active === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
+    } else trapTab(card, e);
   };
   window.addEventListener("keydown", onKey, true);
   backdrop.addEventListener("pointerdown", (e) => {

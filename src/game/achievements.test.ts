@@ -11,7 +11,7 @@ describe("achievement evaluator", () => {
     const ids = ACHIEVEMENTS.map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBeGreaterThanOrEqual(20);
-    expect(ids.length).toBeLessThanOrEqual(25);
+    expect(ids.length).toBeLessThanOrEqual(30);
     expect(ACHIEVEMENTS.every((a) => a.target > 0 && a.name && a.desc)).toBe(true);
   });
 

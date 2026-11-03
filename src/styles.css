@@ -386,6 +386,7 @@ body {
 .hud-zone { position: absolute; top: 74px; left: 14px; padding: 3px 8px; font-size: 11px; color: #c8d0de; }
 .hud-status { position: absolute; top: 102px; left: 14px; display: flex; flex-direction: column; gap: 3px; align-items: flex-start; font-size: 11px; color: #2ee6c7; }
 .hud-status span { padding: 2px 7px; }
+.hud-status i { font-style: normal; font-weight: 700; }
 .hud-loadout { position: absolute; left: 14px; bottom: 34px; padding: 5px 8px; font-size: 11px; min-width: 190px; }
 .hud-weapon { display: flex; justify-content: space-between; gap: 12px; line-height: 1.5; color: #c8d0de; }
 .hud-weapon b { color: #2ee6c7; letter-spacing: -1px; font-weight: 400; }
@@ -586,6 +587,9 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 1px 
 #gear-btn:hover, #gear-btn:focus-visible { border-color: #2ee6c7; outline: none; }
 body[data-phase="cutscene"] #gear-btn, body[data-phase="cinematic"] #gear-btn { display: none; }
 #touch-pause { right: 106px; }
+@media (min-width: 641px) and (pointer: coarse), (min-width: 641px) and (hover: none) { .hud-stats { right: 158px; } }
+.load-fail { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 10002; max-width: min(420px, 92vw); padding: 8px 12px; font: 500 12px var(--mono); color: #ffe9a8; background: rgba(4, 6, 12, 0.92); border: 1px solid #ff5c48; pointer-events: none; }
+.load-fail[hidden] { display: none; }
 .t-record { font-size: 11px; color: var(--muted); }
 .t-best { color: var(--ink); line-height: 1.5; }
 .t-history summary { cursor: pointer; padding: 4px 0; color: var(--amber-hi); }

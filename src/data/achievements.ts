@@ -15,7 +15,9 @@ export type AchievementMetric =
   | "level"
   | "whales"
   | "bounties"
-  | "savedPct";
+  | "savedPct"
+  | "events"
+  | "affixWhale";
 
 export type AchievementDef = {
   id: string;
@@ -51,6 +53,8 @@ const TABLE: [string, string, string, AchievementMetric, number][] = [
   ["whale", "Whale Liquidated", "Take down a whale.", "whales", 1],
   ["bounty", "Bounty Hunter", "Collect a bounty target.", "bounties", 1],
   ["saved-half", "Majority Saved", "End a run with at least 50% of funds saved.", "savedPct", 50],
+  ["events-3", "Mempool Weather", "Live through 3 network events in one run.", "events", 3],
+  ["affix-whale", "Stacked Odds", "Take down a whale with two affixes.", "affixWhale", 2],
 ];
 
 export const ACHIEVEMENTS: AchievementDef[] = TABLE.map(([id, name, desc, metric, target]) => ({ id, name, desc, metric, target }));

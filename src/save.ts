@@ -315,6 +315,7 @@ export type Store = {
   patch(fn: (draft: SaveData) => void): boolean;
   subscribe(fn: (data: SaveData) => void): () => void;
   reset(): void;
+  refresh(): void;
 };
 
 export function createStore(resolveStorage: () => StorageLike | null = browserStorage): Store {
@@ -328,10 +329,20 @@ export function createStore(resolveStorage: () => StorageLike | null = browserSt
     return data;
   }
 
+  function latest(): SaveData {
+    const stored = migrate(parseJson(safeRead(resolveStorage(), SAVE_KEY)));
+    if (stored) data = stored;
+    return load();
+  }
+
+  function notify(next: SaveData) {
+    for (const listener of listeners) listener(next);
+  }
+
   return {
     get: load,
     patch(fn) {
-      const draft = sanitize(JSON.parse(JSON.stringify(load())));
+      const draft = sanitize(JSON.parse(JSON.stringify(latest())));
       fn(draft);
       data = sanitize(draft);
       let saved = true;
@@ -342,7 +353,7 @@ export function createStore(resolveStorage: () => StorageLike | null = browserSt
       } catch {
         saved = false;
       }
-      for (const listener of listeners) listener(data);
+      notify(data);
       return saved;
     },
     subscribe(fn) {
@@ -352,10 +363,20 @@ export function createStore(resolveStorage: () => StorageLike | null = browserSt
     reset() {
       data = null;
     },
+    refresh() {
+      data = null;
+      notify(load());
+    },
   };
 }
 
 const store = createStore();
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("storage", (e: StorageEvent) => {
+    if (e.key === SAVE_KEY || e.key === null) store.refresh();
+  });
+}
 
 export const get = store.get;
 export const patch = store.patch;

@@ -132,6 +132,9 @@ export const WEAPONS: Record<WeaponKind, WeaponDef> = {
   "merkle-proof": { kind: "merkle-proof", name: "Merkle Proof", description: "Flies out and back. Anything hit on both legs takes double on the return.", damage: 18, cooldown: 1.15, range: 330, rarity: "rare", projectileSpeed: 420, maxLevel: 8 },
   "slashing-field": { kind: "slashing-field", name: "Slashing Field", description: "An aura that makes attackers take 25% more from everything. Grows while you stand still.", damage: 11, cooldown: 0.45, range: 115, rarity: "uncommon", aoe: 115, maxLevel: 8 },
   "whale-alert": { kind: "whale-alert", name: "Whale Alert", description: "A fast, heavy shot at the toughest attacker in range. Double damage to bosses and whales.", damage: 62, cooldown: 2.1, range: 620, rarity: "epic", projectileSpeed: 980, pierce: 2, maxLevel: 8 },
+  "keeper-bot": { kind: "keeper-bot", name: "Keeper Bot", description: "Closes out attackers in range that drop under 15% HP, outright. Nobody that low? It nicks the weakest one.", damage: 30, cooldown: 0.6, range: 320, rarity: "rare", maxLevel: 8 },
+  "air-gap-vault": { kind: "air-gap-vault", name: "Air-Gap Vault", description: "A vault circles you and shoves off any attacker it touches. Every 8 shoves it bursts and freezes everything nearby.", damage: 16, cooldown: 0.2, range: 120, rarity: "uncommon", aoe: 180, maxLevel: 8 },
+  "infinite-approval": { kind: "infinite-approval", name: "Infinite Approval", description: "Tags attackers with a drain that ticks for 4 seconds. When a drained attacker dies, the drain jumps to the two nearest.", damage: 6, cooldown: 1.2, range: 360, rarity: "epic", maxLevel: 8 },
 };
 
 export const EVOLUTIONS: Record<WeaponKind, { name: string; blurb: string; needs: string }> = {
@@ -152,7 +155,42 @@ export const EVOLUTIONS: Record<WeaponKind, { name: string; blurb: string; needs
   "merkle-proof": { name: "Merkle Forest", blurb: "Three proofs in a wide spread.", needs: "pickup-up" },
   "slashing-field": { name: "Mass Slashing", blurb: "The aura grows by a third.", needs: "perk-thorns" },
   "whale-alert": { name: "Whale Hunt", blurb: "Two extra shots at the next toughest targets.", needs: "bug-bounty" },
+  "keeper-bot": { name: "Keeper Network", blurb: "Closes out under 25% more HP, and every close-out blasts the attackers around it.", needs: "perk-coin" },
+  "air-gap-vault": { name: "Deep Freeze", blurb: "Bursts every 5 shoves, and the burst hits frozen attackers for triple.", needs: "hp-up" },
+  "infinite-approval": { name: "Unlimited Allowance", blurb: "The drain jumps to four and ticks twice as fast.", needs: "private-flow" },
 };
+
+export const KEEPER_EVOLVED_BONUS = 0.1;
+export const VAULT_SHOVES = 8;
+export const VAULT_EVOLVED_SHOVES = 5;
+export const VAULT_FREEZE_SEC = 1.4;
+export const APPROVAL_SPREAD = 2;
+export const APPROVAL_EVOLVED_SPREAD = 4;
+
+export function keeperThreshold(level: number, evolved = false): number {
+  return 0.15 + (Math.max(1, level) - 1) * 0.01 + (evolved ? KEEPER_EVOLVED_BONUS : 0);
+}
+
+export function keeperCloses(level: number): number {
+  return 1 + Math.floor(Math.max(1, level) / 3);
+}
+
+export function approvalTags(level: number): number {
+  return 1 + Math.floor(Math.max(1, level) / 3);
+}
+
+export function toolTrait(kind: WeaponKind, level: number): string | null {
+  if (kind === "keeper-bot") return `Closes out under ${Math.round(keeperThreshold(level) * 100)}% HP, ${keeperCloses(level)} per tick`;
+  if (kind === "air-gap-vault") return `Bursts every ${VAULT_SHOVES} shoves, freezes ${VAULT_FREEZE_SEC}s`;
+  if (kind === "infinite-approval") return `Tags ${approvalTags(level)} per cast, jumps to ${APPROVAL_SPREAD}`;
+  return null;
+}
+
+export function toolTraitLine(kind: WeaponKind, level: number): string | null {
+  if (kind === "keeper-bot") return `Close-out ${Math.round(keeperThreshold(level) * 100)}% → ${Math.round(keeperThreshold(level + 1) * 100)}% HP, ${keeperCloses(level)} → ${keeperCloses(level + 1)} per tick`;
+  if (kind === "infinite-approval") return `Tags ${approvalTags(level)} → ${approvalTags(level + 1)} per cast`;
+  return toolTrait(kind, level);
+}
 
 export function weaponAtLevel(kind: WeaponKind, level: number): WeaponDef {
   const base = WEAPONS[kind];

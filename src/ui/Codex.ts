@@ -1,4 +1,6 @@
 import { ACHIEVEMENTS } from "../data/achievements";
+import { AFFIX_ORDER, AFFIXES } from "../data/affixes";
+import { MINI_EVENT_ORDER, MINI_EVENTS } from "../game/events";
 import { CAMEOS } from "../data/cameos";
 import { ENEMIES } from "../data/enemies";
 import { GEAR, SLOT_LABEL, type GearId } from "../data/gear";
@@ -10,11 +12,13 @@ import { getThreatSprite } from "../pixel/threatArt";
 import * as save from "../save";
 import type { EnemyKind, WeaponKind } from "../types";
 import { formatTime } from "../utils/math";
+import { trapTab } from "./focusTrap";
 
-type TabId = "threats" | "tools" | "gear" | "cameos" | "feats";
+type TabId = "threats" | "intel" | "tools" | "gear" | "cameos" | "feats";
 
 const TABS: [TabId, string][] = [
   ["threats", "THREATS"],
+  ["intel", "INTEL"],
   ["tools", "TOOLS"],
   ["gear", "GEAR"],
   ["cameos", "CAMEOS"],
@@ -70,6 +74,18 @@ function toolEntries(data: save.SaveData): Entry[] {
       seen: !!data.codex.seen[`t:${kind}`],
     };
   });
+}
+
+function intelEntries(data: save.SaveData): Entry[] {
+  const affixes = AFFIX_ORDER.map((id) => {
+    const def = AFFIXES[id];
+    return { key: `a:${id}`, name: `${def.name} whale`, body: def.desc, meta: "ELITE AFFIX", color: def.color, seen: !!data.codex.seen[`a:${id}`] };
+  });
+  const events = MINI_EVENT_ORDER.map((id) => {
+    const def = MINI_EVENTS[id];
+    return { key: `ev:${id}`, name: def.name, body: def.text, meta: "NETWORK EVENT", color: def.color, seen: !!data.codex.seen[`ev:${id}`] };
+  });
+  return [...affixes, ...events];
 }
 
 function gearEntries(data: save.SaveData): Entry[] {
@@ -154,7 +170,7 @@ export function showCodex(game: Game, initial?: string) {
   const list = card.querySelector<HTMLElement>(".cx-list")!;
   const tabs = card.querySelector<HTMLElement>(".cx-tabs")!;
 
-  const render = () => {
+  const render = (focusTab = false) => {
     const data = save.get();
     const s = data.stats;
     card.querySelector(".cx-stats")!.innerHTML = [
@@ -168,6 +184,7 @@ export function showCodex(game: Game, initial?: string) {
       .join("");
     const sets: Record<TabId, Entry[]> = {
       threats: threatEntries(data),
+      intel: intelEntries(data),
       tools: toolEntries(data),
       gear: gearEntries(data),
       cameos: cameoEntries(data),
@@ -185,7 +202,7 @@ export function showCodex(game: Game, initial?: string) {
       b.textContent = `${label} ${found}/${total}`;
       b.addEventListener("click", () => {
         tab = id;
-        render();
+        render(true);
       });
       tabs.appendChild(b);
     }
@@ -193,6 +210,7 @@ export function showCodex(game: Game, initial?: string) {
     list.scrollTop = 0;
     const nodes = tab === "feats" ? featNodes(data) : sets[tab].map(entryNode);
     for (const n of nodes) list.appendChild(n);
+    if (focusTab) tabs.querySelector<HTMLElement>("button.on")?.focus();
   };
   render();
 
@@ -201,7 +219,7 @@ export function showCodex(game: Game, initial?: string) {
     if (e.key === "Escape") {
       e.preventDefault();
       close();
-    }
+    } else trapTab(card, e);
   };
   window.addEventListener("keydown", onKey, true);
   backdrop.addEventListener("pointerdown", (e) => {

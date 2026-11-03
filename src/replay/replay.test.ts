@@ -69,6 +69,13 @@ describe("replay", () => {
     expect(verdict).toMatchObject({ ok: true, kills: game.stats.kills, level: game.player.level });
   });
 
+  it("replays a long run through network events, whales and the new tools", () => {
+    const { game, log } = scriptedRun(330, 16 / 9, 0, { setup: defaultSetup(), seed: 31337 });
+    expect(game.miniEvents.fired.length).toBeGreaterThanOrEqual(1);
+    const verdict = replayRun(replayerFor(log), log);
+    expect(verdict).toMatchObject({ ok: true, kills: game.stats.kills, level: game.player.level });
+  });
+
   it("verifies runs that sat through many ticks of level-up and pause", () => {
     const { log } = scriptedRun(90, 16 / 9, 37);
     expect(replayRun(replayerFor(log), log).ok).toBe(true);

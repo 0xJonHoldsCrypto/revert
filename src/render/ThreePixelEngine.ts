@@ -12,7 +12,9 @@ import { LANDMARKS, ZONE_PROPS } from "../pixel/threatArt";
 import { CAMEOS } from "../data/cameos";
 import { CHANNEL_SEC } from "../game/interact";
 import { ARC_LIFE_SEC } from "../game/Game";
-import { isHiddenFromWeapons } from "../game/threats";
+import { FRONTRUN_WINDUP_SEC, isHiddenFromWeapons } from "../game/threats";
+import { vaultFill } from "../game/tools";
+import { AFFIXES } from "../data/affixes";
 import type { CharacterId, EnemyKind, InteractableKind } from "../types";
 import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
@@ -479,6 +481,10 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   const PHISH_TELL = new THREE.Color(1, 0.12, 0.1);
   const TETHER_COLOR = new THREE.Color(0.6, 0.3, 1);
   const COIN_COLOR = new THREE.Color(1, 0.72, 0.16);
+  const SHIELD_COLOR = new THREE.Color("#9fd2ff");
+  const DRAIN_COLOR = new THREE.Color("#d05cff");
+  const BLINK_COLOR = new THREE.Color("#e6f03c");
+  const VAULT_COLOR = new THREE.Color("#9fe8ff");
   const scratchLights: { x: number; y: number; h: number; color: THREE.Color; power: number }[] = [];
 
   function applyPointLights() {
@@ -613,6 +619,18 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const frame = enemyFrames.get(e.kind)![Math.floor(e.wobble * 1.6) % 2]!;
       const height = enemyHeight(frame.px, def.isBoss) * (e.scale ?? 1);
       if (e.elite) decals.push(x, y, e.radius * 1.5, e.radius * 1.5, DECAL_RING, 1, COIN_COLOR, 0.9);
+      if (e.affixes) {
+        for (let i = 0; i < e.affixes.length; i++) {
+          const ring = e.radius * (1.75 + i * 0.22);
+          decals.push(x, y, ring, ring, DECAL_RING, 1, cachedColor(AFFIXES[e.affixes[i]!].color), 0.85);
+        }
+        if ((e.shield ?? 0) > 0) decals.push(x, y, e.radius * 2.3, e.radius * 2.3, DECAL_RING, (e.shield ?? 0) / Math.max(1, e.shieldMax ?? 1), SHIELD_COLOR, 0.95);
+      }
+      if ((e.drainUntil ?? 0) > game.elapsed) fx.push(x, y, 14, 20, 20, 0, DRAIN_COLOR, 1.1, 0.6);
+      if (e.blink) {
+        decals.push(e.blink.x, e.blink.y, 24, 24, DECAL_RING, 1 - e.blink.t / FRONTRUN_WINDUP_SEC, BLINK_COLOR, 0.95);
+        fx.push(e.blink.x, e.blink.y, 10, 16, 16, 0, BLINK_COLOR, 1.4, 0.7);
+      }
       const width = height * frame.aspect;
       if (e.kind === "bridge-drainer" && e.tether !== undefined) {
         const cos = Math.cos(e.tether);
@@ -637,7 +655,12 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       const f = Math.min(1, h.t / h.windup);
       const live = h.t >= h.windup;
       const color = cachedColor(h.color);
-      if (h.shape === "circle") {
+      if (h.shape === "circle" && h.ring) {
+        const r = h.r ?? 40;
+        decals.push(h.x, h.y, r, r, DECAL_RING, live ? 1 : f, scratchColor.copy(color).multiplyScalar(live ? 2.6 : 1.4), live ? 1 : 0.6);
+        decals.push(h.x, h.y, r + 10, r + 10, DECAL_RING, 1, color, live ? 0.7 : 0.25);
+        if (cueShapes) decals.push(h.x, h.y, r - 10, r - 10, DECAL_RING, 1, WHITE, live ? 0.9 : 0.4);
+      } else if (h.shape === "circle") {
         const r = h.r ?? 40;
         decals.push(h.x, h.y, r, r, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(1.4), 0.25 + f * 0.25);
         decals.push(h.x, h.y, r * f, r * f, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(2.2), 0.7);
@@ -755,6 +778,12 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       fx.push((seal.x + next.x) / 2, (seal.y + next.y) / 2, 14, 5, Math.hypot(dx, dy * cameraBasis.backY), Math.atan2(-dy * cameraBasis.backY, dx), sealColor, 2.2, 0.8);
     });
     if (game.fieldRadius > 0) decals.push(px, py, game.fieldRadius, game.fieldRadius, DECAL_RING, 1, cachedColor("#c9a0ff"), 0.45);
+    if (game.weapons.some((w) => w.kind === "air-gap-vault")) {
+      const v = game.vault;
+      decals.push(v.x, v.y + 1, 14, 7, DECAL_BLOB, 0, BLACK, 0.45);
+      decals.push(v.x, v.y, 22, 22, DECAL_RING, vaultFill(game), VAULT_COLOR, 1);
+      fx.push(v.x, v.y, 16, 22, 22, 0, VAULT_COLOR, 1.8, 0.85);
+    }
 
     for (const pr of game.projectiles) {
       const x = lerpPos(pr.px, pr.x, alpha);

@@ -3,7 +3,7 @@ import { DIFFICULTY_LABEL, DIFFICULTY_ORDER, type DifficultyId } from "../data/d
 import { WEAPONS } from "../data/weapons";
 import type { Game } from "../game/Game";
 import { heroPortrait, paintLogo } from "../pixel/handArt";
-import { openCodex } from "./gearButton";
+import { lazyPanel, openCodex } from "./gearButton";
 import { ACHIEVEMENTS } from "../data/achievements";
 import * as save from "../save";
 import { formatTime } from "../utils/math";
@@ -18,12 +18,9 @@ let panelOpening = false;
 function openPanel(game: Game, load: () => Promise<{ open(game: Game, onChange: () => void): void }>, onChange: () => void) {
   if (panelOpening) return;
   panelOpening = true;
-  game.audio.unlock();
-  void load()
-    .then((m) => m.open(game, onChange))
-    .finally(() => {
-      panelOpening = false;
-    });
+  lazyPanel(game, () => load().then((m) => m.open(game, onChange)), () => {
+    panelOpening = false;
+  });
 }
 
 export function standardPlan(data: save.SaveData = save.get()): RunPlan {

@@ -164,19 +164,19 @@ describe("contracts", () => {
   it("folds difficulty, perks and contracts into one effects table", () => {
     const fx = runEffects("hard", { ...defaultSetup(), mods: ["low-latency", "hardened", "thin-margin", "bull-market", "whale-season", "inflation", "hunted", "dark-forest"] });
     const hard = DIFFICULTY.hard;
-    expect(fx.enemySpeedMult).toBeCloseTo(hard.enemySpeedMult * 1.2);
+    expect(fx.enemySpeedMult).toBeCloseTo(hard.enemySpeedMult * 1.25);
     expect(fx.enemyHpMult).toBeCloseTo(hard.enemyHpMult * 1.35);
     expect(fx.playerDamageTakenMult).toBeCloseTo(hard.playerDamageTakenMult * 1.4);
-    expect(fx.spawnMult).toBeCloseTo(hard.spawnMult * 1.3);
-    expect(fx).toMatchObject({ xpMult: 1.3, eliteChanceMult: 2, extraWhales: 2, costMult: 1.6, huntEverySec: 75, darkness: true, pickupMult: 0.5 });
+    expect(fx.spawnMult).toBeCloseTo(hard.spawnMult * 1.6);
+    expect(fx).toMatchObject({ xpMult: 1.1, eliteChanceMult: 2, eliteDamageMult: 1.6, extraWhales: 2, costMult: 1.6, huntEverySec: 60, darkness: true, pickupMult: 0.5 });
     expect(runEffects("normal", defaultSetup())).toMatchObject({ damageMult: 1, healMult: 1, scoreMult: 1, shardMult: 1, rerolls: 2, banishes: 1, startCoins: 0 });
   });
 
   it("changes the live run", () => {
     const base = gameWith({});
     const glass = gameWith({ mods: ["glass-cannon"] });
-    expect(glass.player.maxHp).toBe(Math.round(base.player.maxHp * 0.5));
-    expect(glass.damageTotal()).toBeCloseTo(base.damageTotal() * 1.5, 5);
+    expect(glass.player.maxHp).toBe(Math.round(base.player.maxHp * 0.4));
+    expect(glass.damageTotal()).toBeCloseTo(base.damageTotal() * 1.35, 5);
     const ledger = gameWith({ mods: ["immutable"] });
     ledger.player.hp = 10;
     ledger.healPlayer(50);
@@ -193,9 +193,9 @@ describe("contracts", () => {
   it("sends a whale after you when doxxed", () => {
     const game = gameWith({ mods: ["hunted"] });
     game.god = true;
-    while (game.elapsed < 74.5) stepSeconds(game, 0.5);
+    while (game.elapsed < 59.5) stepSeconds(game, 0.5);
     const before = game.enemies.filter((e) => e.elite && !e.dead).length;
-    while (game.elapsed < 75.5) stepSeconds(game, 0.25);
+    while (game.elapsed < 60.5) stepSeconds(game, 0.25);
     expect(game.enemies.filter((e) => e.elite && !e.dead).length).toBeGreaterThan(before);
   });
 });

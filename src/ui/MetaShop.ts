@@ -6,6 +6,7 @@ import type { Game } from "../game/Game";
 import type { WeaponKind } from "../types";
 import * as save from "../save";
 import { openMetaModal } from "./metaModal";
+import { focusWithin } from "./focusTrap";
 
 const REASON = { "max-rank": "MAXED", cap: "CAP", shards: "NEED" } as const;
 
@@ -27,7 +28,7 @@ export function open(game: Game, onChange: () => void) {
     game.audio.play(ok ? "coin" : "ui");
     render();
     onChange();
-    body.querySelector<HTMLElement>(`button[data-act="${act}"][data-id="${id}"]`)?.focus();
+    focusWithin(modal.card, body.querySelector<HTMLElement>(`button[data-act="${act}"][data-id="${id}"]`) ?? body.querySelector<HTMLElement>("button:not([disabled])"));
   });
 
   function render() {
@@ -60,5 +61,5 @@ export function open(game: Game, onChange: () => void) {
   }
 
   render();
-  body.querySelector<HTMLElement>("button:not([disabled])")?.focus();
+  focusWithin(modal.card, body.querySelector<HTMLElement>("button:not([disabled])"));
 }

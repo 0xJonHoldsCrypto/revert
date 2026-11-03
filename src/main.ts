@@ -12,7 +12,7 @@ import { OverlayUI } from "./ui/OverlayUI";
 import { bootProgress, failBoot, finishBoot } from "./ui/bootScreen";
 import { drawCinematic } from "./ui/cinematicOverlay";
 import { bindMute } from "./ui/muteButton";
-import { mountGearButton } from "./ui/gearButton";
+import { mountGearButton, showLoadError } from "./ui/gearButton";
 import { haptic } from "./haptics";
 import * as save from "./save";
 import { mountTouchControls, syncTouchVisible } from "./ui/touchControls";
@@ -20,6 +20,8 @@ import { CAMEOS } from "./data/cameos";
 import { groundHalfExtents } from "./render/view";
 import { chestSprite } from "./pixel/handArt";
 import { getThreatSprite } from "./pixel/threatArt";
+import { affixLabel } from "./game/affixes";
+import { AFFIXES } from "./data/affixes";
 import { cameoSprite, interactableSprite } from "./pixel/worldArt";
 import type { Enemy, InteractableKind } from "./types";
 
@@ -166,14 +168,19 @@ function drawEnemyTags(w: number, h: number) {
     if (!s || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue;
     let text = "";
     let color = "#2ee6c7";
-    if (e.elite) { text = e.bounty ? "BOUNTY" : "WHALE"; color = "#ffc23d"; }
+    if (e.elite) {
+      const tags = affixLabel(e);
+      text = `${e.bounty ? "BOUNTY" : "WHALE"}${tags ? ` · ${tags}` : ""}`;
+      color = e.affixes?.length ? AFFIXES[e.affixes[0]!].color : "#ffc23d";
+    }
     else if (e.kind === "insider" && !e.revealed) text = "STAFF ✓";
     else if (e.implant) { text = "IMPLANT"; color = "#ff5c48"; }
     else if (e.feedNode) { text = "PRICE FEED"; color = "#79c0ff"; }
     else if (e.carried) { text = `-$${(e.carried / 1e6).toFixed(1)}M`; color = "#ff5c48"; }
     if (!text) continue;
+    const half = Math.max(36, uiCtx.measureText(text).width / 2 + 6);
     uiCtx.fillStyle = "rgba(4,6,12,0.82)";
-    uiCtx.fillRect(s.x - 36, s.y - 12, 72, 16);
+    uiCtx.fillRect(s.x - half, s.y - 12, half * 2, 16);
     uiCtx.fillStyle = color;
     uiCtx.fillText(text, s.x, s.y);
   }
@@ -474,7 +481,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("debug")) {
-  void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game, () => pixelEngine?.stats() ?? null));
+  void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game, () => pixelEngine?.stats() ?? null)).catch(() => showLoadError("Debug panel failed to load."));
 }
 
 window.addEventListener("keydown", (e) => {

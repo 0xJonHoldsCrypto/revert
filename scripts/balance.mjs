@@ -9,6 +9,8 @@ const CAP_MINUTES = Number(process.env.CAP ?? 30);
 const RUNS = Number(process.env.RUNS ?? 5);
 const MOD_RUNS = Number(process.env.MOD_RUNS ?? 2);
 const ONLY_MODS = process.env.ONLY_MODS === "1";
+const SKIP_MODS = process.env.SKIP_MODS === "1";
+const BASE_SEED = Number(process.env.SEED ?? 20261103);
 
 const dir = mkdtempSync(join(tmpdir(), "revert-balance-"));
 const out = join(dir, "game.mjs");
@@ -49,7 +51,14 @@ function steer(g, skill) {
     for (const h of g.hazards) {
       if (h.shape !== "circle") continue;
       const d = Math.hypot(p.x - h.x, p.y - h.y) || 1;
-      if (d < (h.r ?? 0) + 30) {
+      const r = h.r ?? 0;
+      if (h.ring) {
+        if (Math.abs(d - r) < 40) {
+          const inward = d < r ? -1 : 1;
+          fx += ((p.x - h.x) / d) * 3 * inward;
+          fy += ((p.y - h.y) / d) * 3 * inward;
+        }
+      } else if (d < r + 30) {
         fx += ((p.x - h.x) / d) * 3;
         fy += ((p.y - h.y) / d) * 3;
       }
@@ -93,18 +102,22 @@ const SKILLS = {
   good: { sight: 260, dodge: true, seek: 900, reaction: 4, dash: 200 },
 };
 
-function run(hero, skillName, picker, difficulty, mods = []) {
+function seedFor(hero, index) {
+  return (BASE_SEED + HEROES.indexOf(hero) * 7919 + index * 104729) >>> 0;
+}
+
+function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
   const skill = SKILLS[skillName];
   let move = { x: 0, y: 0 };
   const { game: g, input } = makeGame(() => move);
   g.chooseHero(hero);
   g.chooseDifficulty(difficulty);
-  g.runPlan = { setup: { ...g.runPlan.setup, mods } };
+  g.runPlan = { setup: { ...g.runPlan.setup, mods }, seed: seedFor(hero, index) };
   g.startRun();
   g.cinematic = null;
   g.player.lift = 0;
   g.setPhase("playing");
-  const stats = { popups: 0, levelUps: 0, bossLanded: [], bossKillSec: [] };
+  const stats = { popups: 0, levelUps: 0, bossLanded: [], bossKillSec: [], affixKills: 0, elites: new Set() };
   let dashCount = 0;
   let lastBosses = 0;
   let bossLandedAt = 0;
@@ -127,6 +140,7 @@ function run(hero, skillName, picker, difficulty, mods = []) {
     input.consumeDash = () => ++dashCount % skill.dash === 0;
     input.consumeAbility = () => dashCount % 300 === 0;
     g.update(DT);
+    for (const e of g.enemies) if (e.affixes && !stats.elites.has(e.id)) stats.elites.add(e.id);
     const bossAlive = g.enemies.some((e) => e.kind.startsWith("boss"));
     if (bossAlive && !lastBossAlive) bossLandedAt = g.elapsed;
     if (g.stats.bossesDefeated > lastBosses) {
@@ -136,7 +150,7 @@ function run(hero, skillName, picker, difficulty, mods = []) {
     lastBossAlive = bossAlive;
   }
   const damage = [...g.weaponDamage.entries()].sort((a, b) => b[1] - a[1]);
-  return { t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, damage };
+  return { t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
 }
 
 function median(values) {
@@ -145,11 +159,16 @@ function median(values) {
 }
 
 const toolShare = new Map();
+const eventCounts = new Map();
+const causes = new Map();
+const allRuns = [];
 for (const [skill, picker, difficulty] of ONLY_MODS ? [] : [["casual", "naive", "normal"], ["good", "smart", "normal"], ["good", "smart", "easy"], ["good", "smart", "hard"]]) {
   console.log(`\n${skill} / ${picker} / ${difficulty}`);
   for (const hero of HEROES) {
     const runs = [];
-    for (let i = 0; i < RUNS; i++) runs.push(run(hero, skill, picker, difficulty));
+    for (let i = 0; i < RUNS; i++) runs.push(run(hero, skill, picker, difficulty, [], i));
+    for (const r of runs) for (const id of r.events) eventCounts.set(id, (eventCounts.get(id) ?? 0) + 1);
+    for (const r of runs) causes.set(r.cause, (causes.get(r.cause) ?? 0) + 1);
     for (const r of runs) {
       const total = r.damage.reduce((sum, [, v]) => sum + v, 0) || 1;
       for (const [kind, v] of r.damage) toolShare.set(kind, [...(toolShare.get(kind) ?? []), v / total]);
@@ -157,16 +176,27 @@ for (const [skill, picker, difficulty] of ONLY_MODS ? [] : [["casual", "naive", 
     const minutes = median(runs.map((r) => r.t / 60));
     const perMin = (key) => (median(runs.map((r) => r[key] / (r.t / 60)))).toFixed(1);
     const kills = runs.flatMap((r) => r.bossKillSec);
+    allRuns.push(...runs);
     console.log(`  ${hero.padEnd(6)} survive ${minutes.toFixed(1).padStart(5)}m  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  popups/min ${perMin("popups")}  coins ${median(runs.map((r) => r.coins))}  firstBossKill ${median(runs.map((r) => r.bossKillSec[0] ?? -1))}s  bossKill(med) ${kills.length ? median(kills) : "-"}s  causes ${[...new Set(runs.map((r) => r.cause))].join(",")}`);
   }
 }
-const MODS = ["", "glass-cannon", "immutable", "hunted", "dark-forest", "whale-season", "inflation", "low-latency", "bull-market", "thin-margin", "hardened"];
+function mean(values) {
+  return values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
+}
+
+const MODS = SKIP_MODS ? [] : ["", "glass-cannon", "immutable", "hunted", "dark-forest", "whale-season", "inflation", "low-latency", "bull-market", "thin-margin", "hardened"];
 console.log(`\ncontracts · good / smart / normal · ${MOD_RUNS} runs per hero`);
 for (const mod of MODS) {
   const runs = [];
-  for (const hero of HEROES) for (let i = 0; i < MOD_RUNS; i++) runs.push(run(hero, "good", "smart", "normal", mod ? [mod] : []));
+  for (const hero of HEROES) for (let i = 0; i < MOD_RUNS; i++) runs.push(run(hero, "good", "smart", "normal", mod ? [mod] : [], i));
   const perMin = (key) => median(runs.map((r) => r[key] / (r.t / 60))).toFixed(1);
-  console.log(`  ${(mod || "(none)").padEnd(13)} survive ${median(runs.map((r) => r.t / 60)).toFixed(1).padStart(5)}m  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  kills/min ${perMin("kills")}  score ${median(runs.map((r) => r.score))}`);
+  console.log(`  ${(mod || "(none)").padEnd(13)} survive ${median(runs.map((r) => r.t / 60)).toFixed(1).padStart(5)}m (mean ${mean(runs.map((r) => r.t / 60)).toFixed(1)})  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  kills/min ${perMin("kills")}  score ${median(runs.map((r) => r.score))} (mean ${Math.round(mean(runs.map((r) => r.score)))})`);
+}
+if (allRuns.length) {
+  console.log("\nNetwork events and elites (all skill runs):");
+  console.log(`  events/run ${mean(allRuns.map((r) => r.events.length)).toFixed(1)}  ${[...eventCounts.entries()].map(([id, n]) => `${id} ${n}`).join("  ")}`);
+  console.log(`  affixed whales seen/run ${mean(allRuns.map((r) => r.elites)).toFixed(1)}`);
+  console.log(`  causes of death: ${[...causes.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c ?? "none"} ${n}`).join(", ")}`);
 }
 console.log("\nAverage damage share when owned:");
 for (const [kind, shares] of [...toolShare.entries()].sort((a, b) => median(b[1]) - median(a[1]))) {

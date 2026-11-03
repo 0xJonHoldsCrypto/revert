@@ -28,6 +28,7 @@ export type RunEffects = {
   enemySpeedMult: number;
   playerDamageTakenMult: number;
   eliteChanceMult: number;
+  eliteDamageMult: number;
   extraWhales: number;
   costMult: number;
   huntEverySec: number;
@@ -73,6 +74,7 @@ export function runEffects(difficulty: DifficultyId, setup: RunSetup): RunEffect
     enemySpeedMult: diff.enemySpeedMult,
     playerDamageTakenMult: diff.playerDamageTakenMult,
     eliteChanceMult: 1,
+    eliteDamageMult: 1,
     extraWhales: 0,
     costMult: 1,
     huntEverySec: 0,
@@ -92,6 +94,7 @@ export function runEffects(difficulty: DifficultyId, setup: RunSetup): RunEffect
     fx.enemySpeedMult *= m.enemySpeedMult ?? 1;
     fx.playerDamageTakenMult *= m.damageTakenMult ?? 1;
     fx.eliteChanceMult *= m.eliteChanceMult ?? 1;
+    fx.eliteDamageMult *= m.eliteDamageMult ?? 1;
     fx.extraWhales += m.extraWhales ?? 0;
     fx.costMult *= m.costMult ?? 1;
     if (m.huntEverySec) fx.huntEverySec = fx.huntEverySec ? Math.min(fx.huntEverySec, m.huntEverySec) : m.huntEverySec;

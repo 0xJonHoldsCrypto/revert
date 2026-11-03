@@ -1,5 +1,5 @@
 import { ENEMIES } from "../data/enemies";
-import { weaponAtLevel } from "../data/weapons";
+import { APPROVAL_EVOLVED_SPREAD, APPROVAL_SPREAD, approvalTags, keeperCloses, keeperThreshold, VAULT_EVOLVED_SHOVES, VAULT_FREEZE_SEC, VAULT_SHOVES, weaponAtLevel } from "../data/weapons";
 import { COLORS } from "../constants";
 import type { Enemy, WeaponDef, WeaponInstance, WeaponKind } from "../types";
 import { angleBetween, dist, randRange } from "../utils/math";
@@ -26,10 +26,26 @@ const SEAL_LIFE_SEC = 14;
 const SEAL_TICK_SEC = 0.3;
 const LURE_RADIUS = 260;
 const TRAP_FUSE_SEC = 1.1;
+const KEEPER_ELITE_SHARE = 0.5;
+const KEEPER_BLAST_RADIUS = 80;
+const VAULT_ORBIT_SHARE = 0.6;
+const VAULT_SPIN = 1.7;
+const VAULT_RADIUS = 30;
+const VAULT_SHOVE = 560;
+const VAULT_BURST_MULT = 6;
+const VAULT_FROZEN_MULT = 3;
+const DRAIN_SEC = 4;
+const DRAIN_TICK_SEC = 0.5;
+const DRAIN_JUMP_RANGE = 240;
 
 export type Loan = { x: number; y: number; until: number; total: number; damage: number; radius: number; weapon: WeaponInstance };
 export type Seal = { x: number; y: number; until: number };
 export type Lure = { x: number; y: number; until: number };
+export type Vault = { x: number; y: number; angle: number; charge: number };
+
+export function emptyVault(): Vault {
+  return { x: 0, y: 0, angle: 0, charge: 0 };
+}
 
 function hitsSegment(e: Enemy, x1: number, y1: number, x2: number, y2: number, width: number): boolean {
   const dx = x2 - x1;
@@ -275,6 +291,144 @@ function fireAimed(g: Game, w: WeaponInstance, def: WeaponDef) {
   }
 }
 
+const keeperScratch: Enemy[] = [];
+
+function hpShare(e: Enemy): number {
+  return e.hp / Math.max(1, e.maxHp);
+}
+
+function fireKeeper(g: Game, w: WeaponInstance, def: WeaponDef) {
+  const p = g.player;
+  const threshold = keeperThreshold(w.level, w.evolved);
+  keeperScratch.length = 0;
+  for (const e of g.enemies) {
+    if (!e.dead && !isHiddenFromWeapons(e) && dist(p.x, p.y, e.x, e.y) < def.range) keeperScratch.push(e);
+  }
+  if (!keeperScratch.length) return;
+  keeperScratch.sort((a, b) => hpShare(a) - hpShare(b) || a.id - b.id);
+  const damage = g.weaponDamageScale(w, def.damage);
+  let closes = 0;
+  for (const e of keeperScratch) {
+    if (closes >= keeperCloses(w.level)) break;
+    if (ENEMIES[e.kind].isBoss || hpShare(e) > threshold * (e.elite ? KEEPER_ELITE_SHARE : 1)) continue;
+    closes++;
+    const x = e.x;
+    const y = e.y;
+    arc(g, p.x, p.y, x, y, "#3cf07c");
+    g.damageEnemy(e, Math.ceil(e.hp + (e.shield ?? 0)) + 1, 0, 0, w.kind);
+    if (w.evolved) g.addStrike(x, y, KEEPER_BLAST_RADIUS * areaBonus(g), damage * 3, "#3cf07c", 0, w.kind);
+  }
+  if (closes) {
+    g.audio.play("coin");
+    return;
+  }
+  const weakest = keeperScratch[0]!;
+  arc(g, p.x, p.y, weakest.x, weakest.y, "#3cf07c");
+  g.damageEnemy(weakest, damage * (2 - hpShare(weakest)), 0, 0, w.kind);
+}
+
+function vaultShoves(w: WeaponInstance): number {
+  return w.evolved ? VAULT_EVOLVED_SHOVES : VAULT_SHOVES;
+}
+
+function fireVault(g: Game, w: WeaponInstance, def: WeaponDef) {
+  const v = g.vault;
+  const damage = g.weaponDamageScale(w, def.damage);
+  for (const e of g.enemies) {
+    if (e.dead || isHiddenFromWeapons(e) || dist(v.x, v.y, e.x, e.y) > VAULT_RADIUS + e.radius) continue;
+    if (!ENEMIES[e.kind].isBoss) {
+      const a = angleBetween(g.player.x, g.player.y, e.x, e.y);
+      e.kx = Math.cos(a) * VAULT_SHOVE;
+      e.ky = Math.sin(a) * VAULT_SHOVE;
+    }
+    v.charge++;
+    g.damageEnemy(e, damage, 0, 0, w.kind);
+  }
+  if (v.charge < vaultShoves(w)) return;
+  v.charge = 0;
+  const radius = (def.aoe ?? 170) * areaBonus(g);
+  const until = g.elapsed + VAULT_FREEZE_SEC;
+  for (const e of g.enemies) {
+    if (e.dead || isHiddenFromWeapons(e) || dist(v.x, v.y, e.x, e.y) > radius + e.radius) continue;
+    const frozen = g.elapsed < (e.frozenUntil ?? 0);
+    if (!ENEMIES[e.kind].isBoss) e.frozenUntil = Math.max(e.frozenUntil ?? 0, until);
+    g.damageEnemy(e, damage * VAULT_BURST_MULT * (w.evolved && frozen ? VAULT_FROZEN_MULT : 1), 0, 0, w.kind);
+  }
+  g.shockwaves.push({ x: v.x, y: v.y, radius, life: 0.35, maxLife: 0.35, color: "#9fe8ff" });
+  g.addTrauma(0.2);
+  g.audio.play("pulse");
+}
+
+function drainOf(w: WeaponInstance): number {
+  return w.evolved ? DRAIN_TICK_SEC / 2 : DRAIN_TICK_SEC;
+}
+
+function tagDrain(g: Game, e: Enemy, damage: number, tick: number) {
+  e.drainUntil = g.elapsed + DRAIN_SEC;
+  e.drainTick = g.elapsed + tick;
+  e.drainDamage = damage;
+}
+
+function fireApproval(g: Game, w: WeaponInstance, def: WeaponDef) {
+  const p = g.player;
+  const damage = g.weaponDamageScale(w, def.damage);
+  const tick = drainOf(w);
+  let tags = approvalTags(w.level);
+  while (tags > 0) {
+    let best: Enemy | undefined;
+    let bestD = def.range;
+    for (const e of g.enemies) {
+      if (e.dead || isHiddenFromWeapons(e) || (e.drainUntil ?? 0) > g.elapsed) continue;
+      const d = dist(p.x, p.y, e.x, e.y);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    if (!best) break;
+    tagDrain(g, best, damage, tick);
+    arc(g, p.x, p.y, best.x, best.y, "#d05cff");
+    tags--;
+  }
+}
+
+export function spreadDrain(g: Game, from: Enemy) {
+  const tool = g.weapons.find((w) => w.kind === "infinite-approval");
+  if (!tool) return;
+  const damage = from.drainDamage ?? 0;
+  let jumps = tool.evolved ? APPROVAL_EVOLVED_SPREAD : APPROVAL_SPREAD;
+  while (jumps > 0) {
+    let best: Enemy | undefined;
+    let bestD = DRAIN_JUMP_RANGE;
+    for (const e of g.enemies) {
+      if (e.dead || e === from || isHiddenFromWeapons(e) || (e.drainUntil ?? 0) > g.elapsed) continue;
+      const d = dist(from.x, from.y, e.x, e.y);
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+    if (!best) return;
+    tagDrain(g, best, damage, drainOf(tool));
+    arc(g, from.x, from.y, best.x, best.y, "#d05cff");
+    jumps--;
+  }
+}
+
+function tickDrains(g: Game, w: WeaponInstance) {
+  const tick = drainOf(w);
+  for (const e of g.enemies) {
+    if (e.dead || (e.drainUntil ?? 0) <= 0) continue;
+    if (g.elapsed > (e.drainUntil ?? 0)) {
+      e.drainUntil = 0;
+      continue;
+    }
+    if (g.elapsed < (e.drainTick ?? 0)) continue;
+    e.drainTick = (e.drainTick ?? g.elapsed) + tick;
+    g.damageEnemy(e, e.drainDamage ?? 0, 0, 0, w.kind);
+  }
+}
+
 export function fireTool(g: Game, w: WeaponInstance, def: WeaponDef, cooldown: number) {
   switch (w.kind) {
     case "reorg-whip": return fireWhip(g, w, def);
@@ -290,6 +444,9 @@ export function fireTool(g: Game, w: WeaponInstance, def: WeaponDef, cooldown: n
     case "oracle-strike": return fireOracle(g, w, def);
     case "pager-ping": return firePager(g, w, def);
     case "whale-alert": return fireWhale(g, w, def);
+    case "keeper-bot": return fireKeeper(g, w, def);
+    case "air-gap-vault": return fireVault(g, w, def);
+    case "infinite-approval": return fireApproval(g, w, def);
     default: return fireAimed(g, w, def);
   }
 }
@@ -337,6 +494,23 @@ export function updateToolState(g: Game, dt: number) {
   }
 
   g.fieldRadius = g.weapons.some((w) => w.kind === "slashing-field") ? g.fieldRadius : 0;
+
+  for (const w of g.weapons) {
+    if (w.kind === "air-gap-vault") {
+      const v = g.vault;
+      v.angle += dt * VAULT_SPIN;
+      const reach = weaponAtLevel(w.kind, w.level).range * VAULT_ORBIT_SHARE;
+      v.x = p.x + Math.cos(v.angle) * reach;
+      v.y = p.y + Math.sin(v.angle) * reach;
+    } else if (w.kind === "infinite-approval" && !w.jammed) {
+      tickDrains(g, w);
+    }
+  }
+}
+
+export function vaultFill(g: Game): number {
+  const w = g.weapons.find((x) => x.kind === "air-gap-vault");
+  return w ? g.vault.charge / vaultShoves(w) : 0;
 }
 
 export function applyLure(g: Game, e: Enemy, speed: number, dt: number): boolean {
@@ -357,6 +531,9 @@ export const TOOL_COLORS: Partial<Record<WeaponKind, string>> = {
   "nonce-shard": "#f0c14d",
   "merkle-proof": "#7ee787",
   "whale-alert": "#ff9f43",
+  "keeper-bot": "#3cf07c",
+  "air-gap-vault": "#9fe8ff",
+  "infinite-approval": "#d05cff",
 };
 
 export const DEFAULT_TOOL_COLOR = COLORS.gold;

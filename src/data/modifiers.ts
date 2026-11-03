@@ -18,6 +18,7 @@ export type ModifierEffect = {
   pickupMult?: number;
   darkness?: boolean;
   eliteChanceMult?: number;
+  eliteDamageMult?: number;
   extraWhales?: number;
   costMult?: number;
   enemySpeedMult?: number;
@@ -40,14 +41,14 @@ export const MAX_SCORE_MULT = 3;
 export const MAX_SHARD_MULT = 3;
 
 export const MODIFIERS: ModifierDef[] = [
-  { id: "glass-cannon", name: "Glass Cannon", desc: "Deal 50% more damage. Max HP halved.", score: 1.3, shards: 1.3, effect: { damageMult: 1.5, maxHpMult: 0.5 } },
-  { id: "immutable", name: "Immutable Ledger", desc: "Nothing heals you. Ever.", score: 1.35, shards: 1.35, effect: { healMult: 0 } },
-  { id: "hunted", name: "Doxxed", desc: "A whale wallet hunts you every 75 seconds.", score: 1.25, shards: 1.25, effect: { huntEverySec: 75 } },
-  { id: "dark-forest", name: "Dark Forest", desc: "Vision dims and pickup radius is halved.", score: 1.15, shards: 1.15, effect: { pickupMult: 0.5, darkness: true } },
-  { id: "whale-season", name: "Whale Season", desc: "Whales spawn twice as often, two more at once.", score: 1.2, shards: 1.2, effect: { eliteChanceMult: 2, extraWhales: 2 } },
+  { id: "glass-cannon", name: "Glass Cannon", desc: "Deal 35% more damage. Max HP cut to 40%.", score: 1.25, shards: 1.25, effect: { damageMult: 1.35, maxHpMult: 0.4 } },
+  { id: "immutable", name: "Immutable Ledger", desc: "Nothing heals you. Ever.", score: 1.8, shards: 1.6, effect: { healMult: 0 } },
+  { id: "hunted", name: "Doxxed", desc: "A whale wallet hunts you every 60 seconds.", score: 1.25, shards: 1.25, effect: { huntEverySec: 60 } },
+  { id: "dark-forest", name: "Dark Forest", desc: "Vision dims and pickup radius is halved.", score: 1.4, shards: 1.3, effect: { pickupMult: 0.5, darkness: true } },
+  { id: "whale-season", name: "Whale Season", desc: "Whales spawn twice as often, two more at once, and hit 60% harder.", score: 1.25, shards: 1.25, effect: { eliteChanceMult: 2, extraWhales: 2, eliteDamageMult: 1.6 } },
   { id: "inflation", name: "Inflation", desc: "Chests and rig upgrades cost 60% more.", score: 1.15, shards: 1.15, effect: { costMult: 1.6 } },
-  { id: "low-latency", name: "Low Latency", desc: "Attackers move 20% faster.", score: 1.25, shards: 1.25, effect: { enemySpeedMult: 1.2 } },
-  { id: "bull-market", name: "Bull Market", desc: "30% more XP, 30% more attackers.", score: 1.2, shards: 1.15, effect: { xpMult: 1.3, spawnMult: 1.3 } },
+  { id: "low-latency", name: "Low Latency", desc: "Attackers move 25% faster.", score: 1.4, shards: 1.35, effect: { enemySpeedMult: 1.25 } },
+  { id: "bull-market", name: "Bull Market", desc: "60% more attackers, only 10% more XP.", score: 1.3, shards: 1.2, effect: { xpMult: 1.1, spawnMult: 1.6 } },
   { id: "thin-margin", name: "Thin Margin", desc: "Take 40% more damage from every hit.", score: 1.25, shards: 1.25, effect: { damageTakenMult: 1.4 } },
   { id: "hardened", name: "Hardened Exploits", desc: "Attackers have 35% more HP.", score: 1.25, shards: 1.25, effect: { enemyHpMult: 1.35 } },
 ];
