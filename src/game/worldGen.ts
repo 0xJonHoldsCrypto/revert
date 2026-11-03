@@ -5,6 +5,7 @@ import { LANDMARKS } from "../pixel/threatArt";
 
 const SECTOR = 1400;
 const STREAM_RADIUS = 1;
+const EVICT_RADIUS = STREAM_RADIUS + 2;
 const SPAWN_CLEAR = 300;
 const BRIDGE_JUMP = 2600;
 const INTERACT_RADIUS: Record<Exclude<InteractableKind, "airdrop" | "cameo">, number> = {
@@ -44,6 +45,7 @@ export class WorldStream {
   landmarks: WorldLandmark[] = [];
   version = 0;
   private sectors = new Map<string, Sector>();
+  private idBase = new Map<string, number>();
   private centerX = NaN;
   private centerY = NaN;
   private nextId = 1;
@@ -66,7 +68,19 @@ export class WorldStream {
     this.interactables = [...active.flatMap((s) => s.interactables), ...this.interactables.filter((i) => (i.kind === "airdrop" || i.kind === "cameo") && !i.used)];
     this.landmarks = active.flatMap((s) => s.landmarks);
     this.version++;
+    this.evictFar(sx, sy);
     return true;
+  }
+
+  private evictFar(cx: number, cy: number) {
+    for (const [key, sector] of this.sectors) {
+      const comma = key.indexOf(",");
+      const sx = Number(key.slice(0, comma));
+      const sy = Number(key.slice(comma + 1));
+      if (Math.abs(sx - cx) <= EVICT_RADIUS && Math.abs(sy - cy) <= EVICT_RADIUS) continue;
+      const fresh = this.generate(sx, sy, this.idBase.get(key)!);
+      if (JSON.stringify(fresh) === JSON.stringify(sector)) this.sectors.delete(key);
+    }
   }
 
   addDynamic(item: Omit<Interactable, "id" | "progress" | "used" | "readyAt">) {
@@ -77,12 +91,23 @@ export class WorldStream {
     const key = `${sx},${sy}`;
     const hit = this.sectors.get(key);
     if (hit) return hit;
-    const made = this.generate(sx, sy);
+    const known = this.idBase.get(key);
+    const base = known ?? this.nextId;
+    const made = this.generate(sx, sy, base);
+    if (known === undefined) {
+      this.idBase.set(key, base);
+      this.nextId = base + this.countIds(made);
+    }
     this.sectors.set(key, made);
     return made;
   }
 
-  private generate(sx: number, sy: number): Sector {
+  private countIds(sector: Sector): number {
+    return sector.obstacles.length + sector.chests.length + sector.wells.length + sector.interactables.length;
+  }
+
+  private generate(sx: number, sy: number, base: number): Sector {
+    let nextId = base;
     const rnd = seeded(Math.imul(sx, 73856093) ^ Math.imul(sy, 19349663) ^ this.seed);
     const place = (pad: number) => {
       for (;;) {
@@ -100,7 +125,7 @@ export class WorldStream {
       if (!kinds.length) continue;
       const kind = kinds[Math.floor(rnd() * kinds.length)]!;
       const def = ENV_OBSTACLES[kind];
-      out.obstacles.push({ id: this.nextId++, kind, x, y, width: def.width, height: def.height });
+      out.obstacles.push({ id: nextId++, kind, x, y, width: def.width, height: def.height });
     }
 
     const chestCount = 1 + (rnd() < 0.5 ? 1 : 0);
@@ -108,12 +133,12 @@ export class WorldStream {
       const { x, y } = place(0.06);
       const kind = chestKindForBiome(biomeAt(x, y), rnd);
       const def = CHESTS[kind];
-      out.chests.push({ id: this.nextId++, kind, x, y, radius: def.radius, openProgress: 0, opened: false, coinCost: def.coinCost });
+      out.chests.push({ id: nextId++, kind, x, y, radius: def.radius, openProgress: 0, opened: false, coinCost: def.coinCost });
     }
 
     if (rnd() < 0.3) {
       const { x, y } = place(0.08);
-      out.wells.push({ id: this.nextId++, x, y, radius: 62, stat: rollWellStat(Math.floor(rnd() * 1000)), used: false, channelProgress: 0 });
+      out.wells.push({ id: nextId++, x, y, radius: 62, stat: rollWellStat(Math.floor(rnd() * 1000)), used: false, channelProgress: 0 });
     }
 
     const scatterCount = 2 + Math.floor(rnd() * 2);
@@ -122,7 +147,7 @@ export class WorldStream {
       const kind = SCATTERED[Math.floor(rnd() * SCATTERED.length)]!;
       const angle = rnd() * Math.PI * 2;
       out.interactables.push({
-        id: this.nextId++,
+        id: nextId++,
         kind,
         x,
         y,

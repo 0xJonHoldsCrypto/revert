@@ -18,7 +18,7 @@ import { groundHalfExtents } from "./render/view";
 import { chestSprite } from "./pixel/handArt";
 import { getThreatSprite } from "./pixel/threatArt";
 import { cameoSprite, interactableSprite } from "./pixel/worldArt";
-import type { InteractableKind } from "./types";
+import type { Enemy, InteractableKind } from "./types";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const uiCanvas = document.createElement("canvas");
@@ -66,7 +66,7 @@ bindMute(game.audio);
 mountTouchControls(input);
 
 const SIM_STEP = 1 / 60;
-const MAX_SIM_STEPS = 8;
+const MAX_SIM_STEPS = 3;
 let accumulator = 0;
 let pixelEngine: PixelEngine | null = null;
 let last = performance.now();
@@ -125,10 +125,21 @@ function drawFeetBars(w: number, h: number) {
   uiCtx.fillRect(x, y + 5, barW * ready, 2);
 }
 
+const noteworthy: Enemy[] = [];
+
+function collectNoteworthy() {
+  noteworthy.length = 0;
+  const list = game.enemies;
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i]!;
+    if (e.elite || e.bounty || e.kind === "insider" || e.feedNode || e.implant || e.carried || ENEMIES[e.kind].isBoss) noteworthy.push(e);
+  }
+}
+
 function drawEnemyTags(w: number, h: number) {
   uiCtx.textAlign = "center";
   uiCtx.font = `700 11px ${FONT_MONO}`;
-  for (const e of game.enemies) {
+  for (const e of noteworthy) {
     if (e.kind !== "insider" && !e.feedNode && !e.implant && !e.carried && !e.elite) continue;
     const s = pixelEngine?.worldToScreen(e.x, e.y - e.radius * 3.6, w, h);
     if (!s || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue;
@@ -147,13 +158,27 @@ function drawEnemyTags(w: number, h: number) {
   }
 }
 
+type Arrow = { x: number; y: number; d: number; color: string; icon: HTMLCanvasElement; dim: boolean; frame: number };
+const arrowSlots = new Map<string, Arrow>();
+const arrowTargets: Arrow[] = [];
+let arrowFrame = 0;
+
 function poiArrows() {
   const p = game.player;
-  const nearest = new Map<string, { x: number; y: number; d: number; color: string; icon: HTMLCanvasElement; dim: boolean }>();
+  const frame = ++arrowFrame;
   const offer = (key: string, x: number, y: number, color: string, icon: HTMLCanvasElement, dim = false) => {
     const d = Math.hypot(x - p.x, y - p.y);
-    const best = nearest.get(key);
-    if (!best || d < best.d) nearest.set(key, { x, y, d, color, icon, dim });
+    const best = arrowSlots.get(key);
+    if (!best) arrowSlots.set(key, { x, y, d, color, icon, dim, frame });
+    else if (best.frame !== frame || d < best.d) {
+      best.x = x;
+      best.y = y;
+      best.d = d;
+      best.color = color;
+      best.icon = icon;
+      best.dim = dim;
+      best.frame = frame;
+    }
   };
   for (const c of game.chests) {
     if (!c.opened) offer(`chest:${c.kind}`, c.x, c.y, CHESTS[c.kind].color, chestSprite(c.kind), p.coins < game.chestCost(c.coinCost));
@@ -165,19 +190,28 @@ function poiArrows() {
     else if (item.kind === "merge-contract") offer(item.kind, item.x, item.y, "#b58cff", interactableSprite(item.kind), !canMerge);
     else if (ARROW_ITEMS[item.kind]) offer(item.kind, item.x, item.y, ARROW_ITEMS[item.kind]!, interactableSprite(item.kind as ArrowKind));
   }
-  for (const e of game.enemies) {
+  for (const e of noteworthy) {
     if (ENEMIES[e.kind].isBoss) offer("boss", e.x, e.y, "#ff5c48", getThreatSprite(e.kind));
     else if (e.bounty) offer("bounty", e.x, e.y, "#ffc23d", getThreatSprite(e.kind));
   }
-  return nearest;
+  arrowTargets.length = 0;
+  for (const arrow of arrowSlots.values()) if (arrow.frame === frame) arrowTargets.push(arrow);
+  return arrowTargets;
 }
 
 function drawOffscreenPointers(w: number, h: number) {
   const { halfW, halfH } = groundHalfExtents(w / h);
   const p = game.player;
-  const targets = [...poiArrows().values()].filter((t) => Math.abs(t.x - p.x) > halfW || Math.abs(t.y - p.y) > halfH * 0.9);
+  const targets = poiArrows();
+  let kept = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i]!;
+    if (Math.abs(t.x - p.x) > halfW || Math.abs(t.y - p.y) > halfH * 0.9) targets[kept++] = t;
+  }
+  targets.length = kept;
   targets.sort((a, b) => a.d - b.d);
-  for (const target of targets.slice(0, MAX_ARROWS)) drawPointer(target, w, h);
+  const shown = Math.min(kept, MAX_ARROWS);
+  for (let i = 0; i < shown; i++) drawPointer(targets[i]!, w, h);
 }
 
 const ARROW_ITEMS: Partial<Record<InteractableKind, string>> = {
@@ -248,7 +282,7 @@ function drawRadar(w: number) {
     else if (item.kind === "airdrop") dot(item.x, item.y, "#ffffff", 4);
     else dot(item.x, item.y, "#2ee6c7", 2);
   }
-  for (const e of game.enemies) if (ENEMIES[e.kind].isBoss || e.elite) dot(e.x, e.y, "#ff5c48", 5);
+  for (const e of noteworthy) if (ENEMIES[e.kind].isBoss || e.elite) dot(e.x, e.y, "#ff5c48", 5);
   uiCtx.fillStyle = "#ffffff";
   uiCtx.fillRect(cx - 1, cy - 1, 3, 3);
 }
@@ -283,6 +317,7 @@ function drawRunChrome(w: number, h: number) {
   const p = game.player;
   if (!p) return;
   drawFeetBars(w, h);
+  collectNoteworthy();
   drawEnemyTags(w, h);
   drawOffscreenPointers(w, h);
   drawRadar(w);
@@ -305,7 +340,7 @@ function drawRunChrome(w: number, h: number) {
   }
   uiCtx.globalAlpha = 1;
 
-  const boss = game.enemies.find((e) => !e.dead && ENEMIES[e.kind].isBoss);
+  const boss = noteworthy.find((e) => !e.dead && ENEMIES[e.kind].isBoss);
   if (boss) {
     const pct = Math.max(0, boss.hp / boss.maxHp);
     const shown = game.priceLieTimer > 0 ? Math.abs(Math.sin(performance.now() / 90)) : pct;
@@ -380,7 +415,7 @@ function loop(now: number) {
       accumulator -= SIM_STEP;
       steps++;
     }
-    if (steps === MAX_SIM_STEPS) accumulator = 0;
+    if (accumulator >= SIM_STEP) accumulator = 0;
 
     if (isWorldVisible() || game.phase === "cutscene") pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
     drawUiOverlay();

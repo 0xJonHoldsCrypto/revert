@@ -15,6 +15,8 @@ export class OverlayUI {
   private title: TitleScreen;
   private hudEl: HTMLElement | null = null;
   private hudDyn: HTMLElement | null = null;
+  private hudNodes: ChildNode[] = [];
+  private hudHtml: string[] = [];
 
   constructor(private game: Game) {
     this.overlay = document.getElementById("overlay")!;
@@ -173,30 +175,56 @@ export class OverlayUI {
       : data.banner
         ? `<div class="hud-banner" style="border-color:${data.banner.tone}"><strong style="color:${data.banner.tone}">${data.banner.title}</strong><span>${data.banner.text}</span></div>`
         : "";
-    this.hudDyn!.innerHTML = `
-      <div class="hud-xp"><div style="width:${xpPct}%"></div></div>
-      <div class="hud-funds${data.fundsPct < 30 ? " low" : ""}${data.lie ? " lying" : ""}">
+    const sections = [
+      `<div class="hud-xp"><div style="width:${xpPct}%"></div></div>`,
+      `<div class="hud-funds${data.fundsPct < 30 ? " low" : ""}${data.lie ? " lying" : ""}">
         <label>FUNDS AT RISK</label>
         <strong>${fundsText}</strong>
         <div class="hud-funds-bar"><div style="width:${data.lie ? Math.random() * 100 : data.fundsPct}%"></div></div>
-      </div>
-      <div class="hud-block-clock${data.gas ? " gas" : ""}">
+      </div>`,
+      `<div class="hud-block-clock${data.gas ? " gas" : ""}">
         <label>${data.gas ? "GAS 9,999 GWEI" : "BLOCK"}</label>
         <strong>${data.block.toLocaleString("en-US")}</strong>
         <span>${formatTime(data.time)} · BOSS ${formatTime(data.nextBoss)}</span>
-      </div>
-      <div class="hud-stats">
+      </div>`,
+      `<div class="hud-stats">
         <div><label>LV</label><strong>${data.level}</strong></div>
         <div><label>REVERTED</label><strong>${data.kills}</strong></div>
         <div><label>$SAFU</label><strong>${data.coins}</strong></div>
-      </div>
-      <div class="hud-zone">${data.biome}</div>
-      <div class="hud-status">${status.map((t) => `<span>${t}</span>`).join("")}</div>
-      <div class="hud-loadout">${weaponLines}${gearLines}${rigLines}${abilityLine}</div>
-      <div class="hud-feed">${data.feed.map((l) => `<div>${l}</div>`).join("")}</div>
-      <div class="hud-toasts">${data.toasts.map((t) => `<div style="border-color:${t.color};color:${t.color}">${t.text}</div>`).join("")}</div>
-      ${alert}
-    `;
+      </div>`,
+      `<div class="hud-zone">${data.biome}</div>`,
+      `<div class="hud-status">${status.map((t) => `<span>${t}</span>`).join("")}</div>`,
+      `<div class="hud-loadout">${weaponLines}${gearLines}${rigLines}${abilityLine}</div>`,
+      `<div class="hud-feed">${data.feed.map((l) => `<div>${l}</div>`).join("")}</div>`,
+      `<div class="hud-toasts">${data.toasts.map((t) => `<div style="border-color:${t.color};color:${t.color}">${t.text}</div>`).join("")}</div>`,
+      alert,
+    ];
+    this.syncHudSections(sections);
+  }
+
+  private syncHudSections(sections: string[]) {
+    const dyn = this.hudDyn!;
+    if (this.hudNodes.length !== sections.length || this.hudNodes[0]?.parentNode !== dyn) {
+      dyn.textContent = "";
+      this.hudNodes = [];
+      this.hudHtml = [];
+      for (let i = 0; i < sections.length; i++) {
+        const node = document.createComment("");
+        dyn.appendChild(node);
+        this.hudNodes.push(node);
+        this.hudHtml.push("");
+      }
+    }
+    for (let i = 0; i < sections.length; i++) {
+      const html = sections[i]!;
+      if (html === this.hudHtml[i]) continue;
+      this.hudHtml[i] = html;
+      const template = document.createElement("template");
+      template.innerHTML = html.trim();
+      const next = template.content.firstChild ?? document.createComment("");
+      this.hudNodes[i]!.replaceWith(next);
+      this.hudNodes[i] = next;
+    }
   }
 
   private ensureHud() {

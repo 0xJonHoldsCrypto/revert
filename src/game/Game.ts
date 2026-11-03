@@ -19,6 +19,7 @@ import { CutsceneEngine, type CutsceneId } from "../cutscene/CutsceneEngine";
 import { AudioEngine } from "../audio/AudioEngine";
 import type { MusicTrackId } from "../audio/music";
 import { WorldStream } from "./worldGen";
+import { compact, compactDead, compactLife } from "./compact";
 import { WorldEvents } from "./interact";
 import { applyLure, fireHotfix, fireTool, TOOL_COLORS, updateToolState, DEFAULT_TOOL_COLOR, type Loan, type Lure, type Seal } from "./tools";
 import { ABILITIES, type AbilityId } from "../data/abilities";
@@ -293,6 +294,8 @@ export class Game {
   readonly audio = new AudioEngine();
   private spatial = new SpatialHash();
   private enemyById = new Map<number, Enemy>();
+  private spawnedSinceRebuild = false;
+  private bosses: Enemy[] = [];
   private simTick = 0;
   private dashBuffer = 0;
   private dying = 0;
@@ -528,6 +531,7 @@ export class Game {
       neverSellUntil: 0,
     };
     this.enemies = [];
+    this.bosses.length = 0;
     this.projectiles = [];
     this.orbiters = [];
     this.pickups = [];
@@ -878,7 +882,7 @@ export class Game {
       this.triggerLevelUp();
       if (this.phase !== "playing") return;
     }
-    this.toasts = this.toasts.filter((t) => t.until > this.elapsed);
+    if (this.toasts.length > 0) compact(this.toasts, (t) => t.until > this.elapsed);
 
     if (this.stream.update(this.player.x, this.player.y)) this.seenStreamVersion();
     if (this.dying <= 0) {
@@ -1056,6 +1060,8 @@ export class Game {
       return enemy;
     }
     this.enemies.push(enemy);
+    this.spawnedSinceRebuild = true;
+    if (def.isBoss) this.bosses.push(enemy);
     if (!this.seenKinds.has(kind) && THREAT_INTEL[kind]) {
       this.seenKinds.add(kind);
       this.queueBanner(`NEW THREAT · ${def.name.toUpperCase()}`, THREAT_INTEL[kind]!, def.color);
@@ -1137,11 +1143,16 @@ export class Game {
     this.logEvent("Block reorged by The Grandmaster");
   }
 
+  private anyBossAlive(): boolean {
+    for (let i = 0; i < this.bosses.length; i++) if (!this.bosses[i]!.dead) return true;
+    return false;
+  }
+
   private updateChain(dt: number) {
     const p = this.player;
     if (this.priceLieTimer > 0) this.priceLieTimer -= dt;
     if (this.swapTimer > 0) this.swapTimer -= dt;
-    const bossAlive = this.enemies.some((e) => !e.dead && ENEMIES[e.kind].isBoss);
+    const bossAlive = this.anyBossAlive();
     this.fundsLost += (AMBIENT_DRAIN_PER_SEC + (bossAlive ? BOSS_DRAIN_PER_SEC : 0)) * dt;
 
     if (this.elapsed >= this.nextGasAt) {
@@ -1243,7 +1254,7 @@ export class Game {
 
   private syncMusic() {
     if (!this.player) return;
-    const boss = this.enemies.some((e) => !e.dead && ENEMIES[e.kind].isBoss);
+    const boss = this.anyBossAlive();
     const track: MusicTrackId = boss ? "boss" : biomeAt(this.player.x, this.player.y);
     this.audio.setMusic(track);
   }
@@ -2147,7 +2158,7 @@ export class Game {
     const distSpawn = edge + 70 + spawnRandom() * 100;
     const kind = this.pickHordeKind();
     const e = this.spawnEnemyAt(kind, p.x + cos * distSpawn, p.y + sin * distSpawn);
-    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE && this.enemies.filter((m) => m.elite).length < MAX_WHALES) this.makeWhale(e);
+    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE && this.whaleCount() < MAX_WHALES) this.makeWhale(e);
   }
 
   private ringPoint(extra = 0): { x: number; y: number } {
@@ -2166,6 +2177,12 @@ export class Game {
       const a = a0 + (i / Math.max(1, room)) * Math.PI * 2;
       this.spawnEnemyAt(kind, this.player.x + Math.cos(a) * reach, this.player.y + Math.sin(a) * reach);
     }
+  }
+
+  private whaleCount(): number {
+    let n = 0;
+    for (let i = 0; i < this.enemies.length; i++) if (this.enemies[i]!.elite) n++;
+    return n;
   }
 
   makeWhale(e: Enemy) {
@@ -2192,13 +2209,22 @@ export class Game {
   private pickHordeKind(): EnemyKind {
     const biome = biomeAt(this.player.x, this.player.y);
     const bias = BIOME_HORDE_BIAS[biome];
-    const count = (kind: EnemyKind) => this.enemies.reduce((n, e) => (e.kind === kind ? n + 1 : n), 0);
-    const drainers = count("bridge-drainer");
-    const shooters = count("shadow-op") + count("oracle-manipulator");
+    let drainers = 0;
+    let shadowOps = 0;
+    let oracles = 0;
+    let botFarms = 0;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const kind = this.enemies[i]!.kind;
+      if (kind === "bridge-drainer") drainers++;
+      else if (kind === "shadow-op") shadowOps++;
+      else if (kind === "oracle-manipulator") oracles++;
+      else if (kind === "bot-farm") botFarms++;
+    }
+    const shooters = shadowOps + oracles;
     const eligible = HORDE_WEIGHTS.filter((w) => {
       if (this.elapsed < w.minTime) return false;
       if (w.kind === "bridge-drainer" && drainers >= MAX_DRAINERS) return false;
-      if (w.kind === "bot-farm" && count("bot-farm") >= MAX_BOT_FARMS) return false;
+      if (w.kind === "bot-farm" && botFarms >= MAX_BOT_FARMS) return false;
       if ((w.kind === "shadow-op" || w.kind === "oracle-manipulator") && shooters >= MAX_SHOOTERS) return false;
       return true;
     });
@@ -2229,7 +2255,8 @@ export class Game {
     const index = Math.max(0, this.bossesSpawned - 1);
     const scale = (1 + index * 0.35) * Math.pow(2.2, bossTierAt(index)) * dm.enemyHpMult * this.nextBossHpBonus;
     this.nextBossHpBonus = 1;
-    this.enemies.push({
+    this.spawnedSinceRebuild = true;
+    const boss: Enemy = {
       id: uid(),
       kind,
       x: p.x + 400,
@@ -2245,7 +2272,9 @@ export class Game {
       contactCd: 0,
       flash: 0,
       wobble: 0,
-    });
+    };
+    this.enemies.push(boss);
+    if (def.isBoss) this.bosses.push(boss);
   }
 
   skipCinematic() {
@@ -2263,24 +2292,36 @@ export class Game {
   stateHash(): number {
     const p = this.player;
     let hash = 2166136261;
-    const mix = (value: number) => {
-      hash = Math.imul(hash ^ Math.round(value * 1000), 16777619) >>> 0;
-    };
-    [this.runTick, p.x, p.y, p.hp, p.level, p.xp, p.coins, this.stats.kills, this.enemies.length, this.pickups.length, this.projectiles.length, this.hazards.length].forEach(mix);
-    for (const w of this.weapons) {
-      mix(w.level);
-      mix(w.evolved ? 1 : 0);
+    hash = mixHash(hash, this.runTick);
+    hash = mixHash(hash, p.x);
+    hash = mixHash(hash, p.y);
+    hash = mixHash(hash, p.hp);
+    hash = mixHash(hash, p.level);
+    hash = mixHash(hash, p.xp);
+    hash = mixHash(hash, p.coins);
+    hash = mixHash(hash, this.stats.kills);
+    hash = mixHash(hash, this.enemies.length);
+    hash = mixHash(hash, this.pickups.length);
+    hash = mixHash(hash, this.projectiles.length);
+    hash = mixHash(hash, this.hazards.length);
+    for (let i = 0; i < this.weapons.length; i++) {
+      const w = this.weapons[i]!;
+      hash = mixHash(hash, w.level);
+      hash = mixHash(hash, w.evolved ? 1 : 0);
     }
-    for (const id of Object.keys(this.perks).sort()) mix(this.perks[id as PerkId]);
-    for (const b of this.projectiles) {
-      mix(b.x);
-      mix(b.y);
+    const perkIds = sortedPerkIds(this.perks);
+    for (let i = 0; i < perkIds.length; i++) hash = mixHash(hash, this.perks[perkIds[i]!]);
+    for (let i = 0; i < this.projectiles.length; i++) {
+      const b = this.projectiles[i]!;
+      hash = mixHash(hash, b.x);
+      hash = mixHash(hash, b.y);
     }
-    for (const e of this.enemies) {
-      mix(e.id);
-      mix(e.x);
-      mix(e.y);
-      mix(e.hp);
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i]!;
+      hash = mixHash(hash, e.id);
+      hash = mixHash(hash, e.x);
+      hash = mixHash(hash, e.y);
+      hash = mixHash(hash, e.hp);
     }
     return hash;
   }
@@ -2329,9 +2370,12 @@ export class Game {
   private rebuildEnemySpatial() {
     this.spatial.clear();
     this.enemyById.clear();
-    for (const e of this.enemies) {
+    this.spawnedSinceRebuild = false;
+    compactDead(this.bosses);
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i]!;
       if (e.dead) continue;
-      this.spatial.insert({ id: e.id, x: e.x, y: e.y, radius: e.radius });
+      this.spatial.add(e.id, e.x, e.y, e.radius);
       this.enemyById.set(e.id, e);
     }
   }
@@ -2375,7 +2419,7 @@ export class Game {
       if (e.kind === "tg-scammer") this.scammerSteals(e);
     }
 
-    this.enemies = this.enemies.filter((e) => !e.dead);
+    compactDead(this.enemies);
   }
 
   private scammerSteals(e: Enemy) {
@@ -2410,7 +2454,8 @@ export class Game {
     const nearby = this.spatial.query(e.x, e.y, e.radius + 24, this.collisionScratch);
     let pushX = 0;
     let pushY = 0;
-    for (const other of nearby) {
+    for (let i = 0; i < nearby.length; i++) {
+      const other = nearby[i]!;
       if (other.id === e.id) continue;
       const dx = e.x - other.x;
       const dy = e.y - other.y;
@@ -2512,8 +2557,9 @@ export class Game {
       if (pr.life <= 0) pr.dead = true;
 
       if (pr.homing && pr.targetId) {
-        const t = this.enemies.find((e) => e.id === pr.targetId && !e.dead);
-        if (t) {
+        let t = this.enemyById.get(pr.targetId);
+        if (!t && this.spawnedSinceRebuild) t = this.enemies.find((e) => e.id === pr.targetId && !e.dead);
+        if (t && !t.dead) {
           const ang = angleBetween(pr.x, pr.y, t.x, t.y);
           const spd = Math.hypot(pr.vx, pr.vy);
           pr.vx = lerpVec(pr.vx, Math.cos(ang) * spd, 0.08);
@@ -2562,7 +2608,7 @@ export class Game {
         }
       }
     }
-    this.projectiles = this.projectiles.filter((p) => !p.dead);
+    compactDead(this.projectiles);
   }
 
   private syncOrbiters() {
@@ -2597,12 +2643,14 @@ export class Game {
 
   private updateOrbiters(dt: number) {
     const p = this.player;
+    let lastWeapon: WeaponInstance | undefined;
     for (const o of this.orbiters) {
       o.angle += dt * (2.2 + (o.weaponKind === "rug-coin" ? 0.8 : 0));
       o.x = p.x + Math.cos(o.angle) * o.dist;
       o.y = p.y + Math.sin(o.angle) * o.dist;
       if (this.elapsed < (o.offUntil ?? 0)) continue;
-      const w = this.weapons.find((x) => x.kind === o.weaponKind);
+      let w = lastWeapon;
+      if (!w || w.kind !== o.weaponKind) w = lastWeapon = this.weapons.find((x) => x.kind === o.weaponKind);
       if (!w || w.jammed) continue;
       const base = this.weaponDamageScale(w, weaponAtLevel(w.kind, w.level).damage);
       let damage = base;
@@ -2844,7 +2892,7 @@ export class Game {
         }
       }
     }
-    this.pickups = this.pickups.filter((x) => !x.dead);
+    compactDead(this.pickups);
   }
 
   private gainXp(amount: number) {
@@ -2858,23 +2906,23 @@ export class Game {
       pt.y += pt.vy * dt;
       pt.vy += 40 * dt;
     }
-    this.particles = this.particles.filter((p) => p.life > 0);
+    compactLife(this.particles);
     for (const f of this.floaters) {
       f.life -= dt;
       f.y += f.vy * dt;
     }
-    this.floaters = this.floaters.filter((f) => f.life > 0);
+    compactLife(this.floaters);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 1.5);
     for (const a of this.arcs) a.life -= dt;
-    this.arcs = this.arcs.filter((a) => a.life > 0);
+    compactLife(this.arcs);
     for (const c of this.corpses) c.life -= dt;
-    this.corpses = this.corpses.filter((c) => c.life > 0);
+    compactLife(this.corpses);
     this.updateShockwaves(dt);
   }
 
   private updateShockwaves(dt: number) {
     for (const s of this.shockwaves) s.life -= dt;
-    this.shockwaves = this.shockwaves.filter((s) => s.life > 0);
+    compactLife(this.shockwaves);
   }
 
   burstParticles(x: number, y: number, color: string, n: number) {
@@ -2960,6 +3008,18 @@ export class Game {
       neverSell: this.elapsed < p.neverSellUntil,
     });
   }
+}
+
+function mixHash(hash: number, value: number): number {
+  return Math.imul(hash ^ Math.round(value * 1000), 16777619) >>> 0;
+}
+
+let perkIdCache: PerkId[] = [];
+
+function sortedPerkIds(perks: Record<PerkId, number>): PerkId[] {
+  const keys = Object.keys(perks);
+  if (keys.length !== perkIdCache.length) perkIdCache = (keys as PerkId[]).sort();
+  return perkIdCache;
 }
 
 function xpForLevel(level: number): number {

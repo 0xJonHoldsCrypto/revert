@@ -59,10 +59,12 @@ export class SpatialHash {
     const r = Math.ceil(radius / this.cellSize);
     const cx0 = Math.floor(x / this.cellSize);
     const cy0 = Math.floor(y / this.cellSize);
+    const buckets = this.buckets;
     for (let dx = -r; dx <= r; dx++) {
+      const col = (cx0 + dx + KEY_BIAS) * KEY_STRIDE + cy0 + KEY_BIAS;
       for (let dy = -r; dy <= r; dy++) {
-        const bucket = this.buckets.get(this.key(cx0 + dx, cy0 + dy));
-        if (!bucket) continue;
+        const bucket = buckets.get(col + dy);
+        if (bucket === undefined) continue;
         for (let i = 0; i < bucket.length; i++) out.push(bucket[i]!);
       }
     }

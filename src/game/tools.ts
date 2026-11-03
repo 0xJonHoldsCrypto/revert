@@ -3,6 +3,7 @@ import { weaponAtLevel } from "../data/weapons";
 import { COLORS } from "../constants";
 import type { Enemy, WeaponDef, WeaponInstance, WeaponKind } from "../types";
 import { angleBetween, dist, randRange } from "../utils/math";
+import { compact } from "./compact";
 import { ARC_LIFE_SEC, type Game } from "./Game";
 import { isHiddenFromWeapons } from "./threats";
 
@@ -296,7 +297,7 @@ export function fireTool(g: Game, w: WeaponInstance, def: WeaponDef, cooldown: n
 export function updateToolState(g: Game, dt: number) {
   const p = g.player;
   g.stillTime = Math.hypot(p.vx, p.vy) < 10 ? g.stillTime + dt : 0;
-  g.lures = g.lures.filter((l) => l.until > g.elapsed);
+  if (g.lures.length > 0) compact(g.lures, (l) => l.until > g.elapsed);
 
   for (const loan of g.loans) {
     if (dist(p.x, p.y, loan.x, loan.y) < LOAN_TOUCH_RADIUS) {
@@ -316,10 +317,11 @@ export function updateToolState(g: Game, dt: number) {
       }
     }
   }
-  g.loans = g.loans.filter((l) => l.until > 0);
+  if (g.loans.length > 0) compact(g.loans, (l) => l.until > 0);
 
   const sealTool = g.weapons.find((w) => w.kind === "validator-seal");
-  g.seals = sealTool ? g.seals.filter((s) => s.until > g.elapsed) : [];
+  if (!sealTool) g.seals.length = 0;
+  else if (g.seals.length > 0) compact(g.seals, (s) => s.until > g.elapsed);
   if (sealTool && g.seals.length > 1) {
     g.sealTick -= dt;
     if (g.sealTick <= 0) {

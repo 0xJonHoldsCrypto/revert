@@ -1,6 +1,7 @@
 import { ENEMIES } from "../data/enemies";
 import type { Enemy, EnemyKind, Hazard } from "../types";
 import { angleBetween, dist, randRange } from "../utils/math";
+import { compactDead } from "./compact";
 import type { Game } from "./Game";
 
 export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
@@ -526,5 +527,5 @@ export function updateHazards(game: Game, dt: number) {
     if (h.active > 0.02 && hazardHitsPlayer(h, p.x, p.y)) game.hurtPlayer(h.damage, h.source);
     if (h.t >= h.windup + Math.max(h.active, 0.08)) h.dead = true;
   }
-  game.hazards = game.hazards.filter((h) => !h.dead);
+  compactDead(game.hazards);
 }
