@@ -1,6 +1,6 @@
 import type { WeaponRarity } from "./rarity";
 import { RARITY_ORDER } from "./rarity";
-import { pick, simRandom } from "../utils/math";
+import { lootRandom } from "../utils/math";
 
 export type GearSlot = "hardware" | "wearable" | "bag";
 
@@ -69,13 +69,14 @@ export function gearName(item: GearItem): string {
 }
 
 export function rollGear(minRarity: WeaponRarity, owned: GearItem[] = []): GearId {
-  if (owned.length && simRandom() < OWNED_REOFFER_CHANCE) return pick(owned).id;
+  if (owned.length && lootRandom() < OWNED_REOFFER_CHANCE) return owned[Math.floor(lootRandom() * owned.length)]!.id;
   const floor = RARITY_ORDER.indexOf(minRarity);
   const pool = ALL_GEAR.filter((id) => {
     const rank = RARITY_ORDER.indexOf(gearDef(id).rarity);
     return rank >= floor && rank <= floor + 1;
   });
-  return pick(pool.length ? pool : ALL_GEAR);
+  const options = pool.length ? pool : ALL_GEAR;
+  return options[Math.floor(lootRandom() * options.length)]!;
 }
 
 const PERCENT: [keyof GearStats, string][] = [

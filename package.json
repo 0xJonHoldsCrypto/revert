@@ -11,8 +11,7 @@
     "lint:fix": "eslint src --fix",
     "formal": "sh scripts/formal.sh",
     "test": "vitest run",
-    "balance": "node scripts/balance.mjs",
-    "server:replay": "node server/replay.mjs"
+    "balance": "node scripts/balance.mjs"
   },
   "dependencies": {
     "three": "^0.169.0"

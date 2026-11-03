@@ -31,9 +31,36 @@ export function wrapAngle(a: number): number {
 }
 
 let simState = 1;
+let spawnState = 1;
+let lootState = 1;
+
+function deriveSeed(seed: number, salt: number): number {
+  const mixed = Math.imul((seed ^ salt) >>> 0, 2654435761);
+  return (mixed ^ (mixed >>> 15)) >>> 0;
+}
+
+function nextState(state: number): number {
+  return (Math.imul(state, 1664525) + 1013904223) >>> 0;
+}
 
 export function seedSim(seed: number) {
   simState = seed >>> 0;
+  spawnState = deriveSeed(seed, 0x5bd1e995);
+  lootState = deriveSeed(seed, 0x27d4eb2f);
+}
+
+export function spawnRandom(): number {
+  spawnState = nextState(spawnState);
+  return spawnState / 2 ** 32;
+}
+
+export function lootRandom(): number {
+  lootState = nextState(lootState);
+  return lootState / 2 ** 32;
+}
+
+export function cosmeticRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
 }
 
 export function simRandom(): number {

@@ -49,13 +49,9 @@ PUBLIC_URL=https://revert.run npm run build
 
 Production builds on Vercel use `vercel.json`, which sets this URL. Submit https://revert.run to X for player card approval.
 
-## Replay + wallet scores
+## Replayable runs
 
-```bash
-npm run server:replay
-```
-
-Win screen → **Submit score (wallet)** signs a summary and POSTs replay frames. Server validates timing/input bounds (full deterministic re-sim is the next iteration).
+Every run records its seed, hero, difficulty, inputs and choices in a versioned log with state checkpoints (`src/replay/runLog.ts`). `replayRun` in `src/replay/replayRun.ts` plays a log back headless and rejects it if the state ever differs. Score submission and the server that runs this check are not built yet. Bump `SIM_VERSION` whenever a change alters simulation results.
 
 ## Lint
 

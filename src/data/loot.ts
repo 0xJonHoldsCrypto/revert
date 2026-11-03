@@ -1,4 +1,4 @@
-import { randRange } from "../utils/math";
+import { lootRandom } from "../utils/math";
 import { RARITY_ORDER } from "./gear";
 import type { BiomeId } from "./environment";
 import type { ChestKind } from "../types";
@@ -7,7 +7,7 @@ import type { WellStatId } from "./wells";
 import { WELL_STAT_ORDER } from "./wells";
 
 export function rollGold(minRarity: WeaponRarity): number {
-  return Math.round(randRange(10, 22) * (1 + RARITY_ORDER.indexOf(minRarity) * 0.7));
+  return Math.round((10 + lootRandom() * 12) * (1 + RARITY_ORDER.indexOf(minRarity) * 0.7));
 }
 
 export function rollWellStat(seed: number): WellStatId {

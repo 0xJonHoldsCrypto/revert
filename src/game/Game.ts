@@ -27,7 +27,7 @@ import { ABILITY_ORDER } from "../data/abilities";
 import type { WeaponRarity } from "../data/rarity";
 import { CHESTS } from "../data/environment";
 import { HashItem, SpatialHash } from "../physics/SpatialHash";
-import { RunRecorder } from "../replay/RunRecorder";
+import { CHECKPOINT_TICKS, decodeMove, encodeMove, roundAspect, RunRecorder, type RunLog } from "../replay/runLog";
 import { DIFFICULTY, type DifficultyId } from "../data/difficulty";
 import { BIOME_HORDE_BIAS, BIOME_LABEL, AREA_RULES } from "../data/biomeSpawns";
 import { biomeAt, setBiomeSeed } from "../data/environment";
@@ -69,11 +69,13 @@ import {
   clamp,
   dist,
   normalize,
-  pick,
   randRange,
   rectsOverlap,
   seedSim,
+  cosmeticRange,
+  lootRandom,
   simRandom,
+  spawnRandom,
 } from "../utils/math";
 
 export const FUNDS_TOTAL = 3_840_000_000;
@@ -266,7 +268,6 @@ export class Game {
 
   readonly cutscene = new CutsceneEngine();
 
-  camera = { x: 0, y: 0 };
   spawnTimer = 0;
   spawnRate = 0.85;
   elapsed = 0;
@@ -275,7 +276,14 @@ export class Game {
   private upgradeCounts = new Map<string, number>();
   shake = 0;
 
-  readonly recorder = new RunRecorder();
+  private recorder = new RunRecorder(0, "keel", "normal");
+  private moveCode = 0;
+  private spawnAspect = 16 / 9;
+  runTick = 0;
+  aspectSource: () => number = () => {
+    const vp = readViewport(this.canvas);
+    return vp.width / Math.max(1, vp.height);
+  };
   readonly audio = new AudioEngine();
   private spatial = new SpatialHash();
   private enemyById = new Map<number, Enemy>();
@@ -387,9 +395,15 @@ export class Game {
   }
 
   startRun() {
+    this.startReplayableRun((Math.random() * 2 ** 31) | 0, this.selectedCharacter, this.runDifficulty);
+  }
+
+  startReplayableRun(seed: number, hero: CharacterId, difficulty: DifficultyId) {
+    this.selectedCharacter = hero;
+    this.runDifficulty = difficulty;
     this.attract = false;
     this.audio.silenced = false;
-    this.resetRun();
+    this.resetRun(seed);
     this.stream.update(this.player.x, this.player.y);
     this.tutorialStep = this.tutorialDone ? TUTORIAL.length : 0;
     this.beginLanding();
@@ -451,7 +465,11 @@ export class Game {
     this.impactFrames = 0;
   }
 
-  private resetRun() {
+  private resetRun(seed = (Math.random() * 2 ** 31) | 0) {
+    nextId = 1;
+    this.runTick = 0;
+    this.moveCode = 0;
+    this.spawnAspect = roundAspect(this.aspectSource());
     const ch = getCharacter(this.selectedCharacter);
     this.player = {
       id: uid(),
@@ -496,7 +514,7 @@ export class Game {
     this.floaters = [];
     this.weapons = [{ kind: ch.startWeapon, level: 1, timer: 0, rarity: WEAPONS[ch.startWeapon].rarity }];
     this.stats = { kills: 0, damageDealt: 0, timeSurvived: 0, bossesDefeated: 0 };
-    this.worldSeed = (Math.random() * 2 ** 31) | 0;
+    this.worldSeed = seed;
     seedSim(this.worldSeed);
     setBiomeSeed(this.worldSeed);
     this.stream = new WorldStream(this.worldSeed);
@@ -529,7 +547,8 @@ export class Game {
     this.spawnRate = 0.85;
     this.bossesSpawned = 0;
     this.upgradeCounts.clear();
-    this.recorder.reset();
+    this.recorder = new RunRecorder(seed, ch.id, this.runDifficulty);
+    this.recorder.aspect(0, this.spawnAspect);
     this.shockwaves = [];
     this.corpses = [];
     this.hazards = [];
@@ -599,6 +618,7 @@ export class Game {
   pickUpgrade(index: number) {
     const up = this.levelUpChoices[index];
     if (!up || this.phase !== "levelup") return;
+    this.recorder.choice(this.runTick, "pick", index);
     if (this.choiceMode === "popup") {
       up.apply(this.makeUpgradeContext());
       this.choiceMode = "levelup";
@@ -682,7 +702,7 @@ export class Game {
     const chosen: UpgradeDef[] = [];
     while (chosen.length < 3 && pool.length) {
       const total = pool.reduce((sum, u) => sum + RARITY_WEIGHT[u.rarity ?? "common"], 0);
-      let roll = simRandom() * total;
+      let roll = lootRandom() * total;
       let index = 0;
       for (; index < pool.length - 1; index++) {
         roll -= RARITY_WEIGHT[pool[index]!.rarity ?? "common"];
@@ -692,7 +712,7 @@ export class Game {
     }
     if (!chosen.some((u) => u.id.startsWith("upgrade-"))) {
       const patches = pool.filter((u) => u.id.startsWith("upgrade-"));
-      if (patches.length && chosen.length) chosen[chosen.length - 1] = pick(patches);
+      if (patches.length && chosen.length) chosen[chosen.length - 1] = patches[Math.floor(lootRandom() * patches.length)]!;
     }
     this.scoreCards(chosen);
     this.levelUpChoices = chosen;
@@ -700,6 +720,7 @@ export class Game {
 
   rerollCards() {
     if (this.phase !== "levelup" || this.rerolls <= 0 || this.choiceMode !== "levelup") return;
+    this.recorder.choice(this.runTick, "reroll", 0);
     this.rerolls--;
     this.rollChoices();
     this.audio.play("ui");
@@ -710,6 +731,7 @@ export class Game {
     if (this.phase !== "levelup" || this.choiceMode !== "levelup" || this.banishes <= 0) return;
     const card = this.levelUpChoices[index];
     if (!card) return;
+    this.recorder.choice(this.runTick, "banish", index);
     this.banishes--;
     this.banished.add(card.id);
     this.rollChoices();
@@ -719,6 +741,7 @@ export class Game {
 
   skipCards() {
     if (this.phase !== "levelup" || this.choiceMode !== "levelup") return;
+    this.recorder.choice(this.runTick, "skip", 0);
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + 15);
     this.audio.play("ui");
     this.setPhase("playing");
@@ -782,6 +805,9 @@ export class Game {
     if (this.dying <= 0 && this.input.consumePause()) this.togglePause();
     if (this.phase === "paused") return;
 
+    this.runTick++;
+    this.syncAspect();
+    if (this.runTick % CHECKPOINT_TICKS === 0) this.recorder.checkpoint(this.stateHash());
     if (this.hitstop > 0) {
       this.hitstop -= dt;
       if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 1.5);
@@ -798,6 +824,8 @@ export class Game {
     }
 
     this.snapshotPositions();
+    this.moveCode = encodeMove(this.input.moveVector());
+    this.recorder.move(this.moveCode);
     this.elapsed += dt;
     this.stats.timeSurvived = this.elapsed;
 
@@ -829,7 +857,10 @@ export class Game {
     if (this.stream.update(this.player.x, this.player.y)) this.seenStreamVersion();
     if (this.dying <= 0) {
       this.updatePlayer(dt);
-      if (this.input.consumeAbility()) this.useAbility();
+      if (this.input.consumeAbility()) {
+        this.recorder.ability(this.runTick);
+        this.useAbility();
+      }
     }
     this.events.update(dt);
     this.updateStrikes();
@@ -849,10 +880,7 @@ export class Game {
     this.updateParticles(dt);
     this.updateYield(dt);
     this.syncMusic();
-    const mv = this.input.moveVector();
-    this.recorder.sample(this.elapsed, mv.x, mv.y, false);
     this.checkBossSchedule();
-    this.updateCamera();
     if (++this.hudTick % HUD_TICKS === 0) this.pushHud();
 
     if (this.god) this.player.hp = this.player.maxHp;
@@ -995,7 +1023,7 @@ export class Game {
       speed: def.speed * (1 + this.elapsed * 0.0005) * dm.enemySpeedMult,
       contactCd: 0,
       flash: 0,
-      wobble: randRange(0, Math.PI * 2),
+      wobble: cosmeticRange(0, Math.PI * 2),
     };
     this.enemies.push(enemy);
     if (!this.seenKinds.has(kind) && THREAT_INTEL[kind]) {
@@ -1214,6 +1242,9 @@ export class Game {
 
   private endCinematic() {
     if (this.cinematic?.kind === "boss") this.shake = Math.max(this.shake, 0.1);
+    const landed = this.enemies.find((e) => e.id === this.cinematic?.bossId);
+    if (landed) landed.lift = 0;
+    this.hitstop = 0;
     this.cinematic = null;
     this.cameraFocus = null;
     if (this.player) this.player.lift = 0;
@@ -1347,7 +1378,7 @@ export class Game {
         if (hotfix) fireHotfix(this, hotfix, 1.5);
       }
     } else {
-      const mv = this.input.moveVector();
+      const mv = decodeMove(this.moveCode);
       const swap = this.swapTimer > 0 ? -1 : 1;
       const n = normalize(mv.x * swap, mv.y * swap);
       const spd = this.currentSpeed() * AREA_RULES[biomeAt(p.x, p.y)].speed;
@@ -1357,7 +1388,10 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      if (this.input.consumeDash()) this.dashBuffer = DASH_BUFFER_SEC;
+      if (this.input.consumeDash()) {
+        this.recorder.dash(this.runTick);
+        this.dashBuffer = DASH_BUFFER_SEC;
+      }
       else if (this.dashBuffer > 0) this.dashBuffer -= dt;
       if (this.dashBuffer > 0 && p.dashCooldown <= 0 && this.elapsed >= p.neverSellUntil) {
         this.dashBuffer = 0;
@@ -1641,7 +1675,8 @@ export class Game {
     const gearId = rollGear(minRarity, owned);
     const item: GearItem = { id: gearId, tier: 0 };
     const current = this.player.gear[gearDef(gearId).slot];
-    const ability = pick(ABILITY_ORDER.filter((id) => id !== this.player.ability));
+    const abilities = ABILITY_ORDER.filter((id) => id !== this.player.ability);
+    const ability = abilities[Math.floor(lootRandom() * abilities.length)]!;
     const tokens = rollGold(minRarity);
     const evolve = this.weapons.find((w) => w.level >= WEAPONS[w.kind].maxLevel && !w.evolved && this.ownsUpgrade(EVOLUTIONS[w.kind].needs));
     const middle: UpgradeDef = evolve
@@ -2055,22 +2090,20 @@ export class Game {
 
   private spawnHordeEnemy() {
     const p = this.player;
-    const vp = readViewport(this.canvas);
-    const { halfW, halfH } = groundHalfExtents(vp.width / vp.height);
-    const angle = randRange(0, Math.PI * 2);
+    const { halfW, halfH } = groundHalfExtents(this.spawnAspect);
+    const angle = spawnRandom() * Math.PI * 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const edge = Math.min(halfW * 1.25 / Math.max(Math.abs(cos), 1e-3), halfH / Math.max(Math.abs(sin), 1e-3));
-    const distSpawn = edge + randRange(70, 170);
+    const distSpawn = edge + 70 + spawnRandom() * 100;
     const kind = this.pickHordeKind();
     const e = this.spawnEnemyAt(kind, p.x + cos * distSpawn, p.y + sin * distSpawn);
-    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && simRandom() < ELITE_CHANCE && this.enemies.filter((m) => m.elite).length < MAX_WHALES) this.makeWhale(e);
+    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE && this.enemies.filter((m) => m.elite).length < MAX_WHALES) this.makeWhale(e);
   }
 
   private ringPoint(extra = 0): { x: number; y: number } {
-    const vp = readViewport(this.canvas);
-    const { halfW, halfH } = groundHalfExtents(vp.width / vp.height);
-    const a = randRange(0, Math.PI * 2);
+    const { halfW, halfH } = groundHalfExtents(this.spawnAspect);
+    const a = spawnRandom() * Math.PI * 2;
     const edge = Math.min(halfW * 1.25 / Math.max(Math.abs(Math.cos(a)), 1e-3), halfH / Math.max(Math.abs(Math.sin(a)), 1e-3)) + 90 + extra;
     return { x: this.player.x + Math.cos(a) * edge, y: this.player.y + Math.sin(a) * edge };
   }
@@ -2125,7 +2158,7 @@ export class Game {
       weight: w.weight * (bias[w.kind] ?? 1),
     }));
     const total = weighted.reduce((s, w) => s + w.weight, 0);
-    let r = simRandom() * total;
+    let r = spawnRandom() * total;
     for (const w of weighted) {
       r -= w.weight;
       if (r <= 0) return w.kind;
@@ -2166,17 +2199,51 @@ export class Game {
     });
   }
 
+  taintRun() {
+    this.recorder.taint();
+  }
+
+  runLog(): RunLog {
+    return this.recorder.finish(this.runTick, this.stateHash());
+  }
+
+  stateHash(): number {
+    const p = this.player;
+    let hash = 2166136261;
+    const mix = (value: number) => {
+      hash = Math.imul(hash ^ Math.round(value * 1000), 16777619) >>> 0;
+    };
+    [this.runTick, p.x, p.y, p.hp, p.level, p.xp, p.coins, this.stats.kills, this.enemies.length, this.pickups.length, this.projectiles.length].forEach(mix);
+    for (const e of this.enemies) {
+      mix(e.id);
+      mix(e.x);
+      mix(e.y);
+      mix(e.hp);
+    }
+    return hash;
+  }
+
+  private syncAspect() {
+    const aspect = roundAspect(this.aspectSource());
+    if (aspect === this.spawnAspect) return;
+    this.spawnAspect = aspect;
+    this.recorder.aspect(this.runTick, aspect);
+  }
+
   debugSetTime(seconds: number) {
+    this.taintRun();
     this.elapsed = seconds;
     this.bossesSpawned = 0;
     while (bossTimeAt(this.bossesSpawned) < seconds) this.bossesSpawned++;
   }
 
   debugSpawnBoss(kind: EnemyKind) {
+    this.taintRun();
     this.beginBossEntrance(kind);
   }
 
   debugPlayCutscene(id: CutsceneId) {
+    this.taintRun();
     const back = this.phase;
     this.setPhase("cutscene");
     this.cutscene.play(id, () => this.setPhase(back === "playing" ? "playing" : "menu"));
@@ -2552,7 +2619,7 @@ export class Game {
     }
     if (this.floaters.length >= 60) return;
     this.floaters.push({
-      x: e.x + randRange(-8, 8),
+      x: e.x + cosmeticRange(-8, 8),
       y: e.y - e.radius * 1.5,
       vy: -46,
       life: 0.6,
@@ -2751,17 +2818,17 @@ export class Game {
   burstParticles(x: number, y: number, color: string, n: number) {
     const room = Math.min(n, MAX_PARTICLES - this.particles.length);
     for (let i = 0; i < room; i++) {
-      const a = randRange(0, Math.PI * 2);
-      const s = randRange(40, 160);
+      const a = cosmeticRange(0, Math.PI * 2);
+      const s = cosmeticRange(40, 160);
       this.particles.push({
         x,
         y,
         vx: Math.cos(a) * s,
         vy: Math.sin(a) * s,
-        life: randRange(0.25, 0.6),
+        life: cosmeticRange(0.25, 0.6),
         maxLife: 0.6,
         color,
-        size: randRange(2, 5),
+        size: cosmeticRange(2, 5),
       });
     }
   }
@@ -2780,17 +2847,6 @@ export class Game {
         size: 4,
       });
     }
-  }
-
-  private updateCamera() {
-    const p = this.player;
-    const vp = readViewport(this.canvas);
-    const w = vp.width;
-    const h = vp.height;
-    const shakeX = this.shake > 0 ? (Math.random() - 0.5) * 16 * this.shake : 0;
-    const shakeY = this.shake > 0 ? (Math.random() - 0.5) * 16 * this.shake : 0;
-    this.camera.x = p.x - w / 2 + shakeX;
-    this.camera.y = p.y - h / 2 + shakeY;
   }
 
   private pushHud() {

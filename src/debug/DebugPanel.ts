@@ -41,6 +41,7 @@ export function mountDebugPanel(game: Game, renderStats: () => RenderStats | nul
   panel.appendChild(
     row("cheat", [
       button("god", () => {
+        game.taintRun();
         game.god = !game.god;
       }),
       button("+xp", () => {
