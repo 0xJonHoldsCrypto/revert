@@ -102,7 +102,7 @@ export class CutscenePlayer {
   private currentScoreId = "";
   impact = 0;
   private time = 0;
-  private reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  reducedMotion = false;
 
   constructor() {
     this.scene.background = new THREE.Color(0x03040a);

@@ -289,3 +289,50 @@ describe("soak", () => {
     expect(game.player.activeBuffs.length).toBeLessThanOrEqual(Object.keys(TIMED_BUFFS).length);
   });
 });
+
+describe("cosmetics and tutorial", () => {
+  it("keeps the sim hash identical whatever the cosmetic settings are", () => {
+    const run = (shake: number, calm: boolean) => {
+      const game = headlessGame(() => ({ x: 1, y: 0 }));
+      game.cosmetics.shake = shake;
+      game.cosmetics.calm = calm;
+      game.onHaptic = () => undefined;
+      game.startReplayableRun(1234, "keel", "normal");
+      game.cinematic = null;
+      game.player.lift = 0;
+      game.setPhase("playing");
+      stepSeconds(game, 20);
+      return game.stateHash();
+    };
+    expect(run(1, false)).toBe(run(0, true));
+  });
+
+  it("scales trauma by the shake setting", () => {
+    const game = headlessGame();
+    startRun(game);
+    game.cosmetics.shake = 0.5;
+    game.shake = 0;
+    game.addTrauma(0.8);
+    expect(game.shake).toBeCloseTo(0.4);
+    game.cosmetics.shake = 0;
+    game.shake = 0;
+    game.addTrauma(1);
+    expect(game.shake).toBe(0);
+  });
+
+  it("holds later hints until the earlier action is done, and can be skipped", () => {
+    const game = headlessGame();
+    game.setTutorialDone(false);
+    startRun(game);
+    const seen = new Set<string>();
+    for (let i = 0; i < 480; i++) {
+      game.update(1 / 60);
+      if (game.banner) seen.add(game.banner.text);
+    }
+    expect([...seen].some((t) => t.includes("WASD") || t.includes("drag"))).toBe(true);
+    expect([...seen].some((t) => t.includes("dash"))).toBe(false);
+    game.skipTutorial(false);
+    expect(game.banner).toBeNull();
+    expect(game.tutorialActive).toBe(false);
+  });
+});

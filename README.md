@@ -22,6 +22,13 @@ npm run dev
 | R / X | Reroll / skip cards |
 | M | Mute |
 | Esc / P | Pause |
+| T | Skip tutorial hints |
+
+## Settings and saves
+
+The gear button (next to mute, and in the pause menu) opens a lazy-loaded settings panel: music/effects volume, screenshake, reduced motion (defaults to your OS setting), colorblind mode, vibration, HUD size, large text and tutorial hints. All of it is cosmetic and never read by the simulation, so replays are unaffected.
+
+Everything persists in one versioned `localStorage` entry (`revert.save`, see `src/save.ts`), which also holds your last 20 runs and your best score per hero and difficulty (shown on the title screen). Older `revert.prefs.v1` and `revert.audio.v1` values are migrated on first load.
 
 ## Checks
 

@@ -1,3 +1,44 @@
+import { Matrix3 } from "three";
+import type { ColorblindMode } from "../save";
+
+type Rows = [number, number, number, number, number, number, number, number, number];
+
+const SIMULATE: Record<Exclude<ColorblindMode, "off">, Rows> = {
+  prot: [0.567, 0.433, 0, 0.558, 0.442, 0, 0, 0.242, 0.758],
+  deut: [0.625, 0.375, 0, 0.7, 0.3, 0, 0, 0.3, 0.7],
+  trit: [0.95, 0.05, 0, 0, 0.433, 0.567, 0, 0.475, 0.525],
+};
+
+const SHIFT: Record<Exclude<ColorblindMode, "off">, Rows> = {
+  prot: [0, 0, 0, 0.7, 1, 0, 0.7, 0, 1],
+  deut: [0, 0, 0, 0.7, 1, 0, 0.7, 0, 1],
+  trit: [1, 0.7, 0, 0, 1, 0, 0, 0.7, 1],
+};
+
+function multiply(a: Rows, b: Rows): Rows {
+  const out = new Array<number>(9).fill(0);
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      for (let k = 0; k < 3; k++) out[r * 3 + c]! += a[r * 3 + k]! * b[k * 3 + c]!;
+    }
+  }
+  return out as Rows;
+}
+
+export function colorblindRows(mode: ColorblindMode): Rows {
+  const identity: Rows = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  if (mode === "off") return identity;
+  const sim = SIMULATE[mode];
+  const lost = identity.map((v, i) => v - sim[i]!) as Rows;
+  const shifted = multiply(SHIFT[mode], lost);
+  return identity.map((v, i) => v + shifted[i]!) as Rows;
+}
+
+export function setColorblind(matrix: Matrix3, mode: ColorblindMode) {
+  const r = colorblindRows(mode);
+  matrix.set(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]);
+}
+
 export const GradeShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -7,6 +48,8 @@ export const GradeShader = {
     uImpact: { value: 0 },
     uHurt: { value: 0 },
     toneMappingExposure: { value: 1 },
+    uCbOn: { value: 0 },
+    uCb: { value: new Matrix3() },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -21,6 +64,8 @@ export const GradeShader = {
     uniform float uTilt;
     uniform float uImpact;
     uniform float uHurt;
+    uniform float uCbOn;
+    uniform mat3 uCb;
     varying vec2 vUv;
 
     #include <tonemapping_pars_fragment>
@@ -69,6 +114,7 @@ export const GradeShader = {
         float ink = step(0.32, dot(color, vec3(0.299, 0.587, 0.114)));
         color = mix(vec3(0.05, 0.04, 0.08), vec3(1.0, 0.97, 0.92), ink);
       }
+      if (uCbOn > 0.5) color = clamp(uCb * color, 0.0, 1.0);
       gl_FragColor = vec4(color, 1.0);
     }`,
 };

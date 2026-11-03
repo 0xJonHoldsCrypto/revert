@@ -37,6 +37,9 @@ import { SIDEKICKS } from "../data/sidekicks";
 import { TIMED_BUFFS, TIMED_BUFF_ORDER, type TimedBuffKind } from "../data/timedBuffs";
 import { WELL_STATS, type WellStatId } from "../data/wells";
 import { readViewport } from "../render/viewport";
+import * as save from "../save";
+import type { ColorblindMode } from "../save";
+import type { HapticKind } from "../haptics";
 import { gasCloud, isHiddenFromWeapons, THREAT_INTEL, updateEnemyBehavior, updateHazards } from "./threats";
 import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE, type Cinematic } from "./cinematic";
 import { groundHalfExtents } from "../render/view";
@@ -128,7 +131,6 @@ const CHEST_COST_GROWTH = 0.6;
 const MAX_LEVEL_GAP_SEC = 15;
 const XP_STEEP_FROM_LEVEL = 18;
 const RUG_HOLD_SEC = 8;
-const BEST_KEY = "best";
 const MAX_DRAINERS = 5;
 const MAX_BOT_FARMS = 2;
 const MAX_SHOOTERS = 14;
@@ -146,39 +148,17 @@ const KNOCKBACK_DECAY = 9;
 const MAX_PARTICLES = 420;
 const CUTSCENE_SKIP_HOLD_SEC = 1;
 
-const PREF_KEY = "revert.prefs.v1";
 const COARSE_POINTER = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
-const TUTORIAL: [number, string][] = [
-  [0.5, COARSE_POINTER ? "gm. can you even move? drag anywhere, responder." : "gm. can you even move? WASD, responder."],
-  [6, COARSE_POINTER ? "cute. tap DASH. you'll need it." : "cute. SPACE dashes. you'll need it."],
-  [13, "your tools fire on their own. grab the blue shards."],
-  [24, "see the meter? that's $3.84B leaving. thx for the liquidity."],
-  [36, "chests cost $SAFU. stand in the ring. i'd never trick you."],
+type TutorialAction = "moved" | "dashed" | "picked" | "chest";
+const TUTORIAL_PATIENCE_SEC = 25;
+const SKIP_HINT = COARSE_POINTER ? "" : " (T skips hints)";
+const TUTORIAL: { after: number; text: string; needs: TutorialAction | null }[] = [
+  { after: 0.5, needs: "moved", text: COARSE_POINTER ? "gm. can you even move? drag anywhere, responder." : "gm. can you even move? WASD, responder." },
+  { after: 4, needs: "dashed", text: COARSE_POINTER ? "cute. tap DASH. you'll need it." : "cute. SPACE dashes. you'll need it." },
+  { after: 10, needs: "picked", text: "your tools fire on their own. grab the blue shards to level up and pick a card." },
+  { after: 24, needs: null, text: "see the meter? that's $3.84B leaving. thx for the liquidity." },
+  { after: 30, needs: "chest", text: "chests cost $SAFU. stand in the ring until it fills. i'd never trick you." },
 ];
-
-function loadPrefs(): Record<string, string> {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}");
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, string> = Object.create(null) as Record<string, string>;
-    for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") out[k] = v;
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-function loadPref(key: string): string | undefined {
-  return loadPrefs()[key];
-}
-
-function savePref(key: string, value: string) {
-  try {
-    localStorage.setItem(PREF_KEY, JSON.stringify({ ...loadPrefs(), [key]: value }));
-  } catch {
-    return;
-  }
-}
 
 let nextId = 1;
 function uid(): number {
@@ -316,10 +296,17 @@ export class Game {
   rootCause: EnemyKind | "hazard" | "insolvent" | null = null;
   weaponDamage = new Map<string, number>();
   private tutorialStep = 0;
-  private tutorialDone = loadPref("tutorial") === "done";
+  private tutorialDone = save.get().tutorial.done;
+  private tutorialAwait: TutorialAction | null = null;
+  private tutorialShownAt = 0;
+  private tutorialDid: Record<TutorialAction, boolean> = { moved: false, dashed: false, picked: false, chest: false };
+  private hintBanner = false;
+  private runRecorded = false;
+  cosmetics: { shake: number; calm: boolean; colorblind: ColorblindMode } = { shake: 1, calm: false, colorblind: "off" };
+  onHaptic: ((kind: HapticKind) => void) | null = null;
   private nextGasAt = 150;
   private seenKinds = new Set<EnemyKind>();
-  private bannerQueue: { title: string; text: string; tone: string }[] = [];
+  private bannerQueue: { title: string; text: string; tone: string; hint?: boolean }[] = [];
   private lastFeedAt = -1;
   private leverage = 0;
   private flashUntil = 0;
@@ -358,9 +345,8 @@ export class Game {
   ) {
     this.cutscene.setAudio(this.audio);
     this.audio.setMusic("title");
-    const hero = loadPref("hero");
+    const { hero, difficulty } = save.get();
     if (CHARACTERS.some((c) => c.id === hero)) this.selectedCharacter = hero as CharacterId;
-    const difficulty = loadPref("difficulty");
     if (difficulty && Object.prototype.hasOwnProperty.call(DIFFICULTY, difficulty)) this.runDifficulty = difficulty as DifficultyId;
   }
 
@@ -391,12 +377,16 @@ export class Game {
   chooseHero(id: CharacterId) {
     this.selectCharacter(id);
     if (this.attract && this.player) this.player.characterId = id;
-    savePref("hero", id);
+    save.patch((d) => {
+      d.hero = id;
+    });
   }
 
   chooseDifficulty(id: DifficultyId) {
     this.runDifficulty = id;
-    savePref("difficulty", id);
+    save.patch((d) => {
+      d.difficulty = id;
+    });
   }
 
   requestStartRun(fromTitle = false) {
@@ -423,8 +413,76 @@ export class Game {
     this.audio.silenced = false;
     this.resetRun(seed);
     this.stream.update(this.player.x, this.player.y);
-    this.tutorialStep = this.tutorialDone ? TUTORIAL.length : 0;
+    this.resetTutorial();
     this.beginLanding();
+  }
+
+  private resetTutorial() {
+    this.tutorialStep = this.tutorialDone ? TUTORIAL.length : 0;
+    this.tutorialAwait = null;
+    this.tutorialShownAt = 0;
+    this.tutorialDid = { moved: false, dashed: false, picked: false, chest: false };
+    this.hintBanner = false;
+    this.runRecorded = false;
+  }
+
+  get tutorialActive(): boolean {
+    return this.tutorialStep < TUTORIAL.length;
+  }
+
+  setTutorialDone(done: boolean) {
+    this.tutorialDone = done;
+    save.patch((d) => {
+      d.tutorial.done = done;
+      d.tutorial.levelHint = done || d.tutorial.levelHint;
+    });
+    if (done) this.skipTutorial(false);
+  }
+
+  skipTutorial(persist = true) {
+    if (!this.tutorialActive && !this.hintBanner) return;
+    this.tutorialStep = TUTORIAL.length;
+    this.tutorialDone = true;
+    this.bannerQueue = this.bannerQueue.filter((b) => !b.hint);
+    if (this.hintBanner) {
+      this.banner = null;
+      this.hintBanner = false;
+    }
+    if (persist) {
+      save.patch((d) => {
+        d.tutorial.done = true;
+        d.tutorial.levelHint = true;
+      });
+    }
+  }
+
+  private updateTutorial() {
+    const p = this.player;
+    if (!this.tutorialDid.moved && (p.vx !== 0 || p.vy !== 0)) this.tutorialDid.moved = true;
+    while (this.tutorialStep < TUTORIAL.length) {
+      const step = TUTORIAL[this.tutorialStep]!;
+      if (step.needs && this.tutorialDid[step.needs]) {
+        this.tutorialStep++;
+        continue;
+      }
+      if (this.elapsed < step.after) break;
+      const waiting = this.tutorialAwait !== null && !this.tutorialDid[this.tutorialAwait];
+      if (waiting && this.elapsed - this.tutorialShownAt < TUTORIAL_PATIENCE_SEC) break;
+      this.bannerQueue.unshift({ title: "INBOUND TX · 0xdead…c0de", text: step.text + SKIP_HINT, tone: "#ff5c48", hint: true });
+      this.tutorialAwait = step.needs;
+      this.tutorialShownAt = this.elapsed;
+      this.tutorialStep++;
+      break;
+    }
+    if (this.tutorialStep >= TUTORIAL.length && !this.tutorialDone) {
+      const waiting = this.tutorialAwait !== null && !this.tutorialDid[this.tutorialAwait];
+      if (!waiting || this.elapsed - this.tutorialShownAt >= TUTORIAL_PATIENCE_SEC) {
+        this.tutorialDone = true;
+        save.patch((d) => {
+          d.tutorial.done = true;
+        });
+      }
+    }
   }
 
   beginAttract() {
@@ -645,6 +703,7 @@ export class Game {
     const up = this.levelUpChoices[index];
     if (!up || this.phase !== "levelup") return;
     this.recorder.choice(this.runTick, "pick", index);
+    this.tutorialDid.picked = true;
     if (this.choiceMode === "popup") {
       up.apply(this.makeUpgradeContext());
       this.choiceMode = "levelup";
@@ -783,6 +842,7 @@ export class Game {
     }
     this.setPhase("levelup");
     this.audio.play("levelUp");
+    this.onHaptic?.("levelUp");
     this.cb.onLevelUpChoices(this.levelUpChoices);
   }
 
@@ -1096,6 +1156,7 @@ export class Game {
     this.hurtPulse = 1;
     this.hitstop = Math.max(this.hitstop, 0.04);
     this.audio.play("hurt");
+    this.onHaptic?.("hurt");
     this.burstParticles(p.x, p.y, COLORS.danger, 10);
     if (this.leverage > 0 && p.hp / p.maxHp < 0.25) {
       this.leverage--;
@@ -1191,18 +1252,15 @@ export class Game {
       this.performReorg();
     }
 
-    if (this.tutorialStep < TUTORIAL.length && this.elapsed >= TUTORIAL[this.tutorialStep]![0]) {
-      this.bannerQueue.unshift({ title: "INBOUND TX · 0xdead…c0de", text: TUTORIAL[this.tutorialStep]![1], tone: "#ff5c48" });
-      this.tutorialStep++;
-      if (this.tutorialStep === TUTORIAL.length) {
-        this.tutorialDone = true;
-        savePref("tutorial", "done");
-      }
+    this.updateTutorial();
+    if (this.banner && this.elapsed >= this.banner.until) {
+      this.banner = null;
+      this.hintBanner = false;
     }
-    if (this.banner && this.elapsed >= this.banner.until) this.banner = null;
     if (!this.banner && this.bannerQueue.length) {
       const next = this.bannerQueue.shift()!;
-      this.banner = { ...next, until: this.elapsed + 3.4 };
+      this.hintBanner = !!next.hint;
+      this.banner = { title: next.title, text: next.text, tone: next.tone, until: this.elapsed + 3.4 };
       this.audio.play("ui");
     }
   }
@@ -1236,20 +1294,35 @@ export class Game {
       bosses: this.stats.bossesDefeated,
       time: this.stats.timeSurvived,
       score: this.score(),
-      best: this.recordBest(),
+      best: this.recordRun(damage),
       timeline: this.timeline.slice(-8),
       damage: damage.slice(0, 6),
     };
   }
 
-  private recordBest(): number {
-    const best = Math.max(Number(loadPref(BEST_KEY) ?? 0), this.score());
-    savePref(BEST_KEY, String(best));
-    return best;
+  private recordRun(damage: { name: string }[]): number {
+    const score = this.score();
+    const stored = save.get();
+    if (this.runRecorded || this.recorder.tainted || this.attract) return Math.max(stored.best, score);
+    this.runRecorded = true;
+    const cause = this.rootCause === "insolvent" ? "Protocol insolvent" : this.rootCause === "hazard" ? "Environment hazard" : this.rootCause ? ENEMIES[this.rootCause].name : "None";
+    return save.recordRun(
+      {
+        date: Date.now(),
+        time: this.stats.timeSurvived,
+        score,
+        hero: this.player.characterId,
+        difficulty: this.runDifficulty,
+        tools: damage.slice(0, 3).map((d) => d.name),
+        rootCause: cause,
+      },
+      this.stats.kills,
+      this.stats.bossesDefeated
+    ).best;
   }
 
   addTrauma(amount: number) {
-    this.shake = Math.min(1, Math.max(this.shake, amount));
+    this.shake = Math.min(1, Math.max(this.shake, amount * this.cosmetics.shake));
   }
 
   private syncMusic() {
@@ -1277,12 +1350,13 @@ export class Game {
     boss.lift = 420;
     this.cinematic = { kind: "boss", t: 0, flash: 0, step: 0, bossId: boss.id, bossKind: kind };
     this.cameraFocus = { x: boss.x, y: boss.y, weight: 0 };
+    this.onHaptic?.("boss");
     this.setPhase("cinematic");
     this.audio.setMusic(null, true);
   }
 
   private endCinematic() {
-    if (this.cinematic?.kind === "boss") this.shake = Math.max(this.shake, 0.1);
+    if (this.cinematic?.kind === "boss") this.shake = Math.max(this.shake, 0.1 * this.cosmetics.shake);
     const landed = this.enemies.find((e) => e.id === this.cinematic?.bossId);
     if (landed) landed.lift = 0;
     this.hitstop = 0;
@@ -1437,6 +1511,8 @@ export class Game {
       if (this.dashBuffer > 0 && p.dashCooldown <= 0 && this.elapsed >= p.neverSellUntil) {
         this.dashBuffer = 0;
         this.audio.play("dash");
+        this.tutorialDid.dashed = true;
+        this.onHaptic?.("dash");
         const dashDir =
           n.x !== 0 || n.y !== 0
             ? n
@@ -2098,6 +2174,7 @@ export class Game {
       c.openProgress += dt;
       if (c.openProgress < def.openTime) continue;
       c.opened = true;
+      this.tutorialDid.chest = true;
       p.coins -= cost;
       this.audio.play("jackpot");
       this.addTrauma(0.4);

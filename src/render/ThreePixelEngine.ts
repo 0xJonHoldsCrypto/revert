@@ -16,7 +16,8 @@ import { isHiddenFromWeapons } from "../game/threats";
 import type { CharacterId, EnemyKind, InteractableKind } from "../types";
 import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
-import { GradeShader } from "./gradeShader";
+import { GradeShader, setColorblind } from "./gradeShader";
+import type { ColorblindMode } from "../save";
 import { canPromoteToHigh, DynamicResolution, pickQualityTier, QUALITY, TierPromoter } from "./quality";
 import { SpriteAtlas, type AtlasFrame } from "./SpriteAtlas";
 import { cameraBasis, cameraDistance, groundHalfExtents, VIEW } from "./view";
@@ -502,6 +503,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   }
 
   function renderWorld(game: Game, dt: number, alpha: number) {
+    const cueShapes = game.cosmetics.colorblind !== "off";
     const p = game.player;
     const px = lerpPos(p.px, p.x, alpha);
     const py = lerpPos(p.py, p.y, alpha);
@@ -597,7 +599,10 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         fx.push(x, y, hover + 6, 13, 13, 0, flicker ? PHISH_TELL : XP_COLOR, 0.45);
         continue;
       }
-      if (p.characterId === "nyx" && isHiddenFromWeapons(e)) decals.push(x, y, 26, 26, DECAL_RING, 1, PHISH_TELL, 0.9);
+      if (p.characterId === "nyx" && isHiddenFromWeapons(e)) {
+        decals.push(x, y, 26, 26, DECAL_RING, 1, PHISH_TELL, 0.9);
+        if (cueShapes) decals.push(x, y, 17, 17, DECAL_RING, 1, WHITE, 0.9);
+      }
       if (e.kind === "honeypot-mimic" && !e.revealed) {
         const coin = frameOf("pickup", "coin");
         decals.push(x, y, 7, 4, DECAL_BLOB, 0, BLACK, 0.45);
@@ -636,6 +641,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         const r = h.r ?? 40;
         decals.push(h.x, h.y, r, r, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(1.4), 0.25 + f * 0.25);
         decals.push(h.x, h.y, r * f, r * f, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(2.2), 0.7);
+        if (cueShapes) decals.push(h.x, h.y, r, r, DECAL_RING, 1, WHITE, live ? 1 : 0.6);
       } else if (h.shape === "rect") {
         const w = h.w ?? 100;
         const hh = h.h ?? 100;
@@ -796,6 +802,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     decals.commit();
   }
 
+  let appliedColorblind: ColorblindMode = "off";
+
   return {
     render(game: Game, dt: number, alpha: number) {
       elapsed += dt;
@@ -807,12 +815,19 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         promoter.retire();
       }
       resizeIfNeeded(vp.width, vp.height);
+      const calm = game.cosmetics.calm;
+      cutscenePlayer.reducedMotion = calm;
+      if (game.cosmetics.colorblind !== appliedColorblind) {
+        appliedColorblind = game.cosmetics.colorblind;
+        setColorblind(grade.uniforms.uCb!.value as THREE.Matrix3, appliedColorblind);
+        grade.uniforms.uCbOn!.value = appliedColorblind === "off" ? 0 : 1;
+      }
       const inPanels = game.phase === "cutscene" && game.cutscene.score;
       if (inPanels) {
         cutscenePlayer.update(game.cutscene.score!, game.cutscene.step, aspect);
         renderPass.scene = cutscenePlayer.scene;
         renderPass.camera = cutscenePlayer.camera;
-        grade.uniforms.uImpact!.value = cutscenePlayer.impact;
+        grade.uniforms.uImpact!.value = calm ? 0 : cutscenePlayer.impact;
         grade.uniforms.uHurt!.value = 0;
         grade.uniforms.uTilt!.value = 0;
       } else {
@@ -822,8 +837,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         cutscenePlayer.reset();
         if (game.phase !== "paused" && game.phase !== "levelup") renderWorld(game, dt, alpha);
         else renderWorld(game, 0, 1);
-        grade.uniforms.uImpact!.value = game.impactFrames > 0 ? 1 : 0;
-        grade.uniforms.uHurt!.value = game.hurtPulse;
+        grade.uniforms.uImpact!.value = !calm && game.impactFrames > 0 ? 1 : 0;
+        grade.uniforms.uHurt!.value = calm ? game.hurtPulse * 0.25 : game.hurtPulse;
         grade.uniforms.uTilt!.value = tier.tiltShift ? 1 : 0;
       }
       grade.uniforms.uTime!.value = elapsed;

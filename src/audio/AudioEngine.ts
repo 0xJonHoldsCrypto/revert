@@ -1,3 +1,4 @@
+import * as save from "../save";
 import { noteFrequency, parsePattern, TRACKS, type MusicTrackId } from "./music";
 
 export type SfxId =
@@ -21,7 +22,6 @@ const LOOKAHEAD_SEC = 0.3;
 const SCHEDULE_MS = 30;
 const CROSSFADE_BARS = 2;
 const MASTER_GAIN = 0.9;
-const STORAGE_KEY = "revert.audio.v1";
 
 type ActiveTrack = {
   id: MusicTrackId;
@@ -60,14 +60,10 @@ export class AudioEngine {
   sfxVolume = 1;
 
   constructor() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as { muted?: boolean; music?: number; sfx?: number };
-      this.muted = !!saved.muted;
-      if (typeof saved.music === "number") this.musicVolume = saved.music;
-      if (typeof saved.sfx === "number") this.sfxVolume = saved.sfx;
-    } catch {
-      this.muted = false;
-    }
+    const { muted, music, sfx } = save.get().settings;
+    this.muted = muted;
+    this.musicVolume = music;
+    this.sfxVolume = sfx;
   }
 
   unlock() {
@@ -102,11 +98,29 @@ export class AudioEngine {
   }
 
   private persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ muted: this.muted, music: this.musicVolume, sfx: this.sfxVolume }));
-    } catch {
-      this.muted = !!this.muted;
+    save.patch((d) => {
+      d.settings.muted = this.muted;
+      d.settings.music = this.musicVolume;
+      d.settings.sfx = this.sfxVolume;
+    });
+  }
+
+  setMusicVolume(value: number) {
+    this.musicVolume = Math.min(1, Math.max(0, value));
+    if (this.ctx && this.musicBus) {
+      const share = this.frozen ? FROZEN_MUSIC_SHARE : 1;
+      this.musicBus.gain.setTargetAtTime(this.musicVolume * MUSIC_TRIM * share, this.ctx.currentTime, 0.03);
     }
+    this.persist();
+  }
+
+  setSfxVolume(value: number) {
+    this.sfxVolume = Math.min(1, Math.max(0, value));
+    if (this.ctx && this.sfxBus && this.uiBus) {
+      this.sfxBus.gain.setTargetAtTime(this.frozen ? 0 : this.sfxVolume, this.ctx.currentTime, 0.03);
+      this.uiBus.gain.setTargetAtTime(this.sfxVolume, this.ctx.currentTime, 0.03);
+    }
+    this.persist();
   }
 
   private applyVolumes() {

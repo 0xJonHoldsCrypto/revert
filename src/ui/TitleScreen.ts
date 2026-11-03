@@ -3,6 +3,8 @@ import { DIFFICULTY_LABEL, DIFFICULTY_ORDER, type DifficultyId } from "../data/d
 import { WEAPONS } from "../data/weapons";
 import type { Game } from "../game/Game";
 import { heroPortrait, paintLogo } from "../pixel/handArt";
+import * as save from "../save";
+import { formatTime } from "../utils/math";
 
 const DIFF_BLURB: Record<DifficultyId, string> = {
   easy: "Testnet. Forgiving hits.",
@@ -10,6 +12,22 @@ const DIFF_BLURB: Record<DifficultyId, string> = {
   hard: "Insolvency ends the run.",
   nightmare: "Bear market. No mercy.",
 };
+
+function heroName(id: string): string {
+  return CHARACTERS.find((c) => c.id === id)?.name ?? id;
+}
+
+function difficultyName(id: string): string {
+  return DIFFICULTY_LABEL[id as DifficultyId] ?? id;
+}
+
+function runLine(run: save.RunSummary): HTMLElement {
+  const row = document.createElement("li");
+  const when = run.date ? new Date(run.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  const tools = run.tools.length ? ` · ${run.tools.join(", ")}` : "";
+  row.textContent = `${when} · ${heroName(run.hero)} · ${difficultyName(run.difficulty)} · ${run.score.toLocaleString("en-US")} · ${formatTime(run.time)} · ${run.rootCause}${tools}`;
+  return row;
+}
 
 function stat(label: string, value: number): string {
   return `<div class="t-stat"><span>${label}</span><i><b style="width:${Math.round(value * 100)}%"></b></i></div>`;
@@ -63,6 +81,31 @@ export class TitleScreen {
     });
     const blurb = this.el.querySelector(".t-diff-blurb");
     if (blurb) blurb.textContent = DIFF_BLURB[this.game.runDifficulty];
+    this.syncBest();
+  }
+
+  private syncBest() {
+    const best = this.el?.querySelector(".t-best");
+    if (!best) return;
+    const hero = this.game.selectedCharacter;
+    const difficulty = this.game.runDifficulty;
+    const entry = save.get().bests[save.bestKey(hero, difficulty)];
+    const text = entry
+      ? `BEST ${heroName(hero)} · ${difficultyName(difficulty)}: ${entry.score.toLocaleString("en-US")} · ${formatTime(entry.time)}`
+      : `No runs yet as ${heroName(hero)} on ${difficultyName(difficulty)}.`;
+    if (best.textContent !== text) best.textContent = text;
+  }
+
+  private mountHistory(el: HTMLElement) {
+    const history = save.get().history;
+    const box = el.querySelector<HTMLElement>(".t-history")!;
+    if (!history.length) {
+      box.hidden = true;
+      return;
+    }
+    box.querySelector("summary")!.textContent = `LAST RUNS (${Math.min(history.length, 5)})`;
+    const list = box.querySelector("ol")!;
+    for (const run of history.slice(0, 5)) list.appendChild(runLine(run));
   }
 
   mount(parent: HTMLElement) {
@@ -82,6 +125,7 @@ export class TitleScreen {
         <div class="t-side">
           <div class="t-diff">${DIFFICULTY_ORDER.map((d) => `<button type="button" data-id="${d}">${DIFFICULTY_LABEL[d]}</button>`).join("")}</div>
           <p class="t-diff-blurb"></p>
+          <div class="t-record"><p class="t-best"></p><details class="t-history"><summary></summary><ol></ol></details></div>
           <button type="button" class="t-start"><span>SIGN &amp; REVERT</span><kbd>ENTER</kbd></button>
           <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>ESC</kbd> pause</p>
         </div>
@@ -118,6 +162,7 @@ export class TitleScreen {
       b.addEventListener("click", () => this.pickDifficulty(b.dataset.id as DifficultyId));
     });
     el.querySelector(".t-start")!.addEventListener("click", () => this.game.requestStartRun(true));
+    this.mountHistory(el);
     parent.appendChild(el);
     this.el = el;
     this.sync();

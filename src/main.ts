@@ -12,6 +12,9 @@ import { OverlayUI } from "./ui/OverlayUI";
 import { bootProgress, failBoot, finishBoot } from "./ui/bootScreen";
 import { drawCinematic } from "./ui/cinematicOverlay";
 import { bindMute } from "./ui/muteButton";
+import { mountGearButton } from "./ui/gearButton";
+import { haptic } from "./haptics";
+import * as save from "./save";
 import { mountTouchControls, syncTouchVisible } from "./ui/touchControls";
 import { CAMEOS } from "./data/cameos";
 import { groundHalfExtents } from "./render/view";
@@ -52,6 +55,7 @@ const uiBridge: { overlay: OverlayUI | null } = { overlay: null };
 
 const game = new Game(canvas, input, {
   onPhaseChange: (phase) => {
+    document.body.dataset.phase = phase;
     uiBridge.overlay?.onPhaseChange(phase);
     syncTouchVisible(phase);
   },
@@ -63,6 +67,22 @@ const overlay = new OverlayUI(game);
 uiBridge.overlay = overlay;
 overlay.init();
 bindMute(game.audio);
+mountGearButton(game);
+game.onHaptic = haptic;
+
+function applySettings(settings: save.Settings) {
+  const calm = save.prefersReducedMotion(settings);
+  game.cosmetics.calm = calm;
+  game.cosmetics.shake = calm ? 0 : settings.shake;
+  game.cosmetics.colorblind = settings.colorblind;
+  const root = document.documentElement;
+  root.style.setProperty("--hud-scale", String(settings.hudScale));
+  root.classList.toggle("large-text", settings.largeText);
+  root.classList.toggle("calm", calm);
+}
+
+applySettings(save.get().settings);
+save.subscribe((data) => applySettings(data.settings));
 mountTouchControls(input);
 
 const SIM_STEP = 1 / 60;
@@ -455,5 +475,9 @@ document.addEventListener("visibilitychange", () => {
 if (import.meta.env.DEV && new URLSearchParams(location.search).has("debug")) {
   void import("./debug/DebugPanel").then(({ mountDebugPanel }) => mountDebugPanel(game, () => pixelEngine?.stats() ?? null));
 }
+
+window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "t" && !e.repeat && !e.ctrlKey && !e.metaKey && game.phase === "playing") game.skipTutorial();
+});
 
 canvas.addEventListener("click", () => input.focus());

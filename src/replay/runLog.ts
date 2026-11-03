@@ -82,6 +82,10 @@ export class RunRecorder {
     this.log.checkpoints.push(hash);
   }
 
+  get tainted(): boolean {
+    return this.log.tainted;
+  }
+
   taint() {
     this.log.tainted = true;
   }

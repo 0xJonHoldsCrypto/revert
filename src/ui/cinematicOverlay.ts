@@ -34,7 +34,7 @@ function drawLanding(ctx: CanvasRenderingContext2D, game: Game, t: number, flash
     }
     ctx.globalAlpha = 1;
   }
-  if (flash > 0) {
+  if (flash > 0 && !game.cosmetics.calm) {
     ctx.fillStyle = `rgba(255,255,255,${flash})`;
     ctx.fillRect(0, 0, w, h);
   }

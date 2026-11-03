@@ -5,6 +5,8 @@ import type { GamePhase } from "../types";
 import { formatTime } from "../utils/math";
 import type { Game, HudData } from "../game/Game";
 import { syncTouchAbility } from "./touchControls";
+import { openSettings } from "./gearButton";
+import * as save from "../save";
 
 function formatFunds(value: number): string {
   return value >= 1e9 ? `$${(value / 1e9).toFixed(2)}B` : `$${(value / 1e6).toFixed(1)}M`;
@@ -17,6 +19,7 @@ export class OverlayUI {
   private hudDyn: HTMLElement | null = null;
   private hudNodes: ChildNode[] = [];
   private hudHtml: string[] = [];
+  private levelHintOpen = false;
 
   constructor(private game: Game) {
     this.overlay = document.getElementById("overlay")!;
@@ -33,6 +36,7 @@ export class OverlayUI {
   }
 
   onPhaseChange(phase: GamePhase) {
+    if (phase !== "levelup") this.levelHintOpen = false;
     this.overlay.classList.toggle("interactive", phase === "levelup" || phase === "lost" || phase === "paused" || phase === "menu");
     this.title.unmount();
     if (phase === "menu" || phase === "cutscene" || phase === "cinematic") {
@@ -75,6 +79,7 @@ export class OverlayUI {
         <p>The attacker is not paused. Kidding. Take your time.</p>
         <button type="button" class="btn btn-primary" data-a="resume">RESUME <kbd>ESC</kbd></button>
         <button type="button" class="btn btn-secondary" data-a="mute"></button>
+        <button type="button" class="btn btn-secondary" data-a="settings">SETTINGS</button>
         <button type="button" class="btn btn-secondary" data-a="restart">RESTART RUN</button>
         <button type="button" class="btn btn-secondary" data-a="quit">QUIT TO TITLE</button>
         <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
@@ -91,6 +96,7 @@ export class OverlayUI {
         if (action === "resume") this.game.togglePause();
         if (action === "restart") this.game.requestStartRun();
         if (action === "quit") this.game.setPhase("menu");
+        if (action === "settings") openSettings(this.game);
         if (action === "mute") {
           this.game.audio.toggleMute();
           label();
@@ -107,9 +113,17 @@ export class OverlayUI {
     const panel = document.createElement("div");
     panel.className = "overlay-panel levelup";
     const gear = this.game.choiceMode === "popup";
+    const showHint = !gear && (this.levelHintOpen || !save.get().tutorial.levelHint);
+    if (showHint) {
+      this.levelHintOpen = true;
+      save.patch((d) => {
+        d.tutorial.levelHint = true;
+      });
+    }
     panel.innerHTML = `
       <div class="lv-wrap">
         <h1>${gear ? this.game.popupTitle : "NEW BLOCK. SIGN ONE."}</h1>
+        ${showHint ? `<p class="lv-hint"><b>First pick.</b> Rarity sets power: Common, Uncommon, Rare, Epic, Legendary (colour and label). <b>RECOMMENDED</b> marks the best fit for your current build. Hit the <b>✕</b> on a card to banish it for this run.</p>` : ""}
         <div class="upgrade-grid" id="upgrade-grid"></div>
         ${gear ? "" : `<div class="lv-actions">
           <span class="lv-banish">BANISH ${this.game.banishes}</span>
