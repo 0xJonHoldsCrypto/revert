@@ -67,6 +67,24 @@ After a death the post-mortem offers a 1200x630 share card drawn in code (`src/u
 
 The Codex has an INTEL tab for affixes and events, and two achievements cover them (Mempool Weather, Stacked Odds).
 
+## Heroes, biomes and hazards
+
+**Heroes** (`src/data/characters.ts`, art in `src/pixel/handArt.ts`). Six responders. Ledger (Forensic Auditor, unlocks with Bear Market or 120 shards) starts with Finality Beam and carries an audit shield worth 25% of max HP: it soaks hits before HP, recharges 4s after the last hit, and every soaked point hits attackers within 140 for three times that amount (a gold ring around Ledger shows the charge). Relay (Node Operator, unlocks with Mining Farm or 120 shards) starts with Keeper Bot and a Dev Laptop rig, runs three rigs instead of two, and its rigs work 35% faster and cost 30% less to upgrade. Both join the daily rotation. The Codex CREW tab lists every hero, passive and unlock.
+
+**Biomes** (`src/data/environment.ts`). Five biomes on a seeded Voronoi map; spawn is always the Mempool. Cold Storage (frost floor, cold racks, ice shards, seed plates, Frozen Vault and HSM Tower landmarks, its own music theme) is slightly slower going, biased to Sybils, Liquidators, Depegged Stables, Pump Bots, Griefers and Censors, and pays more coin and XP.
+
+**Signature hazards** (`src/game/biomeHazards.ts`, data in `src/data/biomeHazards.ts`). From 0:50, every 10 to 16 seconds (sim RNG, never while a boss is alive, never past the 48-hazard cap) the biome you stand in fires its hazard. All are telegraphed for at least 1.1s and get extra white shape cues in colorblind mode; reduced motion only stills their animation.
+
+| Biome | Hazard | Tell |
+|-------|--------|------|
+| Mempool | Gas Lane | A long strip fills through you, then surges for 1.4s |
+| Hot Wallet Vault | Alarm Laser | A wall emitter paints a line and shows its sweep, then sweeps for 3s |
+| The Bridge | Collapsing Span | Three deck tiles crack ahead of you and drop one after another |
+| Dark Forest | Front-Run Sniper | A crosshair follows you, then locks 0.6s before it fires |
+| Cold Storage | Frost Vent | Three vents frost over, then vent; standing in one chills (40% slow) and stings |
+
+**Tool balance.** Mempool Pulse hits for 13 (was 20) with a smaller crowd bonus (3% per attacker, capped at ×1.6). Stablecoin Shield coins now catch enemy bullets and fire them back at the nearest attacker for five times the coin's damage plus double the bullet's, resting 1s after a catch (0.5s once evolved).
+
 ## Checks
 
 ```bash
@@ -75,7 +93,7 @@ npm run balance
 npm run formal
 ```
 
-`npm run balance` plays headless bots across heroes and difficulties, then every contract, and prints tool damage shares, network event counts, affixed whales per run and causes of death. Runs use fixed seeds per hero and run index (`SEED` changes the base), so contracts are compared on the same seeds. Set `CAP` (minutes), `RUNS` and `MOD_RUNS` to change its size, `ONLY_MODS=1` to run only the contracts and `SKIP_MODS=1` to skip them.
+`npm run balance` plays headless bots across all six heroes (`HEROES=keel,ledger` to narrow) and difficulties (the good bot also dodges lanes, beams and trackers), then every contract, and prints tool damage shares, network event counts, affixed whales per run and causes of death. Runs use fixed seeds per hero and run index (`SEED` changes the base), so contracts are compared on the same seeds. Set `CAP` (minutes), `RUNS` and `MOD_RUNS` to change its size, `ONLY_MODS=1` to run only the contracts and `SKIP_MODS=1` to skip them.
 
 ## Goal
 

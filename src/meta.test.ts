@@ -8,6 +8,7 @@ import { DIFFICULTY } from "./data/difficulty";
 import { defaultSetup, isRanked, runEffects, type RunSetup } from "./game/runSetup";
 import { headlessGame, startRun, stepSeconds } from "./test/harness";
 import * as save from "./save";
+import type { CharacterId } from "./types";
 
 function withStorage<T>(fn: (data: Record<string, string>) => T): T {
   const data: Record<string, string> = {};
@@ -21,7 +22,7 @@ function withStorage<T>(fn: (data: Record<string, string>) => T): T {
   }
 }
 
-function gameWith(setup: Partial<RunSetup>, hero: "keel" | "nyx" | "diff" | "trace" = "keel") {
+function gameWith(setup: Partial<RunSetup>, hero: CharacterId = "keel") {
   const game = headlessGame();
   game.runPlan = { setup: { ...defaultSetup(), ...setup }, hero, difficulty: "normal", seed: 99 };
   startRun(game);
@@ -32,7 +33,7 @@ describe("daily seed", () => {
   it("is stable for a date and differs between dates", () => {
     expect(dailySeed("2026-11-03")).toBe(2038056105);
     expect(dailySeed("2026-11-04")).toBe(304481934);
-    expect(dailyPlan("2026-11-03")).toMatchObject({ seed: 2038056105, hero: "trace", difficulty: "normal", setup: { mods: ["inflation"], perks: {}, mode: "daily", date: "2026-11-03" } });
+    expect(dailyPlan("2026-11-03")).toMatchObject({ seed: 2038056105, hero: "nyx", difficulty: "normal", setup: { mods: ["inflation"], perks: {}, mode: "daily", date: "2026-11-03" } });
     expect(dailyPlan("2026-11-03")).toEqual(dailyPlan("2026-11-03"));
     const seeds = new Set(Array.from({ length: 60 }, (_, i) => dailySeed(utcDate(Date.UTC(2026, 0, 1) + i * 86_400_000))));
     expect(seeds.size).toBe(60);

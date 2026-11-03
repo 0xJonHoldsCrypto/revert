@@ -3,7 +3,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { biomeAt, biomeOfFloorCell, CHESTS, ENV_OBSTACLES, FLOOR_CELL, type BiomeId } from "../data/environment";
+import { biomeAt, biomeOfFloorCell, BIOMES, CHESTS, ENV_OBSTACLES, FLOOR_CELL, type BiomeId } from "../data/environment";
 import { ENEMIES } from "../data/enemies";
 import { CutscenePlayer } from "../cutscene/CutscenePlayer";
 import type { Game } from "../game/Game";
@@ -53,7 +53,7 @@ const ORBITER_COLOR: Partial<Record<WeaponKind, string>> = {
   "validator-seal": "#9b8cff",
 };
 
-const FLOOR_BIOMES: BiomeId[] = ["mempool", "vault", "bridge", "forest"];
+const FLOOR_BIOMES: BiomeId[] = BIOMES;
 const FLOOR_RADIUS_CELLS = 2;
 const FLOOR_CELL_COUNT = (FLOOR_RADIUS_CELLS * 2 + 1) ** 2;
 const MOTE_COUNT = 34;
@@ -70,7 +70,7 @@ const ITEM_RING: Record<InteractableKind, string> = {
   airdrop: "#f4f3ee",
   cameo: "#ffffff",
 };
-const BIOME_MOTE: Record<BiomeId, string> = { mempool: "#2ee6c7", vault: "#ffc23d", bridge: "#7ee0ff", forest: "#b58cff" };
+const BIOME_MOTE: Record<BiomeId, string> = { mempool: "#2ee6c7", vault: "#ffc23d", bridge: "#7ee0ff", forest: "#b58cff", cold: "#dff6ff" };
 const DEFAULT_LOOK = { width: 10, length: 20, glow: 2.6, trail: 2 };
 const LANDMARK_HEIGHT = new Map(LANDMARKS.map((m) => [m.key, m.height]));
 
@@ -510,6 +510,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
 
   function renderWorld(game: Game, dt: number, alpha: number) {
     const cueShapes = game.cosmetics.colorblind !== "off";
+    const calmView = game.cosmetics.calm;
     const p = game.player;
     const px = lerpPos(p.px, p.x, alpha);
     const py = lerpPos(p.py, p.y, alpha);
@@ -660,11 +661,47 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         decals.push(h.x, h.y, r, r, DECAL_RING, live ? 1 : f, scratchColor.copy(color).multiplyScalar(live ? 2.6 : 1.4), live ? 1 : 0.6);
         decals.push(h.x, h.y, r + 10, r + 10, DECAL_RING, 1, color, live ? 0.7 : 0.25);
         if (cueShapes) decals.push(h.x, h.y, r - 10, r - 10, DECAL_RING, 1, WHITE, live ? 0.9 : 0.4);
+      } else if (h.shape === "circle" && h.source === "sniper-glint") {
+        const r = h.r ?? 40;
+        const tracking = h.track !== undefined && h.t < h.track;
+        decals.push(h.x, h.y, r, r, DECAL_RING, tracking ? 1 : f, scratchColor.copy(color).multiplyScalar(tracking ? 1.4 : 2.6), tracking ? 0.6 : 0.95);
+        decals.push(h.x, h.y, r * 1.35, 2.5, DECAL_RECT, 0, color, tracking ? 0.5 : 0.9);
+        decals.push(h.x, h.y, 2.5, r * 1.35, DECAL_RECT, 0, color, tracking ? 0.5 : 0.9);
+        if (!tracking) decals.push(h.x, h.y, r * f, r * f, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(2.2), 0.6);
+        const glint = calmView ? 1 : 0.7 + Math.abs(Math.sin(anim * 9)) * 0.6;
+        fx.push(h.x, h.y, 30, 16, 16, 0, color, tracking ? glint : 2.4, 0.9);
+        if (cueShapes) decals.push(h.x, h.y, r * 0.45, r * 0.45, DECAL_RING, 1, WHITE, tracking ? 0.5 : 1);
       } else if (h.shape === "circle") {
         const r = h.r ?? 40;
+        if (h.source === "frost-vent" && cueShapes) {
+          decals.push(h.x, h.y, r * 0.5, r * 0.5, DECAL_RING, 1, WHITE, live ? 0.9 : 0.5);
+          decals.push(h.x, h.y, r * 0.8, 2.5, DECAL_RECT, 0, WHITE, live ? 0.8 : 0.4);
+        }
         decals.push(h.x, h.y, r, r, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(1.4), 0.25 + f * 0.25);
         decals.push(h.x, h.y, r * f, r * f, DECAL_DISC, 0, scratchColor.copy(color).multiplyScalar(2.2), 0.7);
         if (cueShapes) decals.push(h.x, h.y, r, r, DECAL_RING, 1, WHITE, live ? 1 : 0.6);
+      } else if (h.shape === "rect" && h.source === "gas-lane") {
+        const w = h.w ?? 100;
+        const hh = h.h ?? 100;
+        const along = w > hh;
+        decals.push(h.x, h.y, w / 2, hh / 2, DECAL_RECT, 0, scratchColor.copy(color).multiplyScalar(live ? 2.6 : 1.2), live ? 0.85 : 0.35 + f * 0.25);
+        decals.push(h.x, h.y, along ? (w / 2) * f : w / 2, along ? hh / 2 : (hh / 2) * f, DECAL_RECT, 0, scratchColor.copy(color).multiplyScalar(1.8), live ? 0.6 : 0.3);
+        if (!live && !calmView) {
+          const flow = (anim * 0.9) % 1;
+          for (let i = 0; i < 6; i++) {
+            const t = ((i / 6 + flow) % 1 - 0.5) * (along ? w : hh);
+            fx.push(h.x + (along ? t : 0), h.y + (along ? 0 : t), 8, 20, 20, 0, color, 1.4, 0.35 + f * 0.4);
+          }
+        }
+        if (cueShapes) decals.push(h.x, h.y, along ? w / 2 : 3, along ? 3 : hh / 2, DECAL_RECT, 0, WHITE, live ? 0.95 : 0.55);
+      } else if (h.shape === "rect" && h.source === "span-collapse") {
+        const half = (h.w ?? 100) / 2;
+        decals.push(h.x, h.y, half, half, DECAL_RECT, 0, scratchColor.copy(color).multiplyScalar(live ? 2.6 : 1.3), live ? 0.9 : 0.4 + f * 0.3);
+        decals.push(h.x, h.y, half * f, half * f, DECAL_RECT, 0, scratchColor.copy(color).multiplyScalar(2.2), 0.55);
+        if (cueShapes) {
+          decals.push(h.x, h.y, half, 3, DECAL_RECT, 0, WHITE, 0.6 + f * 0.3);
+          decals.push(h.x, h.y, 3, half, DECAL_RECT, 0, WHITE, 0.6 + f * 0.3);
+        }
       } else if (h.shape === "rect") {
         const w = h.w ?? 100;
         const hh = h.h ?? 100;
@@ -680,6 +717,17 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         const a = h.angle ?? 0;
         const length = h.length ?? 300;
         const count = Math.ceil(length / 26);
+        if (h.source === "alarm-laser") {
+          decals.push(h.x, h.y, 26, 26, DECAL_RING, f, scratchColor.copy(color).multiplyScalar(2.4), 0.95);
+          if (cueShapes) decals.push(h.x, h.y, 16, 16, DECAL_RING, 1, WHITE, 0.9);
+          if (!live && h.spin) {
+            const ahead = a + h.spin * 0.6;
+            for (let i = 2; i <= count; i += 2) {
+              const along = (i / count) * length;
+              fx.push(h.x + Math.cos(ahead) * along, h.y + Math.sin(ahead) * along, 10, 9, 9, 0, cueShapes ? WHITE : color, 0.8, 0.25 + f * 0.3);
+            }
+          }
+        }
         for (let i = 1; i <= count; i++) {
           const along = (i / count) * length;
           fx.push(h.x + Math.cos(a) * along, h.y + Math.sin(a) * along, 10, live ? 44 : 14, live ? 44 : 14, 0, color, live ? 2.2 : 1.1, live ? 0.9 : 0.35 + f * 0.4);
@@ -720,6 +768,13 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
       decals.push(s.x, s.y, s.r, s.r, DECAL_RING, 1 - Math.min(1, left / 1), cachedColor(s.color), 0.7);
     }
     if (game.elapsed < p.shieldUntil) decals.push(px, py, 42, 42, DECAL_RING, 1, cachedColor("#b58cff"), 0.9);
+    const ledgerMax = game.ledgerShieldMax();
+    if (ledgerMax > 0 && !game.attract) {
+      const held = game.ledgerShield / ledgerMax;
+      decals.push(px, py, 36, 36, DECAL_RING, held, cachedColor("#f0c14d"), held > 0 ? 0.9 : 0.3);
+      if (cueShapes && held > 0) decals.push(px, py, 30, 30, DECAL_RING, held, WHITE, 0.6);
+    }
+    if (game.elapsed < game.chillUntil) fx.push(px, py, 18, 34, 34, 0, cachedColor("#9fe8ff"), 1.2, 0.5);
 
     const moving = Math.hypot(p.vx, p.vy) > 20;
     const step = moving ? Math.floor(anim * 6.5) % 2 : 0;

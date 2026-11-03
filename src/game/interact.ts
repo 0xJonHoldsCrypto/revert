@@ -2,6 +2,7 @@ import { CAMEO_ORDER, CAMEOS, SATOSHI_CHANCE, type CameoId } from "../data/cameo
 import { gearName, rollGear } from "../data/gear";
 import { SIDEKICKS } from "../data/sidekicks";
 import { biomeAt } from "../data/environment";
+import { BIOME_LABEL } from "../data/biomeSpawns";
 import type { EnemyKind, Interactable, InteractableKind } from "../types";
 import { dist, randRange } from "../utils/math";
 import type { Game } from "./Game";
@@ -162,7 +163,7 @@ export class WorldEvents {
         g.impactFrames = 3;
         g.audio.play("glitch");
         g.burstParticles(p.x, p.y, "#b58cff", 24);
-        g.addToast(`Bridged to ${biomeAt(p.x, p.y)}`, "#b58cff");
+        g.addToast(`Bridged to ${BIOME_LABEL[biomeAt(p.x, p.y)].name}`, "#b58cff");
         break;
       }
       case "exploit-charge": {

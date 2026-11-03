@@ -6,7 +6,11 @@ export type WellStatId = import("./data/wells").WellStatId;
 
 export type GamePhase = "menu" | "cutscene" | "cinematic" | "playing" | "levelup" | "paused" | "lost";
 
-export type CharacterId = "keel" | "nyx" | "diff" | "trace";
+export type CharacterId = "keel" | "nyx" | "diff" | "trace" | "ledger" | "relay";
+
+export type BiomeHazardId = "gas-lane" | "alarm-laser" | "span-collapse" | "sniper-glint" | "frost-vent";
+
+export type HazardSource = EnemyKind | BiomeHazardId;
 
 export type EnemyKind =
   | "script-kiddie"
@@ -211,7 +215,7 @@ export interface Hazard {
   active: number;
   damage: number;
   color: string;
-  source: EnemyKind;
+  source: HazardSource;
   knock: number;
   label?: string;
   follow?: number;
@@ -220,6 +224,8 @@ export interface Hazard {
   bars?: { w: number; h: number; vertical: boolean };
   ring?: boolean;
   once?: boolean;
+  track?: number;
+  slow?: number;
 }
 
 export interface Enemy extends Entity {

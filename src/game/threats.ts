@@ -51,7 +51,7 @@ const MAX_MINES = 18;
 
 const DRAIN_PER_SEC = 900_000;
 const DRAIN_CAP = 70_000_000;
-const MAX_HAZARDS = 48;
+export const MAX_HAZARDS = 48;
 const AI_START_DELAY_SEC = 1.2;
 const MAX_FARM_POPULATION = 420;
 const SLASHER_RECOVERY_SEC = 3;
@@ -587,6 +587,10 @@ export function updateHazards(game: Game, dt: number) {
       h.x = owner.x;
       h.y = owner.y;
     }
+    if (h.track !== undefined && h.t < h.track) {
+      h.x = p.x;
+      h.y = p.y;
+    }
     if (h.t < h.windup) continue;
     if (h.spin) h.angle = (h.angle ?? 0) + h.spin * dt;
     if (!h.fired && h.once) h.fired = true;
@@ -610,6 +614,7 @@ export function updateHazards(game: Game, dt: number) {
         if (h.knock) game.knockPlayer(h.x, h.y, h.knock);
         continue;
       }
+      if (h.slow) game.chill(h.slow);
       game.hurtPlayer(h.damage, h.source);
     }
     if (h.t >= h.windup + Math.max(h.active, 0.08)) h.dead = true;

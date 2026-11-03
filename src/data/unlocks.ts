@@ -14,6 +14,8 @@ export type UnlockDef = {
 const TABLE: [UnlockKind, CharacterId | WeaponKind, string, number][] = [
   ["hero", "diff", "survive-5", 60],
   ["hero", "trace", "first-boss", 90],
+  ["hero", "ledger", "hard-5", 120],
+  ["hero", "relay", "double-rig", 120],
   ["tool", "honeypot-trap", "chests-10", 40],
   ["tool", "merkle-proof", "kills-1000", 40],
   ["tool", "oracle-strike", "first-evolve", 50],

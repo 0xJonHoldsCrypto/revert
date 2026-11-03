@@ -51,7 +51,7 @@ function runLine(run: save.RunSummary): HTMLElement {
 }
 
 function stat(label: string, value: number): string {
-  return `<div class="t-stat"><span>${label}</span><i><b style="width:${Math.round(value * 100)}%"></b></i></div>`;
+  return `<div class="t-stat"><span>${label}</span><i><b style="width:${Math.round(Math.max(0, Math.min(1, value)) * 100)}%"></b></i></div>`;
 }
 
 export class TitleScreen {
@@ -75,7 +75,7 @@ export class TitleScreen {
           break;
         }
       }
-    } else if (k >= "1" && k <= "4") {
+    } else if (k >= "1" && k <= String(CHARACTERS.length)) {
       this.pickHero(Number(k) - 1);
     } else if (k === "ArrowUp" || k === "ArrowDown") {
       const i = DIFFICULTY_ORDER.indexOf(this.game.runDifficulty);

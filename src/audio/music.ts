@@ -1,4 +1,4 @@
-export type MusicTrackId = "title" | "intro" | "mempool" | "vault" | "bridge" | "forest" | "boss" | "win" | "gameOver";
+export type MusicTrackId = "title" | "intro" | "mempool" | "vault" | "bridge" | "forest" | "cold" | "boss" | "win" | "gameOver";
 
 export type TrackDef = {
   bpm: number;
@@ -63,6 +63,14 @@ export const TRACKS: Record<MusicTrackId, TrackDef> = {
     arp: `${r("F#3 . C#4 .", 8)} ${r("D3 . A3 .", 4)} ${r("C#3 . G#3 .", 4)}`,
     bass: `${r("F#1 . . . . . . .", 4)} ${r("D1 . . . . . . .", 2)} ${r("C#1 . . . . . . .", 2)}`,
     drums: r(SPARSE, 4),
+    loop: true,
+  },
+  cold: {
+    bpm: 104,
+    lead: `B5 . . . F#5 . . . D5 . . . . . . . ${r(".", 8)} A5 . . . G5 . F#5 . . . . . . . . . E5 . . . F#5 . . . G5 . . . B5 . . . ${r(".", 16)}`,
+    arp: `${r("B3 F#4 B4 D5", 4)} ${r("G3 D4 G4 B4", 4)} ${r("D4 A4 D5 F#5", 4)} ${r("A3 E4 A4 C#5", 4)}`,
+    bass: `${r("B1 . . . . . B1 .", 2)} ${r("G1 . . . . . G1 .", 2)} ${r("D2 . . . . . D2 .", 2)} ${r("A1 . . . . . A1 .", 2)}`,
+    drums: r("k . . . h . . . s . . . h . . h", 4),
     loop: true,
   },
   boss: {

@@ -480,7 +480,53 @@ export const ZONE_PROPS: Record<BiomeId, ZoneProp[]> = {
         }),
     },
   ],
+  cold: [],
 };
+
+ZONE_PROPS.cold.push(
+  {
+    key: "cold-rack",
+    height: 84,
+    art: () =>
+      sprite("cold-rack", 48, 86, (c) => {
+        r(c, "#24323e", 2, 2, 44, 82);
+        r(c, "#dff6ff", 2, 2, 44, 4);
+        for (let i = 0; i < 6; i++) {
+          r(c, "#101820", 6, 10 + i * 12, 36, 8);
+          r(c, "#9fe8ff", 9, 13 + i * 12, 10, 2);
+          r(c, i % 2 ? "#2ee6c7" : "#9fe8ff", 36, 12 + i * 12, 3, 3);
+        }
+        r(c, "#dff6ff", 2, 80, 44, 4);
+      }),
+  },
+  {
+    key: "ice-shard",
+    height: 52,
+    art: () =>
+      sprite("ice-shard", 40, 52, (c) => {
+        r(c, "#7fc8e8", 14, 6, 10, 44);
+        r(c, "#bfefff", 16, 2, 6, 10);
+        r(c, "#dff6ff", 16, 12, 3, 30);
+        r(c, "#5aa8cc", 4, 24, 9, 26);
+        r(c, "#9fe0f6", 6, 20, 5, 8);
+        r(c, "#5aa8cc", 27, 30, 9, 20);
+        r(c, "#9fe0f6", 29, 26, 5, 6);
+      }),
+  },
+  {
+    key: "seed-plate",
+    height: 30,
+    art: () =>
+      sprite("seed-plate", 52, 30, (c) => {
+        r(c, "#8a96a6", 2, 4, 48, 22);
+        r(c, "#c8d2de", 2, 4, 48, 3);
+        for (let row = 0; row < 3; row++) for (let i = 0; i < 6; i++) r(c, "#3a4452", 6 + i * 7, 10 + row * 5, 4, 2);
+      }),
+  },
+  coinPile,
+  neonSign("cold-sign", "COLD", "#9fe8ff"),
+  miningRig,
+);
 
 export type Landmark = { key: string; biome: BiomeId; height: number; art: () => HTMLCanvasElement };
 
@@ -620,6 +666,40 @@ export const LANDMARKS: Landmark[] = [
         r(c, "#1e1633", 12, 2, 10, 218);
         for (let i = 0; i < 22; i++) r(c, i % 4 ? "#5a2f90" : "#d05cff", 28, 10 + i * 9, 8 + (i * 13) % 34, 3);
         r(c, "#ff2a44", 30, 70, 30, 6);
+      }),
+  },
+  {
+    key: "frozen-vault",
+    biome: "cold",
+    height: 320,
+    art: () =>
+      sprite("frozen-vault", 160, 180, (c) => {
+        r(c, "#2a3a48", 4, 20, 152, 160);
+        r(c, "#3e5466", 4, 20, 152, 10);
+        r(c, "#dff6ff", 0, 8, 160, 14);
+        for (let i = 0; i < 9; i++) r(c, "#bfefff", 6 + i * 17, 22, 5, 8 + ((i * 7) % 13));
+        r(c, "#182430", 40, 60, 80, 100);
+        r(c, "#9fe8ff", 74, 96, 12, 12);
+        r(c, "#dff6ff", 40, 60, 80, 4);
+        c.fillStyle = "#9fe8ff";
+        c.font = "700 14px monospace";
+        c.textAlign = "center";
+        c.fillText("AIR-GAP", 80, 52);
+        c.textAlign = "left";
+      }),
+  },
+  {
+    key: "hsm-tower",
+    biome: "cold",
+    height: 380,
+    art: () =>
+      sprite("hsm-tower", 70, 210, (c) => {
+        r(c, "#1c2832", 10, 10, 50, 200);
+        r(c, "#dff6ff", 6, 2, 58, 12);
+        for (let i = 0; i < 16; i++) {
+          r(c, "#0c1218", 16, 22 + i * 11, 38, 7);
+          r(c, i % 4 === 0 ? "#2ee6c7" : "#9fe8ff", 46, 24 + i * 11, 4, 3);
+        }
       }),
   },
 ];

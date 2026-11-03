@@ -8,7 +8,9 @@ import {
   PLAYER_RADIUS,
   SECOND_WALLET_TIME_SEC,
 } from "../constants";
-import { CHARACTERS, getCharacter } from "../data/characters";
+import { CHARACTERS, getCharacter, LEDGER_RECHARGE_DELAY_SEC, LEDGER_RECHARGE_SEC, LEDGER_SHIELD_FRACTION, LEDGER_THORNS_MULT, LEDGER_THORNS_RADIUS, RELAY_MAX_RIGS, RELAY_RIG_COST, RELAY_RIG_OUTPUT, RELAY_START_RIG } from "../data/characters";
+import { BIOME_HAZARDS, isBiomeHazard } from "../data/biomeHazards";
+import { BiomeHazards, CHILL_SEC } from "./biomeHazards";
 import { ENEMIES, HORDE_WEIGHTS } from "../data/enemies";
 import { buildUpgradePool } from "../data/upgrades";
 import { ENV_OBSTACLES } from "../data/environment";
@@ -52,10 +54,12 @@ import { lockedTools } from "../data/unlocks";
 import { shardsForRun } from "../data/metaPerks";
 import type { DailyRecord } from "../daily";
 import type {
+  BiomeHazardId,
   CharacterId,
   Enemy,
   EnemyKind,
   GamePhase,
+  HazardSource,
   Orbiter,
   Floater,
   Corpse,
@@ -116,6 +120,12 @@ const ELITE_MIN_TIME = 55;
 const ELITE_CHANCE = 0.006;
 const MAX_SPEED_MULT = 1.6;
 const MAX_RIGS = 2;
+const PEG_BLOCK_RADIUS = 34;
+const PEG_REST_SEC = 1;
+const PEG_REST_EVOLVED_SEC = 0.5;
+const PEG_REFLECT_RANGE = 520;
+const PEG_REFLECT_SPEED = 620;
+const PEG_REFLECT_MULT = 5;
 const MAX_RIG_TIER = 4;
 const MAX_STASH = 6;
 const MAX_PICKUPS = 320;
@@ -307,7 +317,7 @@ export class Game {
   private bosses: Enemy[] = [];
   private simTick = 0;
   private dashBuffer = 0;
-  private dying = 0;
+  dying = 0;
   cinematic: Cinematic | null = null;
   shockwaves: Shockwave[] = [];
   corpses: Corpse[] = [];
@@ -322,7 +332,13 @@ export class Game {
   banner: { title: string; text: string; until: number; tone: string } | null = null;
   signers = 0;
   timeline: { block: number; text: string }[] = [];
-  rootCause: EnemyKind | "hazard" | "insolvent" | null = null;
+  rootCause: HazardSource | "hazard" | "insolvent" | null = null;
+  biomeHazards = new BiomeHazards(this);
+  chillUntil = 0;
+  chillMult = 1;
+  ledgerShield = 0;
+  ledgerRechargeAt = 0;
+  private seenHazards = new Set<BiomeHazardId>();
   weaponDamage = new Map<string, number>();
   private tutorialStep = 0;
   private tutorialDone = save.get().tutorial.done;
@@ -697,6 +713,13 @@ export class Game {
     this.lures = [];
     this.vault = emptyVault();
     this.miniEvents = new MiniEvents(this);
+    this.biomeHazards = new BiomeHazards(this);
+    this.seenHazards.clear();
+    this.chillUntil = 0;
+    this.chillMult = 1;
+    this.ledgerRechargeAt = 0;
+    this.ledgerShield = ch.id === "ledger" ? startHp * LEDGER_SHIELD_FRACTION : 0;
+    if (ch.id === "relay") this.rigs.push({ kind: RELAY_START_RIG, tier: 0, x: 0, y: 0, angle: 0, attackTimer: 1 });
     this.dustStacks = 0;
     this.dustUntil = 0;
     this.stillTime = 0;
@@ -1052,6 +1075,7 @@ export class Game {
     this.updateSpawner(dt);
     this.rebuildEnemySpatial();
     this.updateEnemies(dt);
+    this.biomeHazards.update();
     updateHazards(this, dt);
     if (this.dying <= 0) this.updateWeapons(dt);
     this.updateProjectiles(dt);
@@ -1249,10 +1273,20 @@ export class Game {
     return enemy;
   }
 
-  hurtPlayer(rawDamage: number, source: EnemyKind) {
+  hurtPlayer(rawDamage: number, source: HazardSource) {
     const p = this.player;
     if (p.invuln > 0 || this.dying > 0 || this.elapsed < p.shieldUntil) return;
-    const dmg = rawDamage * (1 - this.totalArmor()) * this.diffMult().playerDamageTakenMult * AREA_RULES[biomeAt(p.x, p.y)].damageTaken;
+    let dmg = rawDamage * (1 - this.totalArmor()) * this.diffMult().playerDamageTakenMult * AREA_RULES[biomeAt(p.x, p.y)].damageTaken;
+    if (this.ledgerShield > 0) {
+      const blocked = Math.min(this.ledgerShield, dmg);
+      this.ledgerShield -= blocked;
+      dmg -= blocked;
+      this.bookLedger(blocked);
+      if (dmg <= 0) {
+        p.invuln = 0.3;
+        return;
+      }
+    }
     if (p.hp - dmg <= 0 && this.signers >= 2) {
       this.signers--;
       this.signerRegenAt = this.elapsed + 60;
@@ -1328,7 +1362,7 @@ export class Game {
     this.logEvent("Block reorged by The Grandmaster");
   }
 
-  private anyBossAlive(): boolean {
+  anyBossAlive(): boolean {
     for (let i = 0; i < this.bosses.length; i++) if (!this.bosses[i]!.dead) return true;
     return false;
   }
@@ -1398,6 +1432,41 @@ export class Game {
     return m;
   }
 
+  private causeName(): string {
+    const c = this.rootCause;
+    if (c === "insolvent") return "Protocol insolvent";
+    if (c === "hazard") return "Environment hazard";
+    if (!c) return "None";
+    return isBiomeHazard(c) ? BIOME_HAZARDS[c].name : ENEMIES[c].name;
+  }
+
+  ledgerShieldMax(): number {
+    return this.player.characterId === "ledger" ? this.player.maxHp * LEDGER_SHIELD_FRACTION : 0;
+  }
+
+  chill(mult: number) {
+    this.chillMult = this.elapsed < this.chillUntil ? Math.min(this.chillMult, mult) : mult;
+    this.chillUntil = this.elapsed + CHILL_SEC;
+  }
+
+  noteBiomeHazard(id: BiomeHazardId) {
+    this.noteCodex(`hz:${id}`);
+    if (this.seenHazards.has(id)) return;
+    this.seenHazards.add(id);
+    const def = BIOME_HAZARDS[id];
+    this.queueBanner(`HAZARD · ${def.name.toUpperCase()}`, def.text, def.color);
+  }
+
+  private bookLedger(blocked: number) {
+    const p = this.player;
+    this.ledgerRechargeAt = this.elapsed + LEDGER_RECHARGE_DELAY_SEC;
+    const thorns = blocked * LEDGER_THORNS_MULT * this.damageTotal();
+    this.aoeHit(p.x, p.y, LEDGER_THORNS_RADIUS, thorns);
+    this.shockwaves.push({ x: p.x, y: p.y, radius: LEDGER_THORNS_RADIUS, life: 0.3, maxLife: 0.3, color: "#f0c14d" });
+    this.addFloater(p.x, p.y - 60, this.ledgerShield > 0 ? "BOOKED" : "AUDIT SHIELD DOWN", "#f0c14d");
+    this.audio.play("nearMiss");
+  }
+
   postMortem() {
     const p = this.player;
     const saved = this.fundsLeft;
@@ -1406,7 +1475,7 @@ export class Game {
       this.endEmitted = true;
       this.emit("end", { savedPct: (saved / FUNDS_TOTAL) * 100 });
     }
-    const cause = this.rootCause === "insolvent" ? "Protocol insolvent" : this.rootCause === "hazard" ? "Environment hazard" : this.rootCause ? ENEMIES[this.rootCause].name : "None";
+    const cause = this.causeName();
     const damage = [...this.weaponDamage.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
@@ -1444,7 +1513,7 @@ export class Game {
     const stored = save.get();
     if (this.runRecorded || this.recorder.tainted || this.attract) return Math.max(stored.best, score);
     this.runRecorded = true;
-    const cause = this.rootCause === "insolvent" ? "Protocol insolvent" : this.rootCause === "hazard" ? "Environment hazard" : this.rootCause ? ENEMIES[this.rootCause].name : "None";
+    const cause = this.causeName();
     const shards = shardsForRun({ timeSec: this.stats.timeSurvived, baseScore: this.baseScore(), bosses: this.stats.bossesDefeated, tainted: this.recorder.tainted, shardMult: this.effects.shardMult });
     save.awardShards(shards);
     const daily = this.setup.mode === "daily" && this.setup.date ? save.recordDaily(this.setup.date, score) : null;
@@ -1625,6 +1694,8 @@ export class Game {
     const p = this.player;
     this.pruneBuffs();
     if (p.invuln > 0) p.invuln -= dt;
+    const shieldMax = this.ledgerShieldMax();
+    if (shieldMax > 0 && this.elapsed >= this.ledgerRechargeAt && this.ledgerShield < shieldMax) this.ledgerShield = Math.min(shieldMax, this.ledgerShield + (shieldMax / LEDGER_RECHARGE_SEC) * dt);
     if (p.dashCooldown > 0) p.dashCooldown -= dt;
 
     if (p.dashTimer > 0) {
@@ -1737,7 +1808,8 @@ export class Game {
   private currentSpeed(): number {
     const base = getCharacter(this.player.characterId).moveSpeed;
     if (this.dustStacks > 0 && this.elapsed >= this.dustUntil) this.dustStacks = 0;
-    const drag = (1 - this.dustStacks * DUST_SLOW_PER_STACK) * this.miniEvents.speedMult();
+    const chill = this.elapsed < this.chillUntil ? this.chillMult : 1;
+    const drag = (1 - this.dustStacks * DUST_SLOW_PER_STACK) * this.miniEvents.speedMult() * chill;
     return Math.min(base * MAX_SPEED_MULT, this.player.moveSpeed * this.buffMult("speed") * (1 + (this.gearStats.speed ?? 0))) * drag;
   }
 
@@ -2108,7 +2180,7 @@ export class Game {
     const owned = this.rigs.find((r) => r.kind === kind);
     if (!owned) {
       const def = SIDEKICKS[kind];
-      const replaces = this.rigs.length >= MAX_RIGS ? this.rigs[0] : undefined;
+      const replaces = this.rigs.length >= this.maxRigs() ? this.rigs[0] : undefined;
       cards.push({
         id: "rig-recruit",
         title: def.name,
@@ -2155,11 +2227,19 @@ export class Game {
   }
 
   private rigUpgradeCost(rig: SidekickState): number {
-    return Math.ceil(20 * (rig.tier + 1) * (rig.tier + 1) * this.effects.costMult);
+    return Math.ceil(20 * (rig.tier + 1) * (rig.tier + 1) * this.effects.costMult * (this.player.characterId === "relay" ? RELAY_RIG_COST : 1));
+  }
+
+  maxRigs(): number {
+    return this.player.characterId === "relay" ? RELAY_MAX_RIGS : MAX_RIGS;
+  }
+
+  rigOutput(rig: SidekickState): number {
+    return (1 + rig.tier * 0.4) * (this.player.characterId === "relay" ? RELAY_RIG_OUTPUT : 1);
   }
 
   private addRig(kind: SidekickKind) {
-    if (this.rigs.length >= MAX_RIGS) this.rigs.shift();
+    if (this.rigs.length >= this.maxRigs()) this.rigs.shift();
     this.rigs.push({ kind, tier: 0, x: this.player.x, y: this.player.y, angle: this.rigs.length * Math.PI, attackTimer: 1 });
     this.emit("rig", { rigs: this.rigs.length });
     this.ringParticle(this.player.x, this.player.y, SIDEKICKS[kind].orbit, SIDEKICKS[kind].color);
@@ -2279,12 +2359,14 @@ export class Game {
     const p = this.player;
     for (const rig of this.rigs) {
       const def = SIDEKICKS[rig.kind];
-      const output = 1 + rig.tier * 0.4;
+      const output = this.rigOutput(rig);
       rig.angle += dt * 2.2;
-      const side = this.rigs.indexOf(rig) === 0 ? 1 : -1;
+      const slot = this.rigs.indexOf(rig);
+      const side = slot === 0 ? 1 : slot === 1 ? -1 : 0;
+      const reach = def.orbit * (slot === 2 ? 1.4 : 0.9);
       const lead = p.facing + Math.PI + side * 0.6;
-      const tx = p.x + Math.cos(lead) * (def.orbit * 0.9) + Math.cos(rig.angle) * 10;
-      const ty = p.y + Math.sin(lead) * (def.orbit * 0.9) + Math.sin(rig.angle * 2) * 6;
+      const tx = p.x + Math.cos(lead) * reach + Math.cos(rig.angle) * 10;
+      const ty = p.y + Math.sin(lead) * reach + Math.sin(rig.angle * 2) * 6;
       rig.x = lerpVec(rig.x, tx, clamp(dt * 6, 0, 1));
       rig.y = lerpVec(rig.y, ty, clamp(dt * 6, 0, 1));
       rig.attackTimer -= dt;
@@ -2538,6 +2620,9 @@ export class Game {
     hash = mixHash(hash, this.miniEvents.active ? MINI_EVENT_ORDER.indexOf(this.miniEvents.active) + 1 : 0);
     hash = mixHash(hash, this.vault.charge);
     hash = mixHash(hash, this.dustStacks);
+    hash = mixHash(hash, this.ledgerShield);
+    hash = mixHash(hash, this.chillUntil);
+    hash = mixHash(hash, this.rigs.length);
     for (let i = 0; i < this.weapons.length; i++) {
       const w = this.weapons[i]!;
       hash = mixHash(hash, w.level);
@@ -2904,12 +2989,10 @@ export class Game {
         }
       }
       if (o.weaponKind === "stable-shield") {
-        const block = this.projectiles.find((pr) => !pr.fromPlayer && !pr.dead && dist(pr.x, pr.y, o.x, o.y) < 26);
+        const block = this.projectiles.find((pr) => !pr.fromPlayer && !pr.dead && dist(pr.x, pr.y, o.x, o.y) < PEG_BLOCK_RADIUS);
         if (block) {
           block.dead = true;
-          o.offUntil = this.elapsed + 3;
-          this.burstParticles(o.x, o.y, "#5de2b8", 6);
-          this.audio.play("nearMiss");
+          this.reflectBullet(o, block, w, base);
           continue;
         }
       }
@@ -2920,6 +3003,31 @@ export class Game {
         if (rectsOverlap(o.x, o.y, o.radius, e.x, e.y, e.radius)) this.damageEnemy(e, damage * dt * 3.5, 0, 0, o.weaponKind);
       }
     }
+  }
+
+  private reflectBullet(o: Orbiter, bullet: Projectile, w: WeaponInstance, base: number) {
+    o.offUntil = this.elapsed + (w.evolved ? PEG_REST_EVOLVED_SEC : PEG_REST_SEC);
+    const target = this.nearestEnemy(o.x, o.y, PEG_REFLECT_RANGE);
+    const a = target ? angleBetween(o.x, o.y, target.x, target.y) : Math.atan2(-bullet.vy, -bullet.vx);
+    this.projectiles.push({
+      id: uid(),
+      x: o.x,
+      y: o.y,
+      vx: Math.cos(a) * PEG_REFLECT_SPEED,
+      vy: Math.sin(a) * PEG_REFLECT_SPEED,
+      radius: 8,
+      dead: false,
+      damage: base * PEG_REFLECT_MULT + bullet.damage * 2,
+      life: 1.4,
+      pierce: 2,
+      fromPlayer: true,
+      color: "#5de2b8",
+      homing: !!target,
+      targetId: target?.id,
+      weaponKind: "stable-shield",
+    });
+    this.burstParticles(o.x, o.y, "#5de2b8", 6);
+    this.audio.play("nearMiss");
   }
 
   damageEnemy(e: Enemy, damage: number, pushX = 0, pushY = 0, weapon?: WeaponKind) {

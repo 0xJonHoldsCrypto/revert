@@ -1,4 +1,9 @@
 import { ACHIEVEMENTS } from "../data/achievements";
+import { BIOME_HAZARD_ORDER, BIOME_HAZARDS } from "../data/biomeHazards";
+import { BIOME_LABEL } from "../data/biomeSpawns";
+import { CHARACTERS } from "../data/characters";
+import { heroAvailable, heroUnlockId, requirementText, UNLOCK_BY_ID } from "../data/unlocks";
+import { heroPortrait } from "../pixel/handArt";
 import { AFFIX_ORDER, AFFIXES } from "../data/affixes";
 import { MINI_EVENT_ORDER, MINI_EVENTS } from "../game/events";
 import { CAMEOS } from "../data/cameos";
@@ -14,9 +19,10 @@ import type { EnemyKind, WeaponKind } from "../types";
 import { formatTime } from "../utils/math";
 import { trapTab } from "./focusTrap";
 
-type TabId = "threats" | "intel" | "tools" | "gear" | "cameos" | "feats";
+type TabId = "crew" | "threats" | "intel" | "tools" | "gear" | "cameos" | "feats";
 
 const TABS: [TabId, string][] = [
+  ["crew", "CREW"],
   ["threats", "THREATS"],
   ["intel", "INTEL"],
   ["tools", "TOOLS"],
@@ -85,7 +91,28 @@ function intelEntries(data: save.SaveData): Entry[] {
     const def = MINI_EVENTS[id];
     return { key: `ev:${id}`, name: def.name, body: def.text, meta: "NETWORK EVENT", color: def.color, seen: !!data.codex.seen[`ev:${id}`] };
   });
-  return [...affixes, ...events];
+  const hazards = BIOME_HAZARD_ORDER.map((id) => {
+    const def = BIOME_HAZARDS[id];
+    return { key: `hz:${id}`, name: def.name, body: def.text, meta: `HAZARD · ${BIOME_LABEL[def.biome].name.toUpperCase()}`, color: def.color, seen: !!data.codex.seen[`hz:${id}`] };
+  });
+  return [...affixes, ...events, ...hazards];
+}
+
+function crewEntries(data: save.SaveData): Entry[] {
+  const unlocked = save.unlockedNow(data);
+  return CHARACTERS.map((c) => {
+    const lock = UNLOCK_BY_ID[heroUnlockId(c.id)];
+    const open = heroAvailable(c.id, unlocked);
+    return {
+      key: `h:${c.id}`,
+      name: c.name,
+      body: `${c.role}. ${c.blurb}`,
+      meta: open ? `Starts with ${WEAPONS[c.startWeapon].name}` : `LOCKED · ${lock ? requirementText(lock) : ""}`,
+      color: c.color,
+      art: heroPortrait(c.id),
+      seen: true,
+    };
+  });
 }
 
 function gearEntries(data: save.SaveData): Entry[] {
@@ -183,6 +210,7 @@ export function showCodex(game: Game, initial?: string) {
       .map(([k, v]) => `<div><label>${k}</label><strong>${v}</strong></div>`)
       .join("");
     const sets: Record<TabId, Entry[]> = {
+      crew: crewEntries(data),
       threats: threatEntries(data),
       intel: intelEntries(data),
       tools: toolEntries(data),

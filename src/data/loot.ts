@@ -19,5 +19,6 @@ export function chestKindForBiome(biome: BiomeId, rnd: () => number): ChestKind 
   if (biome === "mempool") return roll < 0.6 ? "airdrop-pod" : "cold-wallet";
   if (biome === "vault") return roll < 0.5 ? "cold-wallet" : "defi-lootbox";
   if (biome === "bridge") return roll < 0.7 ? "defi-lootbox" : "validator-crate";
+  if (biome === "cold") return roll < 0.55 ? "cold-wallet" : "validator-crate";
   return roll < 0.45 ? "defi-lootbox" : "validator-crate";
 }

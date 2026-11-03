@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const HEROES = ["keel", "nyx", "diff", "trace"];
+const HEROES = (process.env.HEROES ?? "keel,nyx,diff,trace,ledger,relay").split(",");
 const DT = 1 / 60;
 const CAP_MINUTES = Number(process.env.CAP ?? 30);
 const RUNS = Number(process.env.RUNS ?? 5);
@@ -49,6 +49,30 @@ function steer(g, skill) {
       }
     }
     for (const h of g.hazards) {
+      if (h.shape === "rect") {
+        const dx = p.x - h.x;
+        const dy = p.y - h.y;
+        const ox = (h.w ?? 0) / 2 + 30 - Math.abs(dx);
+        const oy = (h.h ?? 0) / 2 + 30 - Math.abs(dy);
+        if (ox > 0 && oy > 0) {
+          if (ox < oy) fx += Math.sign(dx || 1) * 3;
+          else fy += Math.sign(dy || 1) * 3;
+        }
+        continue;
+      }
+      if (h.shape === "beam") {
+        const a = (h.angle ?? 0) + (h.spin ?? 0) * 0.4;
+        const dx = p.x - h.x;
+        const dy = p.y - h.y;
+        const along = dx * Math.cos(a) + dy * Math.sin(a);
+        const across = -dx * Math.sin(a) + dy * Math.cos(a);
+        if (along > -20 && along < (h.length ?? 0) + 20 && Math.abs(across) < 70) {
+          const side = Math.sign(across || -(h.spin ?? 1));
+          fx += -Math.sin(a) * side * 3;
+          fy += Math.cos(a) * side * 3;
+        }
+        continue;
+      }
       if (h.shape !== "circle") continue;
       const d = Math.hypot(p.x - h.x, p.y - h.y) || 1;
       const r = h.r ?? 0;
@@ -59,8 +83,10 @@ function steer(g, skill) {
           fy += ((p.y - h.y) / d) * 3 * inward;
         }
       } else if (d < r + 30) {
-        fx += ((p.x - h.x) / d) * 3;
-        fy += ((p.y - h.y) / d) * 3;
+        const ux = d > 2 ? (p.x - h.x) / d : Math.cos(p.facing + Math.PI / 2);
+        const uy = d > 2 ? (p.y - h.y) / d : Math.sin(p.facing + Math.PI / 2);
+        fx += ux * 3;
+        fy += uy * 3;
       }
     }
   }
@@ -150,7 +176,7 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
     lastBossAlive = bossAlive;
   }
   const damage = [...g.weaponDamage.entries()].sort((a, b) => b[1] - a[1]);
-  return { t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
+  return { biomeHazards: g.biomeHazards.fired.length, t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
 }
 
 function median(values) {
@@ -195,7 +221,7 @@ for (const mod of MODS) {
 if (allRuns.length) {
   console.log("\nNetwork events and elites (all skill runs):");
   console.log(`  events/run ${mean(allRuns.map((r) => r.events.length)).toFixed(1)}  ${[...eventCounts.entries()].map(([id, n]) => `${id} ${n}`).join("  ")}`);
-  console.log(`  affixed whales seen/run ${mean(allRuns.map((r) => r.elites)).toFixed(1)}`);
+  console.log(`  affixed whales seen/run ${mean(allRuns.map((r) => r.elites)).toFixed(1)}  biome hazards/run ${mean(allRuns.map((r) => r.biomeHazards)).toFixed(1)}`);
   console.log(`  causes of death: ${[...causes.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c ?? "none"} ${n}`).join(", ")}`);
 }
 console.log("\nAverage damage share when owned:");

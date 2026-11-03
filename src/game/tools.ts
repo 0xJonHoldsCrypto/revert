@@ -15,7 +15,8 @@ const LOAN_DEFAULT_HP_SHARE = 0.05;
 const LOAN_STALL_SEC = 3;
 const PULSE_IDLE_LIMIT_SEC = 6;
 const PULSE_MIN_GAP_SEC = 2;
-const PULSE_MAX_BONUS = 2;
+const PULSE_MAX_BONUS = 1.6;
+const PULSE_CROWD_BONUS = 0.03;
 const FIELD_STILL_SEC = 2;
 const SLASH_DURATION_SEC = 2;
 const MAX_CONFIRMATIONS = 6;
@@ -115,10 +116,10 @@ function firePulse(g: Game, w: WeaponInstance, def: WeaponDef, cooldown: number)
   const threshold = Math.max(2, 7 - Math.floor(w.level / 2));
   if (crowd < threshold && w.charge < PULSE_IDLE_LIMIT_SEC) return;
   w.charge = 0;
-  const bonus = Math.min(PULSE_MAX_BONUS, 1 + crowd * 0.04);
+  const bonus = Math.min(PULSE_MAX_BONUS, 1 + crowd * PULSE_CROWD_BONUS);
   g.aoeHit(p.x, p.y, radius, g.weaponDamageScale(w, def.damage) * bonus, w.kind);
   g.shockwaves.push({ x: p.x, y: p.y, radius, life: 0.3, maxLife: 0.3, color: "#b58cff" });
-  if (w.evolved) g.addStrike(p.x, p.y, radius * 1.25, g.weaponDamageScale(w, def.damage) * bonus * 0.6, "#b58cff", 0.25, w.kind);
+  if (w.evolved) g.addStrike(p.x, p.y, radius * 1.25, g.weaponDamageScale(w, def.damage) * bonus * 0.5, "#b58cff", 0.25, w.kind);
   g.audio.play("pulse");
 }
 

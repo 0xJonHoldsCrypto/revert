@@ -2,13 +2,14 @@ import type { BiomeId } from "../data/environment";
 
 export type FloorCanvases = { albedo: HTMLCanvasElement; emissive: HTMLCanvasElement };
 
-type FloorStyle = { panel: string; panelAlt: string; seam: string; glow: string; density: number; pattern: "grid" | "grate" | "plank" | "rock" };
+type FloorStyle = { panel: string; panelAlt: string; seam: string; glow: string; density: number; pattern: "grid" | "grate" | "plank" | "rock" | "frost" };
 
 const STYLES: Record<BiomeId, FloorStyle> = {
   mempool: { panel: "#3f4757", panelAlt: "#394050", seam: "#1d2230", glow: "#2ee6c7", density: 0.28, pattern: "grid" },
   vault: { panel: "#54494c", panelAlt: "#4a4043", seam: "#241c1e", glow: "#ff6a3c", density: 0.2, pattern: "grate" },
   bridge: { panel: "#4a5c60", panelAlt: "#415256", seam: "#1b2a2e", glow: "#6cb6ff", density: 0.26, pattern: "plank" },
   forest: { panel: "#2f2a42", panelAlt: "#292439", seam: "#14101f", glow: "#d05cff", density: 0.16, pattern: "rock" },
+  cold: { panel: "#3f5868", panelAlt: "#3a5160", seam: "#172430", glow: "#9fe8ff", density: 0.22, pattern: "frost" },
 };
 
 const SIZE = 256;
@@ -84,6 +85,24 @@ function rock(a: CanvasRenderingContext2D, style: FloorStyle, rnd: () => number,
   }
 }
 
+function frost(a: CanvasRenderingContext2D, style: FloorStyle, rnd: () => number, px: number, py: number) {
+  panelGrid(a, style, px, py);
+  a.fillStyle = "rgba(220,245,255,0.16)";
+  a.fillRect(px + 4, py + 4, PANEL - 8, 3);
+  a.fillRect(px + 4, py + PANEL - 9, 18 + Math.floor(rnd() * 20), 2);
+  a.fillStyle = "rgba(220,245,255,0.22)";
+  const cx = px + 16 + Math.floor(rnd() * 32);
+  const cy = py + 16 + Math.floor(rnd() * 32);
+  for (let s = 0; s < 4; s++) {
+    const dx = s % 2 === 0 ? 1 : -1;
+    const dy = s < 2 ? 1 : -1;
+    for (let k = 0; k < 6 + Math.floor(rnd() * 6); k++) a.fillRect(cx + dx * k, cy + dy * k + (k % 3 === 0 ? 1 : 0), 1, 1);
+  }
+  a.fillStyle = style.seam;
+  a.fillRect(px + 30, py + 28, 4, 8);
+  a.fillRect(px + 28, py + 30, 8, 4);
+}
+
 export function makeFloorCanvases(biome: BiomeId, seed: number): FloorCanvases {
   const style = STYLES[biome];
   const rnd = rng(seed);
@@ -101,6 +120,7 @@ export function makeFloorCanvases(biome: BiomeId, seed: number): FloorCanvases {
       if (style.pattern === "grid") panelGrid(a, style, px, py);
       else if (style.pattern === "grate") grate(a, style, px, py);
       else if (style.pattern === "plank") plank(a, style, rnd, px, py);
+      else if (style.pattern === "frost") frost(a, style, rnd, px, py);
       else rock(a, style, rnd, px, py);
       if (rnd() < style.density) drawTrace(e, a, style, rnd, px, py);
     }

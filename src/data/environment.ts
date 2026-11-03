@@ -1,7 +1,7 @@
 import type { ChestKind, EnvObstacleKind } from "../types";
 import type { WeaponRarity } from "./rarity";
 
-export type BiomeId = "mempool" | "vault" | "bridge" | "forest";
+export type BiomeId = "mempool" | "vault" | "bridge" | "forest" | "cold";
 
 export interface EnvObstacleDef {
   kind: EnvObstacleKind;
@@ -53,7 +53,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     height: 40,
     blocks: true,
     color: "#79c0ff",
-    biome: ["vault"],
+    biome: ["vault", "cold"],
   },
   "liquidation-spike": {
     kind: "liquidation-spike",
@@ -63,7 +63,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     blocks: true,
     damagePerSec: 5,
     color: "#f85149",
-    biome: ["bridge", "forest"],
+    biome: ["bridge", "forest", "cold"],
   },
   "sandwich-bot": {
     kind: "sandwich-bot",
@@ -93,7 +93,7 @@ export const ENV_OBSTACLES: Record<EnvObstacleKind, EnvObstacleDef> = {
     blocks: false,
     slowMult: 0.55,
     color: "#6cb6ff",
-    biome: ["vault", "bridge", "forest"],
+    biome: ["vault", "bridge", "forest", "cold"],
   },
 };
 
@@ -139,7 +139,7 @@ export const CHESTS: Record<ChestKind, ChestDef> = {
 export const FLOOR_CELL = 768;
 const REGION = 2600;
 const SPAWN_SAFE_CELLS = 2;
-const BIOMES: BiomeId[] = ["mempool", "vault", "bridge", "forest"];
+export const BIOMES: BiomeId[] = ["mempool", "vault", "bridge", "forest", "cold"];
 
 let biomeSeed = 0;
 const biomeCache = new Map<number, BiomeId>();
