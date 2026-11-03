@@ -6,6 +6,7 @@ export const GradeShader = {
     uTilt: { value: 1 },
     uImpact: { value: 0 },
     uHurt: { value: 0 },
+    toneMappingExposure: { value: 1 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -22,6 +23,12 @@ export const GradeShader = {
     uniform float uHurt;
     varying vec2 vUv;
 
+    #include <tonemapping_pars_fragment>
+
+    vec3 display(vec3 c) {
+      return sRGBTransferOETF(vec4(ACESFilmicToneMapping(c), 1.0)).rgb;
+    }
+
     const vec2 TAPS[12] = vec2[12](
       vec2(1.0, 0.0), vec2(0.5, 0.87), vec2(-0.5, 0.87), vec2(-1.0, 0.0), vec2(-0.5, -0.87), vec2(0.5, -0.87),
       vec2(0.5, 0.0), vec2(0.25, 0.43), vec2(-0.25, 0.43), vec2(-0.5, 0.0), vec2(-0.25, -0.43), vec2(0.25, -0.43)
@@ -34,12 +41,12 @@ export const GradeShader = {
     void main() {
       float offCenter = abs(vUv.y - 0.5);
       float blur = smoothstep(0.26, 0.5, offCenter) * uTilt;
-      vec3 color = texture2D(tDiffuse, vUv).rgb;
+      vec3 color = display(texture2D(tDiffuse, vUv).rgb);
       if (blur > 0.001) {
         vec3 sum = color;
         float radius = blur * 7.0;
         for (int i = 0; i < 12; i++) {
-          sum += texture2D(tDiffuse, vUv + TAPS[i] * radius * uTexel).rgb;
+          sum += display(texture2D(tDiffuse, vUv + TAPS[i] * radius * uTexel).rgb);
         }
         color = sum / 13.0;
       }

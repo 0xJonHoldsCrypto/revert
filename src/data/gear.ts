@@ -79,16 +79,6 @@ export function rollGear(minRarity: WeaponRarity, owned: GearItem[] = []): GearI
   return options[Math.floor(lootRandom() * options.length)]!;
 }
 
-const PERCENT: [keyof GearStats, string][] = [
-  ["damage", "damage"],
-  ["speed", "speed"],
-  ["armor", "armor"],
-  ["pickup", "pickup range"],
-  ["cooldown", "cooldowns"],
-  ["xp", "XP"],
-  ["coin", "$SAFU"],
-];
-
 const COMPARE_LABEL: [keyof GearStats, string, boolean][] = [
   ["damage", "Damage", true],
   ["speed", "Speed", true],
@@ -117,15 +107,4 @@ export function compareGear(next: GearItem, current?: GearItem): string[] {
     lines.push(`${label} ${compareValue(a[key] ?? 0, percent)} → ${compareValue(b[key] ?? 0, percent)}`);
   }
   return lines;
-}
-
-export function describeGear(item: GearItem): string {
-  const s = gearStats(item);
-  const parts = PERCENT.filter(([key]) => s[key]).map(([key, label]) => `${key === "cooldown" ? "-" : "+"}${Math.round(s[key]! * 100)}% ${label}`);
-  if (s.maxHp) parts.push(`+${s.maxHp} max HP`);
-  if (s.dash) parts.push(`-${Math.round(s.dash * 100)}% dash cooldown`);
-  if (s.yield) parts.push("passive XP");
-  if (s.healOnKill) parts.push("kills heal you");
-  if (s.fundsOnKill) parts.push("kills recover funds");
-  return parts.join(", ");
 }

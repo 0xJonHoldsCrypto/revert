@@ -1,7 +1,7 @@
 import type { CharacterId } from "../types";
 import type { DifficultyId } from "../data/difficulty";
 
-export const SIM_VERSION = 1;
+export const SIM_VERSION = 2;
 export const RUN_LOG_FORMAT = 1;
 export const CHECKPOINT_TICKS = 600;
 const MOVE_DIRECTIONS = 256;

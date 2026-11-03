@@ -5,7 +5,7 @@ import type { Plugin } from "vite";
 
 const LIMIT_BYTES = 124 * 1024;
 const HTML_ENTRIES = ["index.html"];
-const HTML_ASSET = /<(?:script[^>]*\bsrc|link[^>]*\bhref)="\.?\/?(assets\/[^"]+\.(?:js|css))"/g;
+const HTML_ASSET = /<(?:script[^>]*\bsrc|link(?![^>]*\bdata-deferred)[^>]*\bhref)="\.?\/?(assets\/[^"]+\.(?:js|css))"/g;
 const CSS_FONT = /url\(["']?(?:\.\/)?(?:assets\/)?([^"')]+\.woff2)["']?\)/g;
 const STATIC_IMPORT = /(?:\bfrom\s*|\bimport\s*)["']\.\/([^"']+\.js)["']/g;
 

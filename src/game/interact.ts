@@ -172,8 +172,9 @@ export class WorldEvents {
         break;
       }
       case "bounty-board": {
+        item.readyAt = g.elapsed + 1e9;
         g.showPopup("BOUNTY BOARD", [
-          { id: "bounty-accept", title: "Post the bounty", description: "A whale wallet spawns nearby. Kill it for rare loot.", rarity: "rare", apply: () => { item.used = true; g.postBounty(); return true; } },
+          { id: "bounty-accept", title: "Post the bounty", description: "A whale wallet spawns nearby. Kill it for rare loot.", rarity: "rare", value: g.totalDps() * 0.3, apply: () => { item.used = true; g.postBounty(); return true; } },
           { id: "bounty-decline", title: "Not now", description: "The board stays here.", rarity: "common", value: 0, apply: () => { item.readyAt = g.elapsed + 8; return true; } },
         ]);
         break;
@@ -212,7 +213,7 @@ export class WorldEvents {
     const def = CAMEOS[id];
     this.game.audio.play("jackpot");
     this.game.showPopup(`${def.name.toUpperCase()} ${def.handle}`, [
-      { id: "deal-accept", title: "Take the deal", description: `"${def.arrival}" ${def.deal}`, rarity: id === "satoshi" ? "legendary" : "epic", apply: () => { this.takeDeal(id); return true; } },
+      { id: "deal-accept", title: "Take the deal", description: `"${def.arrival}" ${def.deal}`, rarity: id === "satoshi" ? "legendary" : "epic", value: this.game.totalDps() * 0.6, apply: () => { this.takeDeal(id); return true; } },
       { id: "deal-decline", title: "Walk away", description: "Take 15 $SAFU instead.", rarity: "common", value: 13, apply: () => { this.game.player.coins += 15; return true; } },
     ]);
   }

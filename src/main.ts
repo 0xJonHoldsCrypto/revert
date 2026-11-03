@@ -94,6 +94,8 @@ function drawUiOverlay() {
   }
 }
 
+const COARSE_POINTER = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+
 function drawSkipHint(w: number, h: number) {
   uiCtx.textAlign = "right";
   uiCtx.textBaseline = "alphabetic";
@@ -101,7 +103,7 @@ function drawSkipHint(w: number, h: number) {
   uiCtx.fillRect(w - 158, h - 40, 146, 28);
   uiCtx.fillStyle = "#f0c14d";
   uiCtx.font = `600 12px ${FONT_MONO}`;
-  uiCtx.fillText("HOLD SPACE TO SKIP", w - 20, h - 22);
+  uiCtx.fillText(COARSE_POINTER ? "HOLD SCREEN TO SKIP" : "HOLD SPACE TO SKIP", w - 20, h - 22);
   const progress = game.cutsceneSkipProgress;
   if (progress > 0) uiCtx.fillRect(w - 158, h - 14, 146 * progress, 2);
 }
@@ -353,21 +355,39 @@ function drawRunChrome(w: number, h: number) {
   }
 }
 
-function loop(now: number) {
-  const frameDt = Math.min(0.25, (now - last) / 1000);
-  last = now;
-  if (game.windowActive) accumulator += frameDt;
-  let steps = 0;
-  while (accumulator >= SIM_STEP && steps < MAX_SIM_STEPS) {
-    game.update(SIM_STEP);
-    accumulator -= SIM_STEP;
-    steps++;
-  }
-  if (steps === MAX_SIM_STEPS) accumulator = 0;
+let errorShown = false;
 
-  if (isWorldVisible() || game.phase === "cutscene") pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
-  drawUiOverlay();
+function showLoopError(error: unknown) {
+  console.error(error);
+  if (errorShown) return;
+  errorShown = true;
+  const banner = document.createElement("div");
+  banner.setAttribute("role", "alert");
+  banner.textContent = "Something broke in the game loop. Reload the page if it looks stuck.";
+  banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;padding:8px 12px;background:#ff5c48;color:#0b0f14;font:600 13px system-ui,sans-serif;text-align:center";
+  document.body.appendChild(banner);
+}
+
+function loop(now: number) {
   requestAnimationFrame(loop);
+  try {
+    const frameDt = Math.min(0.25, (now - last) / 1000);
+    last = now;
+    if (game.windowActive) accumulator += frameDt;
+    let steps = 0;
+    while (accumulator >= SIM_STEP && steps < MAX_SIM_STEPS) {
+      game.update(SIM_STEP);
+      accumulator -= SIM_STEP;
+      steps++;
+    }
+    if (steps === MAX_SIM_STEPS) accumulator = 0;
+
+    if (isWorldVisible() || game.phase === "cutscene") pixelEngine?.render(game, frameDt, accumulator / SIM_STEP);
+    drawUiOverlay();
+  } catch (error) {
+    accumulator = 0;
+    showLoopError(error);
+  }
 }
 
 bootProgress(0.55);

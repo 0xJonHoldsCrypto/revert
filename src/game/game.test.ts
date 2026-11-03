@@ -205,6 +205,41 @@ describe("rules", () => {
     expect(game.player.stash).toHaveLength(0);
   });
 
+  it("does not consume three copies when merging with one equipped", () => {
+    const game = headlessGame();
+    startRun(game);
+    const item = { id: "ledger-stick" as const, tier: 0 };
+    game.player.gear.hardware = { ...item };
+    game.player.stash = [{ ...item }, { ...item }];
+    game.merge(item);
+    expect(game.player.gear.hardware).toEqual({ id: "ledger-stick", tier: 1 });
+    expect(game.player.stash).toHaveLength(1);
+    expect(game.merge(item)).toBe(false);
+  });
+
+  it("does not fire deal or bounty effects when the popup opens", () => {
+    const game = headlessGame();
+    startRun(game);
+    game.spawnTimer = 999;
+    const events = game["events"] as unknown as { offerDeal(id: string): void; trigger(item: unknown): void };
+    const board = { id: 1, kind: "bounty-board", x: 0, y: 0, radius: 60, progress: 0, used: false, readyAt: 0 };
+    const before = { coins: game.player.coins, hp: game.player.hp, enemies: game.enemies.length, lost: game.fundsLost };
+    events.trigger(board);
+    events.offerDeal("donald-pump");
+    for (let i = 0; i < 4; i++) {
+      game.update(1 / 60);
+      if (game.phase === "levelup") break;
+    }
+    expect(game.phase).toBe("levelup");
+    expect(game.enemies.length).toBe(before.enemies);
+    expect(game.player.coins).toBe(before.coins);
+    expect(game.player.hp).toBe(before.hp);
+    expect(game.fundsLost).toBe(before.lost);
+    expect(game.pickups.length).toBe(0);
+    expect(board.used).toBe(false);
+    expect(board.readyAt).toBeGreaterThan(game.elapsed + 1000);
+  });
+
   it("does not lose a level-up when a boss arrives on the same tick", () => {
     const game = headlessGame();
     startRun(game);

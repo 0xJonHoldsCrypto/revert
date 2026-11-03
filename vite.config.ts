@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { firstLoadBudgetPlugin } from "./scripts/first-load-budget-plugin";
+import { lateChunkPreloadPlugin } from "./scripts/late-chunk-preload-plugin";
 import { xCardPlugin } from "./scripts/x-card-plugin";
 
 export default defineConfig({
@@ -17,5 +18,5 @@ export default defineConfig({
       },
     },
   },
-  plugins: [xCardPlugin(), firstLoadBudgetPlugin()],
+  plugins: [xCardPlugin(), lateChunkPreloadPlugin(), firstLoadBudgetPlugin()],
 });

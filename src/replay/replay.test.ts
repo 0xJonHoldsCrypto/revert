@@ -5,7 +5,7 @@ import type { Input } from "../engine/Input";
 import { replayInput, replayRun } from "./replayRun";
 import { encodeMove, decodeMove, parseRunLog, serializeRunLog, SIM_VERSION, type RunLog } from "./runLog";
 
-function scriptedRun(seconds: number, aspect = 16 / 9) {
+function scriptedRun(seconds: number, aspect = 16 / 9, idle = 0) {
   let tick = 0;
   const game = headlessGame(() => ({ x: Math.cos(tick / 90) + (tick % 700 < 90 ? 1 : 0), y: Math.sin(tick / 130) }));
   game.aspectSource = () => aspect;
@@ -18,6 +18,7 @@ function scriptedRun(seconds: number, aspect = 16 / 9) {
   while (game.runTick < seconds * 60 && game.phase !== "lost") {
     tick++;
     if (game.phase === "levelup") {
+      for (let i = 0; i < idle; i++) game.update(1 / 60);
       cards++;
       if (cards % 7 === 0 && game.rerolls > 0 && game.choiceMode === "levelup") game.rerollCards();
       else if (cards % 11 === 0 && game.choiceMode === "levelup") game.skipCards();
@@ -27,6 +28,11 @@ function scriptedRun(seconds: number, aspect = 16 / 9) {
     if (game.phase === "cinematic" && game.cinematic) game.cinematic.t += 99;
     if (game.phase === "cutscene") game.cutscene.skip();
     game.update(1 / 60);
+    if (idle && game.phase === "playing" && game.runTick % 200 === 0) {
+      game.togglePause();
+      for (let i = 0; i < idle; i++) game.update(1 / 60);
+      game.togglePause();
+    }
   }
   return { game, log: game.runLog() };
 }
@@ -56,6 +62,11 @@ describe("replay", () => {
     expect(log.checkpoints.length).toBeGreaterThan(1);
     const verdict = replayRun(replayerFor(log), log);
     expect(verdict).toMatchObject({ ok: true, kills: game.stats.kills, level: game.player.level });
+  });
+
+  it("verifies runs that sat through many ticks of level-up and pause", () => {
+    const { log } = scriptedRun(90, 16 / 9, 37);
+    expect(replayRun(replayerFor(log), log).ok).toBe(true);
   });
 
   it("is not affected by earlier runs in the same page", () => {

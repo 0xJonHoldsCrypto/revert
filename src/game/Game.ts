@@ -157,7 +157,11 @@ const TUTORIAL: [number, string][] = [
 
 function loadPrefs(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}") as Record<string, string>;
+    const parsed: unknown = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = Object.create(null) as Record<string, string>;
+    for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") out[k] = v;
+    return out;
   } catch {
     return {};
   }
@@ -332,7 +336,16 @@ export class Game {
 
   private cutsceneHold = 0;
   private hudTick = 0;
-  god = false;
+  private godMode = false;
+
+  get god(): boolean {
+    return this.godMode;
+  }
+
+  set god(value: boolean) {
+    this.godMode = value;
+    if (value) this.taintRun();
+  }
   worldSeed = 0;
 
   constructor(
@@ -345,7 +358,7 @@ export class Game {
     const hero = loadPref("hero");
     if (CHARACTERS.some((c) => c.id === hero)) this.selectedCharacter = hero as CharacterId;
     const difficulty = loadPref("difficulty");
-    if (difficulty && difficulty in DIFFICULTY) this.runDifficulty = difficulty as DifficultyId;
+    if (difficulty && Object.prototype.hasOwnProperty.call(DIFFICULTY, difficulty)) this.runDifficulty = difficulty as DifficultyId;
   }
 
   get chests() {
@@ -473,6 +486,9 @@ export class Game {
     this.checkpointCount = 0;
     this.lastCheckpoint = 0;
     this.simTick = 0;
+    this.nextBossHpBonus = 1;
+    this.flashKills = 0;
+    this.signerRegenAt = 0;
     this.moveCode = 0;
     this.spawnAspect = roundAspect(this.aspectSource());
     const ch = getCharacter(this.selectedCharacter);
@@ -554,6 +570,7 @@ export class Game {
     this.upgradeCounts.clear();
     this.recorder = new RunRecorder(seed, ch.id, this.runDifficulty);
     this.recorder.aspect(0, this.spawnAspect);
+    if (this.godMode) this.recorder.taint();
     this.shockwaves = [];
     this.corpses = [];
     this.hazards = [];
@@ -719,7 +736,7 @@ export class Game {
       const patches = pool.filter((u) => u.id.startsWith("upgrade-"));
       if (patches.length && chosen.length) chosen[chosen.length - 1] = patches[Math.floor(lootRandom() * patches.length)]!;
     }
-    this.scoreCards(chosen);
+    this.scoreCards(chosen, true);
     this.levelUpChoices = chosen;
   }
 
@@ -897,7 +914,7 @@ export class Game {
       this.rootCause = "insolvent";
       this.player.hp = 0;
     }
-    if (this.player.hp <= 0 && this.dying <= 0 && this.perks.revive > 0) {
+    if (this.player.hp <= 0 && this.dying <= 0 && this.perks.revive > 0 && this.rootCause !== "insolvent") {
       this.perks.revive--;
       this.player.hp = this.player.maxHp * 0.5;
       this.player.invuln = 2;
@@ -1012,7 +1029,7 @@ export class Game {
     return this.enemyById.get(id);
   }
 
-  spawnEnemyAt(kind: EnemyKind, x: number, y: number): Enemy {
+  spawnEnemyAt(kind: EnemyKind, x: number, y: number, force = false): Enemy {
     const def = ENEMIES[kind];
     const dm = this.diffMult();
     const minutes = this.elapsed / 60;
@@ -1034,6 +1051,10 @@ export class Game {
       flash: 0,
       wobble: cosmeticRange(0, Math.PI * 2),
     };
+    if (!force && !def.isBoss && this.enemies.length >= MAX_ENEMIES) {
+      enemy.dead = true;
+      return enemy;
+    }
     this.enemies.push(enemy);
     if (!this.seenKinds.has(kind) && THREAT_INTEL[kind]) {
       this.seenKinds.add(kind);
@@ -1660,7 +1681,7 @@ export class Game {
     this.choiceMode = "popup";
     this.popupTitle = popup.title;
     this.levelUpChoices = popup.cards;
-    this.scoreCards(popup.cards);
+    this.scoreCards(popup.cards, false);
     this.setPhase("levelup");
     this.audio.play("levelUp");
     this.cb.onLevelUpChoices(popup.cards);
@@ -1697,6 +1718,7 @@ export class Game {
           rarity: "legendary",
           value: this.totalDps() * 0.8,
           apply: (ctx) => {
+            if (!this.weapons.includes(evolve) || evolve.evolved || evolve.level < WEAPONS[evolve.kind].maxLevel) return true;
             ctx.upgradeWeapon(evolve.kind);
             this.syncOrbiters();
             return true;
@@ -1743,6 +1765,7 @@ export class Game {
       compare: compareGear(item, current),
       value: this.gearValue(item) - (current ? this.gearValue(current) : 0),
       apply: () => {
+        if (this.allGear().includes(item)) return true;
         this.equip(item);
         return true;
       },
@@ -1790,10 +1813,20 @@ export class Game {
     return out;
   }
 
-  merge(source: GearItem) {
+  merge(source: GearItem): boolean {
     const p = this.player;
     const same = (o?: GearItem) => !!o && o.id === source.id && o.tier === source.tier;
+    const slot = gearDef(source.id).slot;
+    const held = p.stash.filter(same).length + (same(p.gear[slot]) ? 1 : 0);
+    if (held < 2 || source.tier >= MAX_GEAR_TIER) {
+      this.addToast("Merge no longer possible", "#ff5c48");
+      return false;
+    }
     let consumed = 0;
+    if (same(p.gear[slot])) {
+      p.gear[slot] = undefined;
+      consumed = 1;
+    }
     p.stash = p.stash.filter((o) => {
       if (same(o) && consumed < 2) {
         consumed++;
@@ -1801,15 +1834,14 @@ export class Game {
       }
       return true;
     });
-    const slot = gearDef(source.id).slot;
     const upgraded: GearItem = { id: source.id, tier: source.tier + 1 };
-    if (same(p.gear[slot])) p.gear[slot] = undefined;
     if (p.gear[slot]) this.stashItem(upgraded);
     else p.gear[slot] = upgraded;
     this.recomputeGear();
     this.impactFrames = 4;
     this.audio.play("evolve");
     this.addToast(`Merged: ${gearName(upgraded)}`, "#b58cff");
+    return true;
   }
 
   mergeCards(): UpgradeDef[] {
@@ -1847,6 +1879,7 @@ export class Game {
         rarity: "rare",
         value: this.totalDps() * (replaces ? 0.05 : 0.2),
         apply: () => {
+          if (this.rigs.some((r) => r.kind === kind)) return true;
           this.addRig(kind);
           rack.used = true;
           return true;
@@ -1865,11 +1898,14 @@ export class Game {
         rarity: "uncommon",
         value: affordable ? this.totalDps() * 0.1 : -1,
         apply: () => {
-          if (this.player.coins < cost) {
-            this.addToast(`Need ${cost} $SAFU`, "#ff5c48");
+          if (!this.rigs.includes(rig) || rig.tier >= MAX_RIG_TIER) return true;
+          const price = this.rigUpgradeCost(rig);
+          if (this.player.coins < price) {
+            this.addToast(`Need ${price} $SAFU`, "#ff5c48");
             return true;
           }
-          this.player.coins -= cost;
+          this.player.coins -= price;
+          this.spentSinceBoss += price;
           rig.tier++;
           this.audio.play("evolve");
           return true;
@@ -1938,11 +1974,15 @@ export class Game {
     return Math.max(20, this.weapons.reduce((sum, w) => sum + this.toolDps(w.kind, w.level, w.rarity), 0));
   }
 
-  private scoreCards(cards: UpgradeDef[]) {
+  private scoreCards(cards: UpgradeDef[], pure: boolean) {
     const total = this.totalDps();
     const p = this.player;
     for (const card of cards) {
       if (card.value !== undefined) continue;
+      if (!pure) {
+        card.value = 0;
+        continue;
+      }
       let value = 0;
       card.apply({
         addWeapon: (kind) => (value += this.toolDps(kind, 1, WEAPONS[kind].rarity)),
@@ -2140,7 +2180,7 @@ export class Game {
   postBounty() {
     const at = this.ringPoint(160);
     const kinds: EnemyKind[] = this.elapsed < 150 ? ["script-kiddie", "sim-swapper"] : ["shadow-op", "rug-dev", "liquidator"];
-    const e = this.spawnEnemyAt(kinds[Math.floor(this.rand() * kinds.length)]!, at.x, at.y);
+    const e = this.spawnEnemyAt(kinds[Math.floor(this.rand() * kinds.length)]!, at.x, at.y, true);
     this.makeWhale(e);
     e.bounty = true;
     e.hp *= 2;
@@ -2226,7 +2266,16 @@ export class Game {
     const mix = (value: number) => {
       hash = Math.imul(hash ^ Math.round(value * 1000), 16777619) >>> 0;
     };
-    [this.runTick, p.x, p.y, p.hp, p.level, p.xp, p.coins, this.stats.kills, this.enemies.length, this.pickups.length, this.projectiles.length].forEach(mix);
+    [this.runTick, p.x, p.y, p.hp, p.level, p.xp, p.coins, this.stats.kills, this.enemies.length, this.pickups.length, this.projectiles.length, this.hazards.length].forEach(mix);
+    for (const w of this.weapons) {
+      mix(w.level);
+      mix(w.evolved ? 1 : 0);
+    }
+    for (const id of Object.keys(this.perks).sort()) mix(this.perks[id as PerkId]);
+    for (const b of this.projectiles) {
+      mix(b.x);
+      mix(b.y);
+    }
     for (const e of this.enemies) {
       mix(e.id);
       mix(e.x);
@@ -2294,7 +2343,7 @@ export class Game {
       e.wobble += dt * 3;
       if (e.flash > 0) e.flash -= dt;
 
-      if ((e.id + this.simTick) % 30 === 0) this.recycleIfFar(e);
+      if ((e.id + this.runTick) % 30 === 0) this.recycleIfFar(e);
       if (this.elapsed >= (e.frozenUntil ?? 0) && !applyLure(this, e, e.speed, dt)) updateEnemyBehavior(this, e, dt);
       if (e.kx || e.ky) {
         e.x += (e.kx ?? 0) * dt;
@@ -2307,7 +2356,7 @@ export class Game {
           e.ky = 0;
         }
       }
-      if ((e.id + this.simTick) % 2 === 0) this.separate(e, dt);
+      if ((e.id + this.runTick) % 2 === 0) this.separate(e, dt);
 
       if (e.contactCd > 0) e.contactCd -= dt;
     }

@@ -88,14 +88,14 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
     }
     case "mev-searcher": {
       if (!e.target || e.target.dead) {
-        e.target = game.pickups.find((pk) => !pk.dead && !pk.magnetized && dist(pk.x, pk.y, e.x, e.y) < 340) ?? undefined;
+        e.target = game.pickups.find((pk) => !pk.dead && pk.kind === "xp" && !pk.magnetized && dist(pk.x, pk.y, e.x, e.y) < 340) ?? undefined;
       }
       if (e.target && !e.target.dead) {
         steer(e, e.target.x, e.target.y, speed * 1.5, dt);
         if (dist(e.x, e.y, e.target.x, e.target.y) < 18) {
           e.target.dead = true;
           e.stolen = (e.stolen ?? 0) + 1;
-          e.stolenXp = (e.stolenXp ?? 0) + (e.target.kind === "xp" ? e.target.value : 0);
+          e.stolenXp = (e.stolenXp ?? 0) + e.target.value;
           game.addFloater(e.x, e.y - 30, "FRONT-RUN", "#ffe08a");
           game.audio.play("nearMiss");
           e.target = undefined;

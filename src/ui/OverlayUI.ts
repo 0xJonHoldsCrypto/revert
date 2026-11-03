@@ -126,10 +126,14 @@ export class OverlayUI {
       card.className = `upgrade-card rarity-${rarity}${c.recommended ? " recommended" : ""}`;
       const compare = c.compare?.length ? `<ul class="card-compare">${c.compare.map((l) => `<li>${l}</li>`).join("")}</ul>` : "";
       const value = c.value !== undefined && c.value > 0 ? `<small class="card-value">Worth about +${Math.round(c.value)} DPS</small>` : "";
-      const banish = !gear && this.game.banishes > 0 ? `<i class="card-banish" title="Banish for this run">✕</i>` : "";
+      const gates = Boolean(c.tag?.startsWith("EVOLVE")) || c.id.startsWith("upgrade-");
+      const banishNote = gates ? "Banish for this run. Warning: this card is part of an evolution." : "Banish for this run";
+      const banish = !gear && this.game.banishes > 0 ? `<i class="card-banish" title="${banishNote}">✕</i>` : "";
       card.innerHTML = `${c.recommended ? `<b class="card-rec">RECOMMENDED</b>` : ""}<kbd>${i + 1}</kbd>${banish}<span class="rarity-tag">${kind} · ${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>${compare}${value}`;
       card.addEventListener("click", (event) => {
-        if ((event.target as HTMLElement).classList.contains("card-banish")) this.game.banishCard(i);
+        if ((event.target as HTMLElement).classList.contains("card-banish")) {
+          if (!gates || window.confirm("This card is part of an evolution. Banishing it blocks that evolution for this run. Banish anyway?")) this.game.banishCard(i);
+        }
         else this.game.pickUpgrade(i);
       });
       grid.appendChild(card);

@@ -27,14 +27,14 @@ const SPRITE_VERTEX_BODY = `
   attribute vec3 iPos;
   attribute vec2 iSize;
   attribute vec4 iUv;
-  attribute vec2 iFx;
+  attribute vec3 iFx;
   uniform vec3 uUp;
   varying vec2 vUv;
   varying vec2 vFx;
   varying vec3 vWorld;
   vec3 spriteWorld() {
     vUv = vec2(mix(iUv.x, iUv.z, position.x + 0.5), mix(iUv.y, iUv.w, position.y));
-    vFx = iFx;
+    vFx = iFx.xy;
     return iPos + vec3(position.x * iSize.x, 0.0, 0.0) + uUp * position.y * iSize.y;
   }
 `;
@@ -57,7 +57,7 @@ export class SpriteBatch {
   private count = 0;
 
   constructor(private capacity: number, map: THREE.Texture, lights: SpriteLights) {
-    const { geometry, arrays } = makeInstancedGeometry(QUAD_POSITIONS, capacity, { iPos: 3, iSize: 2, iUv: 4, iFx: 2 });
+    const { geometry, arrays } = makeInstancedGeometry(QUAD_POSITIONS, capacity, { iPos: 3, iSize: 2, iUv: 4, iFx: 3 });
     this.geometry = geometry;
     this.attrs = arrays;
     this.pos = arrays.iPos!.array as Float32Array;
@@ -111,7 +111,8 @@ export class SpriteBatch {
       side: THREE.DoubleSide,
       vertexShader: `${SPRITE_VERTEX_BODY}
         void main() {
-          gl_Position = projectionMatrix * viewMatrix * vec4(spriteWorld(), 1.0);
+          vec3 world = spriteWorld();
+          gl_Position = iFx.z > 0.5 ? projectionMatrix * viewMatrix * vec4(world, 1.0) : vec4(2.0, 2.0, 2.0, 1.0);
         }`,
       fragmentShader: `
         #include <packing>
@@ -133,7 +134,7 @@ export class SpriteBatch {
     this.count = 0;
   }
 
-  push(frame: AtlasFrame, x: number, y: number, lift: number, height: number, flip: boolean, flash = 0, emissive = 0, widthScale = 1) {
+  push(frame: AtlasFrame, x: number, y: number, lift: number, height: number, flip: boolean, flash = 0, emissive = 0, widthScale = 1, casts = false) {
     if (this.count >= this.capacity) return;
     const i = this.count++;
     this.pos[i * 3] = x;
@@ -146,8 +147,9 @@ export class SpriteBatch {
     this.uv[i * 4 + 1] = frame.v0;
     this.uv[i * 4 + 2] = frame.u1;
     this.uv[i * 4 + 3] = frame.v1;
-    this.fx[i * 2] = flash;
-    this.fx[i * 2 + 1] = emissive;
+    this.fx[i * 3] = flash;
+    this.fx[i * 3 + 1] = emissive;
+    this.fx[i * 3 + 2] = casts ? 1 : 0;
   }
 
   commit() {
