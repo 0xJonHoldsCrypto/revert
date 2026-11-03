@@ -80,7 +80,7 @@ export function runEffects(difficulty: DifficultyId, setup: RunSetup): RunEffect
     huntEverySec: 0,
     darkness: false,
     scoreMult: reward.score,
-    shardMult: reward.shards,
+    shardMult: reward.shards * diff.shardMult,
   };
   for (const id of cleanModifiers(setup.mods)) {
     const m = MODIFIER_BY_ID[id].effect;

@@ -63,7 +63,7 @@ After a death the post-mortem offers a 1200x630 share card drawn in code (`src/u
 
 **Attackers** (hand-drawn in `src/pixel/handArt.ts`). The Frontrunner reads your heading and blinks ahead of you after a telegraph. The Censor drops a burning ring around you that hurts once if you cross it. The Dust Spammer fires slow dust that stacks a 12% slow (dash to shake it). The Griefer leaves timelocked mines that arm, then wait.
 
-**Contracts** (`src/data/modifiers.ts`) are tuned with the paired-seed contract section of `npm run balance` so that each one lowers bot survival and still pays a higher median score than no contract: Glass Cannon is +35% damage at 40% max HP, Immutable Ledger pays ×1.8, Doxxed hunts every 60s, Dark Forest pays ×1.4, Whale Season whales hit 60% harder, Low Latency is +25% attacker speed for ×1.4, and Bull Market is 60% more attackers for only 10% more XP.
+**Contracts** (`src/data/modifiers.ts`) are tuned with the paired-seed contract section of `npm run balance` so that each one lowers bot survival and still pays a higher median score than no contract: Glass Cannon is +35% damage at 40% max HP, Immutable Ledger pays ×1.8, Doxxed hunts every 60s, Dark Forest pays ×1.4, Whale Season whales hit 60% harder, Low Latency is +25% attacker speed for ×1.4, and Bull Market is 60% more attackers for only 10% more XP. Immutable Ledger also stops max HP gains from refilling HP, and Hard Fork revives it at 25% instead of 50%. Shards are scaled by difficulty after contracts (Easy ×0.5, Normal ×1, Hard ×1.5, Nightmare ×2), so Easy with every contract still pays less than plain Nightmare.
 
 The Codex has an INTEL tab for affixes and events, and two achievements cover them (Mempool Weather, Stacked Odds).
 
@@ -113,7 +113,7 @@ Production builds on Vercel use `vercel.json`, which sets this URL. Submit https
 
 ## Replayable runs
 
-Every run records its seed, hero, difficulty, inputs and choices in a versioned log with state checkpoints (`src/replay/runLog.ts`). `replayRun` in `src/replay/replayRun.ts` plays a log back headless and rejects it if the state ever differs. Score submission and the server that runs this check are not built yet. Bump `SIM_VERSION` whenever a change alters simulation results.
+Every run records its seed, hero, difficulty, inputs and choices in a versioned log with state checkpoints (`src/replay/runLog.ts`). `replayRun` in `src/replay/replayRun.ts` plays a log back headless and rejects it if the state ever differs. Score submission and the server that runs this check are not built yet. Two limits of a client-only check: the log's unlock list is self-declared (replay proves the run is consistent with the unlocks it claims, not that the player earned them), so a leaderboard should compare ranked runs without trusting or splitting by that list, or use daily mode, which fixes the hero, contract and unlock set; and the daily date is not bounded client-side, so the server must reject daily logs whose date is not the current UTC day. Bump `SIM_VERSION` whenever a change alters simulation results.
 
 ## Lint
 

@@ -7,6 +7,7 @@ import { MAX_HAZARDS } from "./threats";
 export const BIOME_HAZARD_FIRST_SEC = 50;
 const EVERY_SEC = 10;
 const EVERY_SPREAD_SEC = 6;
+const BOSS_QUIET_SEC = 6;
 const BASE_DAMAGE = 15;
 const LANE_LENGTH = 1500;
 const LANE_WIDTH = 88;
@@ -33,7 +34,7 @@ export class BiomeHazards {
     const g = this.g;
     if (g.elapsed < this.nextAt || g.dying > 0) return;
     this.nextAt = g.elapsed + EVERY_SEC + g.rand() * EVERY_SPREAD_SEC;
-    if (g.anyBossAlive()) return;
+    if (g.anyBossAlive() || g.miniEvents.active || g.nextBossIn < BOSS_QUIET_SEC) return;
     const id = HAZARD_OF_BIOME[biomeAt(g.player.x, g.player.y)];
     const batch = this.plan(id);
     if (g.hazards.length + batch.length > MAX_HAZARDS) return;

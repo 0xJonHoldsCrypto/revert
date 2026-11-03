@@ -46,7 +46,7 @@ import type { ColorblindMode } from "../save";
 import type { HapticKind } from "../haptics";
 import { ACHIEVEMENT_BY_ID } from "../data/achievements";
 import { RunTracker, type AchEvent, type AchPayload } from "./achievements";
-import { gasCloud, isHiddenFromWeapons, THREAT_INTEL, updateEnemyBehavior, updateHazards } from "./threats";
+import { gasCloud, isHiddenFromWeapons, MAX_HAZARDS, THREAT_INTEL, updateEnemyBehavior, updateHazards } from "./threats";
 import { BOSS_ENTRANCES, BOSS_TIMELINE, LANDING_TIMELINE, type Cinematic } from "./cinematic";
 import { groundHalfExtents } from "../render/view";
 import { defaultSetup, runEffects, setupDigest, cleanSetup, type RunEffects, type RunSetup } from "./runSetup";
@@ -156,6 +156,8 @@ const MAX_SHOOTERS = 14;
 const PLAYER_HIT_RADIUS = 11;
 const ENEMY_HIT_SCALE = 0.8;
 const HUD_TICKS = 6;
+const REVIVE_HP_SHARE = 0.5;
+const IMMUTABLE_REVIVE_HP_SHARE = 0.25;
 export const ARC_LIFE_SEC = 0.16;
 const EMPTY_PERKS = Object.fromEntries(
   ["pierce", "multishot", "area", "crit", "regen", "thorns", "dashBlast", "dashCooldown", "xp", "coin", "killBlast", "abilityCooldown", "revive", "rerolls", "lpRange", "launchpool", "cleanFeed", "bugBounty", "eigen", "aave", "lido", "flashbots", "wormhole", "opGrant", "curve"].map((k) => [k, 0])
@@ -856,10 +858,7 @@ export class Game {
         }
       },
       heal: (amount) => this.healPlayer(amount),
-      maxHp: (amount) => {
-        this.player.maxHp += amount;
-        this.player.hp += amount;
-      },
+      maxHp: (amount) => this.raiseMaxHp(amount),
       hasUpgrade: (id) => this.ownsUpgrade(id),
       boostStat: (stat, amount) => {
         if (stat === "damage") this.player.damageMult += amount;
@@ -948,8 +947,7 @@ export class Game {
     if (this.attract) return;
     this.rollChoices();
     if (this.levelUpChoices.length === 0) {
-      this.player.maxHp += 5;
-      this.player.hp += 5;
+      this.raiseMaxHp(5);
       return;
     }
     this.setPhase("levelup");
@@ -1095,7 +1093,7 @@ export class Game {
     }
     if (this.player.hp <= 0 && this.dying <= 0 && this.perks.revive > 0 && this.rootCause !== "insolvent") {
       this.perks.revive--;
-      this.player.hp = this.player.maxHp * 0.5;
+      this.player.hp = this.player.maxHp * (this.effects.healMult > 0 ? REVIVE_HP_SHARE : IMMUTABLE_REVIVE_HP_SHARE);
       this.player.invuln = 2;
       this.impactFrames = 6;
       this.addStrike(this.player.x, this.player.y, 320, this.strikeDamage(), "#b58cff", 0);
@@ -1155,6 +1153,11 @@ export class Game {
 
   score(): number {
     return Math.floor(this.baseScore() * this.effects.scoreMult);
+  }
+
+  raiseMaxHp(amount: number) {
+    this.player.maxHp += amount;
+    this.healPlayer(amount);
   }
 
   healPlayer(amount: number) {
@@ -1228,8 +1231,10 @@ export class Game {
     this.bannerQueue.push({ title, text, tone });
   }
 
-  addHazard(h: Omit<Hazard, "t">) {
+  addHazard(h: Omit<Hazard, "t">): boolean {
+    if (this.hazards.length >= MAX_HAZARDS && !isBossSource(h.source)) return false;
     this.hazards.push({ ...h, t: 0 });
+    return true;
   }
 
   findEnemy(id: number): Enemy | undefined {
@@ -1853,8 +1858,7 @@ export class Game {
     const def = WELL_STATS[stat];
     const ctx = this.makeUpgradeContext();
     if (stat === "maxHp") {
-      this.player.maxHp += def.applyAmount;
-      this.player.hp += def.applyAmount;
+      this.raiseMaxHp(def.applyAmount);
     } else if (stat === "armor") {
       this.player.wellBonusArmor += def.applyAmount;
     } else if (stat === "yield") {
@@ -1964,7 +1968,7 @@ export class Game {
     this.gearStats = sum;
     const delta = (sum.maxHp ?? 0) - before;
     p.maxHp += delta;
-    p.hp = clamp(p.hp + Math.max(0, delta), 1, p.maxHp);
+    p.hp = clamp(p.hp + Math.max(0, delta) * this.effects.healMult, 1, p.maxHp);
     this.syncOrbiters();
   }
 
@@ -2510,10 +2514,10 @@ export class Game {
     const at = this.ringPoint(160);
     const kinds: EnemyKind[] = this.elapsed < 150 ? ["script-kiddie", "sim-swapper"] : ["shadow-op", "rug-dev", "liquidator"];
     const e = this.spawnEnemyAt(kinds[Math.floor(this.rand() * kinds.length)]!, at.x, at.y, true);
-    this.makeWhale(e);
-    e.bounty = true;
     e.hp *= 2;
     e.maxHp *= 2;
+    this.makeWhale(e);
+    e.bounty = true;
     this.queueBanner("BOUNTY POSTED", "A whale wallet is on the map. Follow the arrow, collect the reward.", "#ffc23d");
     this.audio.play("sting");
   }
@@ -3380,6 +3384,10 @@ export class Game {
       neverSell: this.elapsed < p.neverSellUntil,
     });
   }
+}
+
+function isBossSource(source: HazardSource): boolean {
+  return Object.prototype.hasOwnProperty.call(ENEMIES, source) && !!ENEMIES[source as EnemyKind].isBoss;
 }
 
 function mixHash(hash: number, value: number): number {

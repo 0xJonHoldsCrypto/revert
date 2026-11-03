@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { AFFIX_ORDER, AFFIXES, DOUBLE_AFFIX_TIME_SEC, rollAffixes, SPLIT_COUNT } from "../data/affixes";
+import { AFFIX_ORDER, AFFIXES, DOUBLE_AFFIX_TIME_SEC, rollAffixes, SPLIT_CONTACT_GRACE_SEC, SPLIT_COUNT } from "../data/affixes";
 import { ENEMIES } from "../data/enemies";
 import { keeperThreshold, WEAPONS } from "../data/weapons";
 import { headlessGame, stepSeconds } from "../test/harness";
 import type { Enemy, EnemyKind, WeaponKind } from "../types";
 import { seedSim, spawnRandom } from "../utils/math";
 import { MINI_EVENT_ORDER, MINI_EVENTS } from "./events";
+import { MAX_HAZARDS } from "./threats";
 import type { Game } from "./Game";
 
 function quietRun(seed = 1234): Game {
@@ -94,6 +95,39 @@ describe("elite affixes", () => {
     expect(game.enemies.filter((m) => !m.dead).length).toBe(before - 1 + SPLIT_COUNT);
     expect(game.hazards.length).toBe(hazards + 1);
     expect(game.hazards.at(-1)!.label).toBe("VOLATILE");
+  });
+
+  it("split children get a contact grace", () => {
+    const game = quietRun();
+    const e = dummy(game, 20, 0);
+    e.elite = true;
+    e.affixes = ["splitting"];
+    const before = new Set(game.enemies.map((m) => m.id));
+    game.damageEnemy(e, 2e6);
+    const children = game.enemies.filter((m) => !before.has(m.id));
+    expect(children.length).toBe(SPLIT_COUNT);
+    expect(children.every((c) => c.contactCd === SPLIT_CONTACT_GRACE_SEC)).toBe(true);
+  });
+
+  it("caps hazards except boss attacks, including volatile blasts and airdrop crates", () => {
+    const game = quietRun();
+    const filler = { shape: "circle" as const, x: 9999, y: 9999, r: 1, windup: 99, active: 0, damage: 0, color: "#fff", knock: 0 };
+    for (let i = 0; i < MAX_HAZARDS; i++) expect(game.addHazard({ ...filler, source: "griefer" })).toBe(true);
+    expect(game.addHazard({ ...filler, source: "griefer" })).toBe(false);
+    expect(game.addHazard({ ...filler, source: "gas-lane" })).toBe(false);
+    expect(game.hazards.length).toBe(MAX_HAZARDS);
+    const e = dummy(game, 300, 0);
+    e.affixes = ["volatile"];
+    game.damageEnemy(e, 2e6);
+    expect(game.hazards.length).toBe(MAX_HAZARDS);
+    game.player.pickupRadius = 0;
+    const pickups = game.pickups.length;
+    game.miniEvents.start("airdrop-rain");
+    holdSpawns(game, 2);
+    expect(game.hazards.length).toBe(MAX_HAZARDS);
+    expect(game.pickups.length).toBe(pickups);
+    expect(game.addHazard({ ...filler, source: "boss-grandmaster" })).toBe(true);
+    expect(game.hazards.length).toBe(MAX_HAZARDS + 1);
   });
 
   it("menders heal neighbours and vampires heal on contact", () => {

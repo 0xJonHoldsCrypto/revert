@@ -24,6 +24,7 @@ export const SHIELD_REGEN_SEC = 5;
 export const HASTE_MULT = 1.45;
 export const SPLIT_COUNT = 3;
 export const SPLIT_HP_SHARE = 0.12;
+export const SPLIT_CONTACT_GRACE_SEC = 0.5;
 export const VOLATILE_RADIUS = 125;
 export const VOLATILE_FUSE_SEC = 1;
 export const MENDER_RADIUS = 190;

@@ -76,6 +76,14 @@ describe("bounty shards", () => {
     expect(shardsForRun({ timeSec: 1e7, baseScore: 1e9, bosses: 99, tainted: false, shardMult: 3 })).toBe(MAX_SHARDS_PER_RUN);
   });
 
+  it("scales with difficulty so easy runs with every contract stay below nightmare", () => {
+    const all = MODIFIERS.map((m) => m.id);
+    expect(runEffects("easy", defaultSetup()).shardMult).toBe(DIFFICULTY.easy.shardMult);
+    expect(runEffects("nightmare", defaultSetup()).shardMult).toBe(DIFFICULTY.nightmare.shardMult);
+    expect(runEffects("hard", defaultSetup()).shardMult).toBeGreaterThan(runEffects("normal", defaultSetup()).shardMult);
+    expect(runEffects("easy", { ...defaultSetup(), mods: all }).shardMult).toBeLessThan(runEffects("nightmare", defaultSetup()).shardMult * 0.8);
+  });
+
   it("pays nothing for tainted runs", () => {
     expect(shardsForRun({ timeSec: 1200, baseScore: 50000, bosses: 6, tainted: true, shardMult: 2 })).toBe(0);
   });
@@ -183,12 +191,31 @@ describe("contracts", () => {
     ledger.healPlayer(50);
     ledger.skipCards();
     expect(ledger.player.hp).toBe(10);
+    const maxHp = ledger.player.maxHp;
+    ledger.raiseMaxHp(20);
+    expect(ledger.player.maxHp).toBe(maxHp + 20);
+    expect(ledger.player.hp).toBe(10);
     const pricey = gameWith({ mods: ["inflation"] });
     expect(pricey.chestCost(10)).toBe(16);
     const scored = gameWith({ mods: ["glass-cannon", "immutable"] });
     stepSeconds(scored, 5);
     expect(scored.baseScore()).toBeGreaterThan(0);
     expect(scored.score()).toBe(Math.floor(scored.baseScore() * rewardMults(["glass-cannon", "immutable"]).score));
+  });
+
+  it("revives an immutable ledger at a lower share of max HP", () => {
+    const revive = (mods: RunSetup["mods"]) => {
+      const game = gameWith({ mods });
+      game.perks.revive = 1;
+      game.player.hp = 0;
+      game.update(1 / 60);
+      expect(game.player.dead).toBeFalsy();
+      return game.player.hp / game.player.maxHp;
+    };
+    const normal = revive([]);
+    const immutable = revive(["immutable"]);
+    expect(immutable).toBeGreaterThan(0);
+    expect(immutable).toBeLessThan(normal);
   });
 
   it("sends a whale after you when doxxed", () => {

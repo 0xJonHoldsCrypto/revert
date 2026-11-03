@@ -6,6 +6,7 @@ import {
   rollAffixes,
   SHIELD_REGEN_SEC,
   SHIELD_SHARE,
+  SPLIT_CONTACT_GRACE_SEC,
   SPLIT_COUNT,
   SPLIT_HP_SHARE,
   VAMPIRE_HEAL_SHARE,
@@ -86,6 +87,7 @@ export function affixOnDeath(g: Game, e: Enemy) {
       const child = g.spawnEnemyAt(e.kind, e.x + Math.cos(a) * 30, e.y + Math.sin(a) * 30, true);
       child.hp = child.maxHp = e.maxHp * SPLIT_HP_SHARE;
       child.scale = 1.1;
+      child.contactCd = SPLIT_CONTACT_GRACE_SEC;
     }
   }
   if (hasAffix(e, "volatile")) {

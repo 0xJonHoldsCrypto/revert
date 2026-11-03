@@ -28,7 +28,7 @@ export const MINI_EVENT_ORDER: MiniEventId[] = ["domino-defaults", "mempool-surg
 export const FIRST_EVENT_SEC = 80;
 const EVENT_GAP_MIN_SEC = 70;
 const EVENT_GAP_SPREAD_SEC = 40;
-const BOSS_CLEARANCE_SEC = 25;
+const BOSS_CLEARANCE_SEC = 36;
 const RETRY_SEC = 8;
 const SURGE_SPAWN_MULT = 2;
 const SURGE_XP_MULT = 1.6;
@@ -143,7 +143,7 @@ export class MiniEvents {
     const r = 60 + g.rand() * RAIN_REACH;
     const x = p.x + Math.cos(a) * r;
     const y = p.y + Math.sin(a) * r;
-    g.addHazard({ shape: "circle", x, y, r: RAIN_RADIUS, windup: RAIN_FUSE_SEC, active: 0, damage: 14, color: "#ffc23d", source: "airdrop-farmer", knock: 160, label: "CRATE" });
+    if (!g.addHazard({ shape: "circle", x, y, r: RAIN_RADIUS, windup: RAIN_FUSE_SEC, active: 0, damage: 14, color: "#ffc23d", source: "airdrop-farmer", knock: 160, label: "CRATE" })) return;
     this.drops.push({ x, y, at: g.elapsed + RAIN_FUSE_SEC });
   }
 

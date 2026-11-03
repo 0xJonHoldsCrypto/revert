@@ -447,19 +447,24 @@ export function awardShards(amount: number): number {
 
 export function buyPerk(id: MetaPerkId): boolean {
   const meta = get().meta;
-  const check = canBuyPerk(meta.perks, meta.shards, id);
-  if (!check.ok) return false;
+  if (!canBuyPerk(meta.perks, meta.shards, id).ok) return false;
+  let bought = false;
   patch((d) => {
+    const check = canBuyPerk(d.meta.perks, d.meta.shards, id);
+    if (!check.ok) return;
     d.meta.shards -= check.cost;
     d.meta.perks[id] = (d.meta.perks[id] ?? 0) + 1;
+    bought = true;
   });
-  return true;
+  return bought;
 }
 
 export function refundPerks(): number {
-  const refund = spentOn(get().meta.perks);
-  if (refund <= 0) return 0;
+  if (spentOn(get().meta.perks) <= 0) return 0;
+  let refund = 0;
   patch((d) => {
+    refund = spentOn(d.meta.perks);
+    if (refund <= 0) return;
     d.meta.shards = Math.min(MAX_SHARDS, d.meta.shards + refund);
     d.meta.perks = {};
   });
