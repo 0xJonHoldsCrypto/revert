@@ -81,6 +81,8 @@ describe("replay", () => {
     expect(replayRun(replayerFor(edited), edited).ok).toBe(false);
     const fake: RunLog = { ...structuredClone(log), finalHash: log.finalHash + 1 };
     expect(replayRun(replayerFor(fake), fake)).toMatchObject({ ok: false, reason: "final-state-mismatch" });
+    const forged: RunLog = { ...structuredClone(log), checkpoints: log.checkpoints.map((h) => h + 1) };
+    expect(replayRun(replayerFor(forged), forged)).toMatchObject({ ok: false, reason: "state-mismatch" });
   });
 
   it("rejects other versions and debug-tainted runs", () => {

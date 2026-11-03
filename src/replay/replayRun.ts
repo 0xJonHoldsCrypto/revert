@@ -1,5 +1,5 @@
 import type { Game } from "../game/Game";
-import { CHECKPOINT_TICKS, decodeMove, SIM_VERSION, type RunLog } from "./runLog";
+import { decodeMove, SIM_VERSION, type RunLog } from "./runLog";
 
 export type ReplayVerdict =
   | { ok: true; ticks: number; kills: number; level: number; score: number; timeSec: number; bosses: number }
@@ -59,15 +59,15 @@ export function replayRun(game: Game, log: RunLog): ReplayVerdict {
       continue;
     }
     if (game.runTick >= log.ticks || game.phase === "lost") break;
-    if (game.phase === "cinematic" && game.cinematic) game.cinematic.t += 99;
+    if (game.phase === "cinematic") game.skipCinematic();
     if (game.phase === "cutscene") game.cutscene.skip();
-    const before = game.runTick;
     game.update(1 / 60);
-    if (game.runTick !== before && game.runTick % CHECKPOINT_TICKS === 0) {
-      if (log.checkpoints[checkpoint] !== game.stateHash()) return { ok: false, reason: "state-mismatch", atTick: game.runTick };
+    if (game.checkpointCount > checkpoint) {
+      if (log.checkpoints[checkpoint] !== game.lastCheckpoint) return { ok: false, reason: "state-mismatch", atTick: game.runTick };
       checkpoint++;
     }
   }
+  if (checkpoint !== log.checkpoints.length) return { ok: false, reason: "checkpoint-count-mismatch", atTick: game.runTick };
   if (game.runTick !== log.ticks) return { ok: false, reason: "length-mismatch", atTick: game.runTick };
   if (choice !== log.choices.length) return { ok: false, reason: "unused-choices", atTick: game.runTick };
   if (game.stateHash() !== log.finalHash) return { ok: false, reason: "final-state-mismatch", atTick: game.runTick };

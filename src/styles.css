@@ -436,7 +436,7 @@ body {
 :root { --ink: #f2ead8; --muted: #8f93a6; --amber: #ffb020; --amber-hi: #ffd166; --red: #e0303c; --mint: #2ee6c7; --plate: rgba(7, 8, 15, 0.86); --line: #2b2d3e; --display: "Pixelify Sans", ui-monospace, monospace; --mono: "JetBrains Mono", ui-monospace, monospace; }
 kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 1px 6px; background: #1a1c2a; border: 1px solid #3b3e54; border-bottom-width: 3px; color: var(--ink); }
 .hud, .postmortem { font-family: var(--mono); }
-#boot { position: fixed; inset: 0; z-index: 40; background: #05060b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; color: var(--ink); font-family: var(--mono); transition: opacity 0.35s; }
+#boot { position: fixed; inset: 0; z-index: 40; background: #05060b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 64px 16px 16px; color: var(--ink); font-family: var(--mono); transition: opacity 0.35s; }
 #boot.out { opacity: 0; pointer-events: none; }
 .boot-logo { image-rendering: pixelated; max-width: min(620px, 88vw); height: auto; }
 .boot-tag { color: var(--muted); font-size: 13px; margin-bottom: 26px; }
@@ -576,3 +576,8 @@ kbd { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 1px 
 .pause-menu .btn { min-height: 40px; }
 @media (max-width: 900px) { .hud-ticker { display: none; } .hud-feed { display: none; } }
 @media (max-width: 640px) { .t-passive { display: none; } .upgrade-card:only-child { width: 100%; } }
+
+.boot-fail { width: min(520px, 90vw); color: #ff5c48; font-size: 14px; text-align: center; }
+#boot.failed .boot-track, #boot.failed .boot-log { opacity: 0.35; }
+.hud-feed { bottom: 14px; }
+.hud-toasts { bottom: 24px; }

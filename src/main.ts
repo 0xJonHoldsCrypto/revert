@@ -9,7 +9,7 @@ import { CHESTS } from "./data/environment";
 import { FONT_MONO, FONT_UI } from "./ui/theme";
 import { applyCanvasBackingStore, applyCanvasSize, readViewport } from "./render/viewport";
 import { OverlayUI } from "./ui/OverlayUI";
-import { bootProgress, finishBoot } from "./ui/bootScreen";
+import { bootProgress, failBoot, finishBoot } from "./ui/bootScreen";
 import { drawCinematic } from "./ui/cinematicOverlay";
 import { bindMute } from "./ui/muteButton";
 import { mountTouchControls, syncTouchVisible } from "./ui/touchControls";
@@ -371,16 +371,18 @@ function loop(now: number) {
 }
 
 bootProgress(0.55);
-createThreePixelEngine(canvas).then((engine) => {
-  pixelEngine = engine;
-  bootProgress(0.95);
-  game.setPhase("menu");
-  finishBoot(() => overlay.showTitleReady());
-  if (!loopStarted) {
-    loopStarted = true;
-    requestAnimationFrame(loop);
-  }
-});
+createThreePixelEngine(canvas)
+  .then((engine) => {
+    pixelEngine = engine;
+    bootProgress(0.95);
+    game.setPhase("menu");
+    finishBoot(() => overlay.showTitleReady());
+    if (!loopStarted) {
+      loopStarted = true;
+      requestAnimationFrame(loop);
+    }
+  })
+  .catch(() => failBoot("This game needs WebGL. Turn on hardware acceleration or try another browser."));
 
 function wake() {
   game.setWindowActive(true);

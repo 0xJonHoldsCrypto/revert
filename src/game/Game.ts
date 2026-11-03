@@ -280,6 +280,8 @@ export class Game {
   private moveCode = 0;
   private spawnAspect = 16 / 9;
   runTick = 0;
+  checkpointCount = 0;
+  lastCheckpoint = 0;
   aspectSource: () => number = () => {
     const vp = readViewport(this.canvas);
     return vp.width / Math.max(1, vp.height);
@@ -468,6 +470,9 @@ export class Game {
   private resetRun(seed = (Math.random() * 2 ** 31) | 0) {
     nextId = 1;
     this.runTick = 0;
+    this.checkpointCount = 0;
+    this.lastCheckpoint = 0;
+    this.simTick = 0;
     this.moveCode = 0;
     this.spawnAspect = roundAspect(this.aspectSource());
     const ch = getCharacter(this.selectedCharacter);
@@ -807,7 +812,11 @@ export class Game {
 
     this.runTick++;
     this.syncAspect();
-    if (this.runTick % CHECKPOINT_TICKS === 0) this.recorder.checkpoint(this.stateHash());
+    if (this.runTick % CHECKPOINT_TICKS === 0) {
+      this.lastCheckpoint = this.stateHash();
+      this.checkpointCount++;
+      this.recorder.checkpoint(this.lastCheckpoint);
+    }
     if (this.hitstop > 0) {
       this.hitstop -= dt;
       if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 1.5);
@@ -1151,7 +1160,7 @@ export class Game {
     }
 
     if (this.tutorialStep < TUTORIAL.length && this.elapsed >= TUTORIAL[this.tutorialStep]![0]) {
-      this.queueBanner("INBOUND TX · 0xdead…c0de", TUTORIAL[this.tutorialStep]![1], "#ff5c48");
+      this.bannerQueue.unshift({ title: "INBOUND TX · 0xdead…c0de", text: TUTORIAL[this.tutorialStep]![1], tone: "#ff5c48" });
       this.tutorialStep++;
       if (this.tutorialStep === TUTORIAL.length) {
         this.tutorialDone = true;
@@ -2197,6 +2206,10 @@ export class Game {
       flash: 0,
       wobble: 0,
     });
+  }
+
+  skipCinematic() {
+    if (this.cinematic) this.cinematic.t += 99;
   }
 
   taintRun() {

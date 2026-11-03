@@ -31,6 +31,15 @@ export function bootProgress(value: number) {
   target = Math.max(target, value);
 }
 
+export function failBoot(message: string) {
+  if (!root) return;
+  root.classList.add("failed");
+  const note = document.createElement("p");
+  note.className = "boot-fail";
+  note.textContent = message;
+  root.appendChild(note);
+}
+
 export function finishBoot(done: () => void) {
   target = 1;
   ready = true;

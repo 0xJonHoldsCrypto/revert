@@ -10,17 +10,6 @@ function formatFunds(value: number): string {
   return value >= 1e9 ? `$${(value / 1e9).toFixed(2)}B` : `$${(value / 1e6).toFixed(1)}M`;
 }
 
-function mempoolTicker(): string {
-  const labels = ["swap", "approve", "bridge", "transfer", "claim", "liquidate", "mint"];
-  const lines: string[] = [];
-  for (let i = 0; i < 16; i++) {
-    const hash = Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
-    const label = labels[Math.floor(Math.random() * labels.length)];
-    lines.push(`0x${hash} ${label} ${Math.floor(20 + Math.random() * 180)} gwei`);
-  }
-  return lines.join("   ·   ");
-}
-
 export class OverlayUI {
   private overlay: HTMLElement;
   private title: TitleScreen;
@@ -212,10 +201,6 @@ export class OverlayUI {
     this.hudEl.className = "hud";
     this.hudDyn = document.createElement("div");
     this.hudEl.appendChild(this.hudDyn);
-    const ticker = document.createElement("div");
-    ticker.className = "hud-ticker";
-    ticker.innerHTML = `<div>${mempoolTicker()} ${mempoolTicker()}</div>`;
-    this.hudEl.appendChild(ticker);
     this.overlay.appendChild(this.hudEl);
   }
 
