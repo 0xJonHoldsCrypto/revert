@@ -26,7 +26,6 @@ function metaLine(m: MetaSummary): string {
   if (fresh.length) parts.push(`Unlocked: <b>${fresh.map((u) => (u.kind === "hero" ? CHARACTERS.find((c) => c.id === u.target)?.name : WEAPONS[u.target as WeaponKind]?.name) ?? u.target).join(", ")}</b>`);
   return parts.length ? `<div class="pm-meta">${parts.map((p) => `<span>${p}</span>`).join("")}</div>` : "";
 }
-import { serializeRunLog } from "../replay/runLog";
 import type { ShareData } from "./shareCard";
 import * as save from "../save";
 
@@ -187,7 +186,8 @@ export class OverlayUI {
     this.ensureHud();
     if (!this.hudEl) return;
     const xpPct = Math.min(100, (data.xp / data.xpToNext) * 100);
-    const fundsText = data.lie ? `$${(Math.random() * 99).toFixed(2)}B` : formatFunds(data.funds);
+    const shimmer = data.lie ? 1 + (Math.random() - 0.5) * 0.3 : 1;
+    const fundsText = formatFunds(data.funds * shimmer);
     const weaponLines = data.weapons
       .map((w) => `<div class="hud-weapon rarity-${w.rarity}${w.jammed ? " jammed" : ""}"><span>${w.jammed ? "HIJACKED" : w.name}</span><b>${"▮".repeat(Math.min(w.level, 8))}</b></div>`)
       .join("");
@@ -220,7 +220,7 @@ export class OverlayUI {
       `<div class="hud-funds${data.fundsPct < 30 ? " low" : ""}${data.lie ? " lying" : ""}">
         <label>FUNDS AT RISK</label>
         <strong>${fundsText}</strong>
-        <div class="hud-funds-bar"><div style="width:${data.lie ? Math.random() * 100 : data.fundsPct}%"></div></div>
+        <div class="hud-funds-bar"><div style="width:${Math.min(100, data.fundsPct * shimmer)}%"></div></div>
       </div>`,
       `<div class="hud-block-clock${data.gas ? " gas" : ""}">
         <label>${data.gas ? "GAS 9,999 GWEI" : "BLOCK"}</label>
@@ -333,6 +333,7 @@ export class OverlayUI {
           <div class="pm-card" id="pm-card"></div>
           <div class="pm-share-actions">
             <button type="button" class="btn btn-secondary" id="share-btn">SHARE</button>
+            <button type="button" class="btn btn-secondary" id="file-btn">SAVE RUN FILE</button>
             <button type="button" class="btn btn-secondary" id="code-btn">COPY RUN CODE</button>
             <button type="button" class="btn btn-secondary" id="seed-btn">REPLAY THIS SEED</button>
             <p class="pm-note" id="pm-note" role="status"></p>
@@ -392,28 +393,33 @@ export class OverlayUI {
         })
         .catch(() => say("Could not share the image on this device."));
     });
+    const codec = () => import("../replay/runCode");
+    panel.querySelector("#file-btn")!.addEventListener("click", () => {
+      Promise.all([codec(), lazy()])
+        .then(([c, m]) => c.encodeRunBytes(this.game.runLog()).then((bytes) => m.downloadBytes(bytes, `revert-${data.seed}.run`)))
+        .then((ok) => say(ok ? "Run file saved to downloads." : "Could not save the run file."))
+        .catch(() => say("Could not save the run file."));
+    });
     panel.querySelector("#code-btn")!.addEventListener("click", () => {
-      let text: string;
-      try {
-        text = serializeRunLog(this.game.runLog());
-      } catch {
-        say("Could not read the run log.");
-        return;
-      }
-      lazy()
-        .then((m) => m.copyText(text))
-        .catch(() => false)
-        .then((ok) => {
-          if (ok) {
-            code.hidden = true;
-            say("Run code copied.");
+      Promise.all([codec(), lazy()])
+        .then(([c, m]) => c.encodeRunCode(this.game.runLog()).then((text) => m.copyText(text).then((ok) => ({ ok, text }))))
+        .catch(() => null)
+        .then((res) => {
+          if (!res) {
+            say("Could not read the run log.");
             return;
           }
-          code.value = text;
+          const long = res.text.length > 3500 ? " Long run: too big for chat apps, use SAVE RUN FILE." : "";
+          if (res.ok) {
+            code.hidden = true;
+            say(`Run code copied.${long}`);
+            return;
+          }
+          code.value = res.text;
           code.hidden = false;
           code.focus();
           code.select();
-          say("Clipboard blocked. Copy the run code below.");
+          say(`Clipboard blocked. Copy the run code below.${long}`);
         });
     });
     panel.querySelector("#seed-btn")!.addEventListener("click", () => {

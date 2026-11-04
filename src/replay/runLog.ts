@@ -145,6 +145,8 @@ function isIntList(value: unknown): value is number[] {
   return Array.isArray(value) && value.every((n) => Number.isInteger(n) && n >= 0);
 }
 
+export const CHOICE_TYPES: ChoiceType[] = ["pick", "reroll", "skip", "banish"];
+
 export function parseRunLog(text: string): RunLog | null {
   if (text.length > MAX_LOG_CHARS) return null;
   let raw: Partial<RunLog>;
@@ -153,6 +155,11 @@ export function parseRunLog(text: string): RunLog | null {
   } catch {
     return null;
   }
+  return validateRunLog(raw);
+}
+
+export function validateRunLog(raw: Partial<RunLog> | null): RunLog | null {
+  if (!raw || typeof raw !== "object") return null;
   if (raw.format !== RUN_LOG_FORMAT || !Number.isInteger(raw.sim) || !Number.isInteger(raw.seed) || !Number.isInteger(raw.ticks)) return null;
   if (typeof raw.hero !== "string" || typeof raw.difficulty !== "string") return null;
   if (!isIntList(raw.moves) || !isIntList(raw.dashes) || !isIntList(raw.abilities) || !isIntList(raw.checkpoints)) return null;

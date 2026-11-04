@@ -133,7 +133,7 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
       else steer(e, e.x + (p.y - e.y), e.y - (p.x - e.x), speed * 0.4, dt);
       const take = DRAIN_PER_SEC * dt;
       e.carried = (e.carried ?? 0) + take;
-      game.fundsLost += take;
+      game.loseFunds(take);
       if (e.carried >= DRAIN_CAP) {
         e.dead = true;
         game.pushFeed(`${game.fakeHash()} bridged out · -$${(DRAIN_CAP / 1e6).toFixed(0)}M lost`);

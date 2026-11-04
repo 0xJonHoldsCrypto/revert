@@ -98,6 +98,8 @@ export const FUNDS_TOTAL = 3_840_000_000;
 const AMBIENT_DRAIN_PER_SEC = 400_000;
 const BOSS_DRAIN_PER_SEC = 500_000;
 const HIT_FUNDS_LOSS = 250_000;
+const HIT_FUNDS_DAMAGE_CAP = 60;
+const DRAIN_TAPER_SEC = 900;
 const BLOCK_START = 21_000_000;
 const BLOCK_SECONDS = 12;
 const KILL_FEED: Partial<Record<EnemyKind, string>> = {
@@ -142,6 +144,14 @@ const PERK_VALUE: Record<PerkId, number> = {
   lpRange: 0.15, launchpool: 0.15, cleanFeed: 0.03, bugBounty: 0.1, eigen: 0.1, aave: 0.08, lido: 0.04, flashbots: 0.07, wormhole: 0.03, opGrant: 0.05, curve: 0.04,
 };
 const MAX_WHALES = 3;
+const LATE_GAME_MIN = 10;
+const LATE_HP_GROWTH = 1.07;
+const LATE_DAMAGE_GROWTH = 1.03;
+const CAMP_RADIUS = 220;
+const CAMP_WARN_SEC = 6;
+const CAMP_HUNT_EVERY_SEC = 8;
+const CAMP_MIN_TIME = 120;
+const CAMP_MAX_WHALES = 6;
 const RECYCLE_DISTANCE = 1500;
 const BOSS_LEASH_DISTANCE = 1100;
 const PICKUP_CULL_DISTANCE = 2400;
@@ -325,6 +335,10 @@ export class Game {
   corpses: Corpse[] = [];
   hazards: Hazard[] = [];
   fundsLost = 0;
+  campX = 0;
+  campY = 0;
+  campSince = 0;
+  campHuntAt = 0;
   fundsRecovered = 0;
   drainersStopped = 0;
   priceLieTimer = 0;
@@ -745,6 +759,10 @@ export class Game {
     this.corpses = [];
     this.hazards = [];
     this.fundsLost = 0;
+    this.campX = this.player.x;
+    this.campY = this.player.y;
+    this.campSince = 0;
+    this.campHuntAt = 0;
     this.fundsRecovered = 0;
     this.drainersStopped = 0;
     this.priceLieTimer = 0;
@@ -1177,6 +1195,10 @@ export class Game {
     this.addToast("DOXXED · a whale is tracking you", "#ff5c48");
   }
 
+  loseFunds(amount: number) {
+    this.fundsLost = Math.min(FUNDS_TOTAL, this.fundsLost + amount);
+  }
+
   get fundsLeft(): number {
     return Math.max(0, FUNDS_TOTAL - this.fundsLost);
   }
@@ -1245,7 +1267,8 @@ export class Game {
     const def = ENEMIES[kind];
     const dm = this.diffMult();
     const minutes = this.elapsed / 60;
-    const scale = (1 + minutes * 0.25 + minutes * minutes * 0.08) * dm.enemyHpMult;
+    const late = Math.max(0, minutes - LATE_GAME_MIN);
+    const scale = (1 + minutes * 0.25 + minutes * minutes * 0.08) * Math.pow(LATE_HP_GROWTH, late) * dm.enemyHpMult;
     const enemy: Enemy = {
       id: uid(),
       kind,
@@ -1257,7 +1280,7 @@ export class Game {
       dead: false,
       hp: def.hp * scale,
       maxHp: def.hp * scale,
-      damage: def.damage * (1 + minutes * 0.15),
+      damage: def.damage * (1 + minutes * 0.15) * Math.pow(LATE_DAMAGE_GROWTH, late),
       speed: def.speed * (1 + this.elapsed * 0.0005) * dm.enemySpeedMult,
       contactCd: 0,
       flash: 0,
@@ -1309,7 +1332,7 @@ export class Game {
     const hotfix = this.weapons.find((w) => w.kind === "patch-burst");
     if (hotfix) fireHotfix(this, hotfix, 1.5);
     this.rootCause = source;
-    this.fundsLost += dmg * HIT_FUNDS_LOSS;
+    this.loseFunds(Math.min(dmg, HIT_FUNDS_DAMAGE_CAP) * HIT_FUNDS_LOSS);
     this.yieldSlashedUntil = this.elapsed + 6;
     this.addTrauma(clamp(0.25 + (dmg / p.maxHp) * 2, 0.25, 0.7));
     this.hurtPulse = 1;
@@ -1372,12 +1395,35 @@ export class Game {
     return false;
   }
 
+  private updateCamping() {
+    if (this.attract) return;
+    const p = this.player;
+    if (Math.hypot(p.x - this.campX, p.y - this.campY) > CAMP_RADIUS) {
+      this.campX = p.x;
+      this.campY = p.y;
+      this.campSince = this.elapsed;
+      this.campHuntAt = 0;
+      return;
+    }
+    const still = this.elapsed - this.campSince;
+    if (still < CAMP_WARN_SEC || this.elapsed < CAMP_MIN_TIME || this.anyBossAlive() || this.whaleCount() >= CAMP_MAX_WHALES) return;
+    if (this.campHuntAt === 0) {
+      this.campHuntAt = this.elapsed;
+      this.queueBanner("STANDING STILL", "Whales are tracking your position. Keep moving.", "#ff5c48");
+    }
+    if (this.elapsed >= this.campHuntAt) {
+      this.campHuntAt = this.elapsed + CAMP_HUNT_EVERY_SEC;
+      this.spawnHuntWhale();
+    }
+  }
+
   private updateChain(dt: number) {
     const p = this.player;
     if (this.priceLieTimer > 0) this.priceLieTimer -= dt;
     if (this.swapTimer > 0) this.swapTimer -= dt;
+    this.updateCamping();
     const bossAlive = this.anyBossAlive();
-    this.fundsLost += (AMBIENT_DRAIN_PER_SEC + (bossAlive ? BOSS_DRAIN_PER_SEC : 0)) * dt;
+    this.loseFunds(((AMBIENT_DRAIN_PER_SEC + (bossAlive ? BOSS_DRAIN_PER_SEC : 0)) * dt) / (1 + this.elapsed / DRAIN_TAPER_SEC));
 
     if (this.elapsed >= this.nextGasAt) {
       this.nextGasAt = this.elapsed + randRange(95, 150);
@@ -2473,7 +2519,7 @@ export class Game {
     const distSpawn = edge + 70 + spawnRandom() * 100;
     const kind = this.pickHordeKind();
     const e = this.spawnEnemyAt(kind, p.x + cos * distSpawn, p.y + sin * distSpawn);
-    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE * this.effects.eliteChanceMult && this.whaleCount() < MAX_WHALES + this.effects.extraWhales) this.makeWhale(e);
+    if (!this.attract && this.elapsed > ELITE_MIN_TIME && kind !== "honeypot-mimic" && spawnRandom() < ELITE_CHANCE * (1 + this.elapsed / 720) * this.effects.eliteChanceMult && this.whaleCount() < MAX_WHALES + Math.floor(this.elapsed / 480) + this.effects.extraWhales) this.makeWhale(e);
   }
 
   private ringPoint(extra = 0): { x: number; y: number } {

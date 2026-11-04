@@ -635,7 +635,7 @@ body[data-phase="cutscene"] #gear-btn, body[data-phase="cinematic"] #gear-btn { 
 .pm-share-actions { flex: 1 1 200px; display: flex; flex-direction: column; gap: 8px; }
 .pm-share-actions .btn { min-height: 40px; }
 .pm-note { min-height: 16px; font-size: 11px; color: #2ee6c7; }
-.pm-code { width: 100%; height: 70px; background: #05060b; color: #93a0b5; border: 1px solid #222b3b; font: 10px var(--mono); resize: none; }
+.pm-code { width: 100%; height: 70px; background: #05060b; color: #93a0b5; border: 1px solid #222b3b; font: 10px var(--mono); resize: none; overflow: auto; word-break: break-all; }
 .codex-card { width: min(720px, 96vw); }
 .cx-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 8px; }
 .cx-stats div { background: #10151f; padding: 6px 8px; }

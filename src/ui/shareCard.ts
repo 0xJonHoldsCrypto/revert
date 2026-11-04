@@ -191,3 +191,19 @@ export async function copyText(text: string): Promise<boolean> {
     return false;
   }
 }
+
+export function downloadBytes(bytes: Uint8Array, name: string): boolean {
+  try {
+    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  } catch {
+    return false;
+  }
+}
