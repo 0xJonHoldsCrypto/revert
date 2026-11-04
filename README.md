@@ -112,7 +112,7 @@ At 100% (and once no other boss is alive) the board is purged, the HUD locks and
 Dying during the fight ends the run as normal. Killing him sweeps the board, plays the new victory cutscene (the exploit is reverted and the funds are back, but a second attacker wallet just woke up) and opens a popup with two cards, both ordinary popup choices so they go through the recorded choice path and replay verification:
 
 - **KEEP PLAYING · ENDLESS** keeps the run going. The HUD swaps the meter for an `ENDLESS` tag and a *Loops survived* counter (one loop per 60s). The existing late-game scaling and anti-camping whales keep climbing, bosses stay on their schedule (overdue ones are skipped and the next waits 30s) and the horde ramps back in over 25s.
-- **CASH OUT · FINISH RUN** ends the run through the normal post-mortem as a win.
+- **BANK THE WIN · FINISH RUN** ends the run through the normal post-mortem as a win.
 
 A win books a crown: `won` and `winTime` are stored in the run summary, the history list and the share card show REVERTED with the time to win, the score gets +20,000 plus 5 per second under 30:00, and shards get +80 (never for tainted runs). Quitting or restarting after a win still books it. Achievements: Reverted, Reverted on Nightmare, Speed Revert (under 15:00) and Encore (10:00 of Endless). The state hash covers trace progress, the finale phase, decoys, win and endless, so replays prove the whole path. `SIM_VERSION` stays 3 and the log shape is unchanged.
 

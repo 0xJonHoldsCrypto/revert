@@ -338,7 +338,7 @@ describe("victory", () => {
     expect(sawCutscene).toBe(true);
     expect(game.phase).toBe("levelup");
     expect(game.choiceMode).toBe("popup");
-    expect(offerTitles(game)).toEqual(["KEEP PLAYING · ENDLESS", "CASH OUT · FINISH RUN"]);
+    expect(offerTitles(game)).toEqual(["KEEP PLAYING · ENDLESS", "BANK THE WIN · FINISH RUN"]);
     expect(game.levelUpChoices.some((c) => c.recommended)).toBe(false);
   });
 
