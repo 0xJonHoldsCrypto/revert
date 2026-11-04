@@ -445,7 +445,7 @@ function loop(now: number) {
   try {
     const frameDt = Math.min(0.25, (now - last) / 1000);
     last = now;
-    if (game.windowActive) accumulator += frameDt;
+    if (game.windowActive) accumulator += frameDt * game.timeScale(frameDt);
     let steps = 0;
     while (accumulator >= SIM_STEP && steps < MAX_SIM_STEPS) {
       game.update(SIM_STEP);

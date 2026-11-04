@@ -14,7 +14,10 @@ import { ENEMIES, HORDE_WEIGHTS } from "../data/enemies";
 import { buildUpgradePool } from "../data/upgrades";
 import { ENV_OBSTACLES } from "../data/environment";
 import { rarityDamageMult } from "../data/rarity";
-import { EVOLUTIONS, weaponAtLevel, WEAPONS } from "../data/weapons";
+import { EVOLUTIONS, EVOLVED_COOLDOWN_MULT, EVOLVED_DAMAGE_MULT, weaponAtLevel, WEAPONS } from "../data/weapons";
+import { OVERCLOCK } from "../data/spikes";
+import { isSurgeLevel, SURGES, type SurgeId } from "../data/surges";
+import { absorbBarrier, activateOverclock, applySurge, barrierCap, chargeFromDamage, echoVolley, emptySpikes, evolveTool, fillOverclock, hasSurge, noteSpikeDamage, onPickupCollected, onSpikeKill, overclockLength, overclockReady, overclocking, surgeCards, surgeValue, timeScale, updateSpikes, type SpikeState } from "./spikes";
 import type { Input } from "../engine/Input";
 import { CutsceneEngine, type CutsceneId } from "../cutscene/CutsceneEngine";
 import { AudioEngine } from "../audio/AudioEngine";
@@ -129,7 +132,7 @@ const PEG_REST_EVOLVED_SEC = 0.5;
 const PEG_REFLECT_RANGE = 520;
 const PEG_REFLECT_SPEED = 620;
 const PEG_REFLECT_MULT = 5;
-const MAX_RIG_TIER = 4;
+export const MAX_RIG_TIER = 4;
 const MAX_STASH = 6;
 const MAX_PICKUPS = 320;
 const COIN_VALUE = 0.9;
@@ -182,6 +185,7 @@ const SEPARATION_STRENGTH = 42;
 const KNOCKBACK = 170;
 const KNOCKBACK_DECAY = 9;
 const MAX_PARTICLES = 420;
+const SPIKE_SOURCE_NAME: Record<string, string> = { ascension: "Ascension", overclock: "Overclock Ring" };
 const CUTSCENE_SKIP_HOLD_SEC = 1;
 const DUST_SLOW_PER_STACK = 0.12;
 const DUST_MAX_STACKS = 4;
@@ -197,6 +201,7 @@ const TUTORIAL: { after: number; text: string; needs: TutorialAction | null }[] 
   { after: 10, needs: "picked", text: "your tools fire on their own. grab the blue shards to level up and pick a card." },
   { after: 24, needs: null, text: "see the meter? that's $3.84B leaving. thx for the liquidity." },
   { after: 30, needs: "chest", text: "chests cost $SAFU. stand in the ring until it fills. i'd never trick you." },
+  { after: 50, needs: null, text: COARSE_POINTER ? "kills charge OVERCLOCK. tap OC when it glows. 8s of pure violence." : "kills charge OVERCLOCK. hit F when it glows. 8s of pure violence." },
 ];
 
 let nextId = 1;
@@ -218,7 +223,7 @@ export type HudData = {
   level: number;
   time: number;
   kills: number;
-  weapons: { name: string; level: number; rarity: string; jammed: boolean }[];
+  weapons: { name: string; level: number; rarity: string; jammed: boolean; evolved: boolean }[];
   funds: number;
   fundsPct: number;
   block: number;
@@ -248,6 +253,9 @@ export type HudData = {
   traceMode: "trace" | "finale" | "endless";
   loops: number;
   finalePhase: number;
+  overclock: { charge: number; ready: boolean; active: boolean; remaining: number; length: number };
+  surges: { name: string; color: string }[];
+  barrier: number;
 };
 
 export type RunPlan = { setup: RunSetup; seed?: number; hero?: CharacterId; difficulty?: DifficultyId };
@@ -284,6 +292,7 @@ export class Game {
   seals: Seal[] = [];
   lures: Lure[] = [];
   vault: Vault = emptyVault();
+  spikes: SpikeState = emptySpikes();
   miniEvents = new MiniEvents(this);
   dustStacks = 0;
   private dustUntil = 0;
@@ -759,6 +768,8 @@ export class Game {
     this.seals = [];
     this.lures = [];
     this.vault = emptyVault();
+    this.spikes = emptySpikes();
+    this.audio.setIntensity(false);
     this.miniEvents = new MiniEvents(this);
     this.biomeHazards = new BiomeHazards(this);
     this.seenHazards.clear();
@@ -864,12 +875,14 @@ export class Game {
     this.recorder.choice(this.runTick, "pick", index);
     this.tutorialDid.picked = true;
     if (this.choiceMode === "popup") {
+      const ascensions = this.spikes.ascensions;
       up.apply(this.makeUpgradeContext());
       this.emit("pick", { level: this.player.level, weapons: this.weapons.length });
       this.choiceMode = "levelup";
       this.nextLevelAt = Math.max(this.nextLevelAt, this.elapsed + 1.5);
       this.input.clearEdges();
-      this.audio.play("cardSelect");
+      if (this.spikes.ascensions === ascensions && !up.surge) this.audio.play("cardSelect");
+      this.syncOrbiters();
       this.setPhase("playing");
       if (this.cashOutPending) {
         this.cashOutPending = false;
@@ -880,12 +893,13 @@ export class Game {
       return;
     }
     const ctx = this.makeUpgradeContext();
+    const ascensions = this.spikes.ascensions;
     up.apply(ctx);
     if (this.player.characterId === "trace") for (const w of this.weapons) w.timer = 0;
     this.input.clearEdges();
     this.upgradeCounts.set(up.id, (this.upgradeCounts.get(up.id) ?? 0) + 1);
     this.emit("pick", { level: this.player.level, weapons: this.weapons.length });
-    this.audio.play(up.id.startsWith("upgrade-") && up.title.indexOf("·") < 0 ? "evolve" : "cardSelect");
+    if (this.spikes.ascensions === ascensions) this.audio.play(up.id.startsWith("upgrade-") && up.title.indexOf("·") < 0 ? "evolve" : "cardSelect");
     this.syncOrbiters();
     this.setPhase("playing");
   }
@@ -907,11 +921,7 @@ export class Game {
         const w = this.weapons.find((x) => x.kind === kind);
         if (!w) return;
         if (w.level < WEAPONS[kind].maxLevel) w.level += 1;
-        else {
-          w.evolved = true;
-          this.noteCodex(`v:${kind}`);
-          this.emit("evolve");
-        }
+        else if (!w.evolved) evolveTool(this, w);
       },
       heal: (amount) => this.healPlayer(amount),
       maxHp: (amount) => this.raiseMaxHp(amount),
@@ -925,6 +935,7 @@ export class Game {
         if (stat === "yield") this.player.yieldPerSec += 0.75 * amount;
       },
       special: (id) => this.applySpecial(id),
+      surge: (id) => applySurge(this, id),
       perk: (id, amount) => {
         if (id === "rerolls") this.rerolls += amount;
         else this.perks[id] += amount;
@@ -997,6 +1008,11 @@ export class Game {
     this.healPlayer(15);
     this.audio.play("ui");
     this.setPhase("playing");
+  }
+
+  private queueSurge() {
+    const cards = surgeCards(this);
+    if (cards.length) this.popupQueue.push({ title: "SURGE · CHOOSE ONE BUILD-DEFINING POWER", cards });
   }
 
   triggerLevelUp() {
@@ -1100,6 +1116,7 @@ export class Game {
       this.player.xpToNext = xpForLevel(this.player.level);
       this.nextLevelAt = this.elapsed + Math.min(MAX_LEVEL_GAP_SEC, 1 + this.elapsed / 25);
       this.triggerLevelUp();
+      if (isSurgeLevel(this.player.level) && !this.attract) this.queueSurge();
       if (this.phase !== "playing") return;
     }
     if (this.toasts.length > 0) compact(this.toasts, (t) => t.until > this.elapsed);
@@ -1111,6 +1128,10 @@ export class Game {
         this.recorder.ability(this.runTick);
         this.useAbility();
       }
+      if (this.input.consumeOverclock?.()) {
+        this.recorder.overclock(this.runTick);
+        activateOverclock(this);
+      }
     }
     this.events.update(dt);
     this.miniEvents.update(dt, this.anyBossAlive(), this.bossesSpawned);
@@ -1120,6 +1141,7 @@ export class Game {
     this.updateChests(dt);
     this.updateRigs(dt);
     updateToolState(this, dt);
+    updateSpikes(this, dt);
     this.updateSpawner(dt);
     this.rebuildEnemySpatial();
     this.updateEnemies(dt);
@@ -1327,6 +1349,25 @@ export class Game {
     this.addToast("ENDLESS · his second wallet is still out there", "#ff5c48");
   }
 
+  debugFillOverclock() {
+    this.taintRun();
+    fillOverclock(this);
+  }
+
+  debugSurge() {
+    this.taintRun();
+    this.queueSurge();
+  }
+
+  debugAscend() {
+    this.taintRun();
+    const w = this.weapons.find((x) => !x.evolved);
+    if (!w) return;
+    w.level = WEAPONS[w.kind].maxLevel;
+    evolveTool(this, w);
+    this.syncOrbiters();
+  }
+
   debugSetTrace(pct: number) {
     this.taintRun();
     this.trace = clamp(pct, 0, TRACE.goal);
@@ -1356,9 +1397,9 @@ export class Game {
   }
 
   private damageList() {
-    return [...this.weaponDamage.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
+    const tools = [...this.weaponDamage.entries()].map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
+    const spikes = [...this.spikes.damage.entries()].map(([id, amount]) => ({ name: SPIKE_SOURCE_NAME[id] ?? SURGES[id as SurgeId]?.name ?? id, amount }));
+    return [...tools, ...spikes].sort((a, b) => b.amount - a.amount);
   }
 
   private bookAbandonedWin() {
@@ -1372,7 +1413,7 @@ export class Game {
     const total = this.totalDps();
     return {
       tools: this.weapons
-        .map((w) => ({ name: w.evolved ? EVOLUTIONS[w.kind].name : WEAPONS[w.kind].name, level: w.level, rarity: w.rarity, dps: this.toolDps(w.kind, w.level, w.rarity), recipe: this.ownsUpgrade(EVOLUTIONS[w.kind].needs) }))
+        .map((w) => ({ name: w.evolved ? EVOLUTIONS[w.kind].name : WEAPONS[w.kind].name, level: w.level, rarity: w.rarity, dps: this.toolDps(w.kind, w.level, w.rarity, w.evolved), recipe: this.ownsUpgrade(EVOLUTIONS[w.kind].needs) }))
         .sort((a, b) => b.dps - a.dps),
       total,
       gear: (Object.keys(SLOT_LABEL) as (keyof typeof SLOT_LABEL)[]).map((slot) => {
@@ -1486,6 +1527,20 @@ export class Game {
     this.bannerQueue.push({ title, text, tone });
   }
 
+  showBannerNow(title: string, text: string, tone: string) {
+    if (this.banner && !this.hintBanner) this.bannerQueue.unshift({ title: this.banner.title, text: this.banner.text, tone: this.banner.tone });
+    this.hintBanner = false;
+    this.banner = { title, text, tone, until: this.elapsed + 3.4 };
+  }
+
+  timeScale(realDt: number): number {
+    return timeScale(this, realDt);
+  }
+
+  get overclocking(): boolean {
+    return overclocking(this);
+  }
+
   addHazard(h: Omit<Hazard, "t">): boolean {
     if (this.hazards.length >= MAX_HAZARDS && !isBossSource(h.source)) return false;
     this.hazards.push({ ...h, t: 0 });
@@ -1543,6 +1598,13 @@ export class Game {
       this.ledgerShield -= blocked;
       dmg -= blocked;
       this.bookLedger(blocked);
+      if (dmg <= 0) {
+        p.invuln = 0.3;
+        return;
+      }
+    }
+    if (this.spikes.barrier > 0) {
+      dmg = absorbBarrier(this, dmg);
       if (dmg <= 0) {
         p.invuln = 0.3;
         return;
@@ -1713,6 +1775,7 @@ export class Game {
     if (this.gasActive) m *= 1.25;
     if (this.elapsed < this.flashUntil) m *= 0.5;
     if (this.elapsed < this.flashDebtUntil) m *= 1.35;
+    if (overclocking(this)) m = Math.max(OVERCLOCK.minCooldownMult, m * OVERCLOCK.cooldownMult);
     return m;
   }
 
@@ -2111,7 +2174,7 @@ export class Game {
     if (this.perks.launchpool > 0) total += Math.min(0.3, Math.floor(p.coins / 5) * 0.01);
     if (this.perks.eigen > 0) total += this.totalArmor();
     if (this.buffActive("rebase")) total += 0.6 * (1 - p.hp / p.maxHp);
-    return total * this.effects.damageMult;
+    return total * this.effects.damageMult * (overclocking(this) ? OVERCLOCK.damageMult : 1);
   }
 
   private buffMult(stat: "damage" | "speed" | "pickup"): number {
@@ -2277,9 +2340,11 @@ export class Game {
     this.choiceMode = "popup";
     this.popupTitle = popup.title;
     this.levelUpChoices = popup.cards;
-    this.scoreCards(popup.cards, false);
+    const surge = popup.cards.some((c) => c.surge);
+    this.scoreCards(popup.cards, surge);
     this.setPhase("levelup");
-    this.audio.play("levelUp");
+    this.audio.play(surge ? "surge" : "levelUp");
+    if (surge) this.onHaptic?.("surge");
     this.cb.onLevelUpChoices(popup.cards);
   }
 
@@ -2577,14 +2642,14 @@ export class Game {
     return this.statValue(gearStats(item));
   }
 
-  toolDps(kind: WeaponKind, level: number, rarity: WeaponRarity): number {
+  toolDps(kind: WeaponKind, level: number, rarity: WeaponRarity, evolved = false): number {
     const def = weaponAtLevel(kind, level);
-    const perSecond = def.orbit ? 3.5 : 1 / Math.max(def.cooldown, 0.1);
-    return def.damage * perSecond * rarityDamageMult(rarity) * TOOL_TARGETS[kind] * this.damageTotal();
+    const perSecond = def.orbit ? 3.5 : 1 / Math.max(def.cooldown * (evolved ? EVOLVED_COOLDOWN_MULT : 1), 0.1);
+    return def.damage * (evolved ? EVOLVED_DAMAGE_MULT : 1) * perSecond * rarityDamageMult(rarity) * TOOL_TARGETS[kind] * this.damageTotal();
   }
 
   totalDps(): number {
-    return Math.max(20, this.weapons.reduce((sum, w) => sum + this.toolDps(w.kind, w.level, w.rarity), 0));
+    return Math.max(20, this.weapons.reduce((sum, w) => sum + this.toolDps(w.kind, w.level, w.rarity, w.evolved), 0));
   }
 
   private scoreCards(cards: UpgradeDef[], pure: boolean) {
@@ -2602,7 +2667,7 @@ export class Game {
         upgradeWeapon: (kind) => {
           const w = this.weapons.find((x) => x.kind === kind);
           if (!w) return;
-          if (w.level >= WEAPONS[kind].maxLevel) value += total * 0.8;
+          if (w.level >= WEAPONS[kind].maxLevel) value += this.toolDps(kind, w.level, w.rarity, true) - this.toolDps(kind, w.level, w.rarity) + total * 0.3;
           else value += this.toolDps(kind, w.level + 1, w.rarity) - this.toolDps(kind, w.level, w.rarity);
         },
         heal: (amount) => (value += (Math.min(amount, p.maxHp - p.hp) / p.maxHp) * total),
@@ -2611,6 +2676,7 @@ export class Game {
           value += this.statValue({ [stat === "cooldown" ? "cooldown" : stat]: amount } as GearStats);
         },
         special: (id) => (value += total * (id === "multisig" ? 0.25 : 0.04)),
+        surge: (id) => (value += surgeValue(this, id)),
         perk: (id, amount) => (value += total * PERK_VALUE[id] * amount),
         hasUpgrade: (id) => this.ownsUpgrade(id),
         hasWeapon: (kind) => this.weapons.some((w) => w.kind === kind),
@@ -2663,7 +2729,7 @@ export class Game {
       const ty = p.y + Math.sin(lead) * reach + Math.sin(rig.angle * 2) * 6;
       rig.x = lerpVec(rig.x, tx, clamp(dt * 6, 0, 1));
       rig.y = lerpVec(rig.y, ty, clamp(dt * 6, 0, 1));
-      rig.attackTimer -= dt;
+      rig.attackTimer -= overclocking(this) ? dt * OVERCLOCK.rigSpeed : dt;
       if (rig.kind === "block-builder") {
         for (const pk of this.pickups) if (!pk.magnetized && dist(rig.x, rig.y, pk.x, pk.y) < def.coinCollectRadius * 2 * output) pk.magnetized = true;
       }
@@ -2673,7 +2739,11 @@ export class Game {
         if (!target) continue;
         rig.attackTimer = def.attackCooldown / output;
         const a = angleBetween(rig.x, rig.y, target.x, target.y);
-        this.projectiles.push({ id: uid(), x: rig.x, y: rig.y, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, radius: 5, dead: false, damage: this.strikeDamage() * 0.14, life: 0.9, pierce: 0, fromPlayer: true, color: "#58a6ff", homing: true, targetId: target.id });
+        const shots = hasSurge(this, "echo-volley") && ++this.spikes.rigShots % 4 === 0 ? 2 : 1;
+        for (let n = 0; n < shots; n++) {
+          const aim = a + n * 0.14;
+          this.projectiles.push({ id: uid(), x: rig.x, y: rig.y, vx: Math.cos(aim) * 560, vy: Math.sin(aim) * 560, radius: 5, dead: false, damage: this.strikeDamage() * 0.14, life: 0.9, pierce: 0, fromPlayer: true, color: "#58a6ff", homing: true, targetId: target.id });
+        }
       } else if (rig.kind === "asic-miner") {
         rig.attackTimer = 9 / output;
         this.spawnPickup(rig.x, rig.y, "coin", 2);
@@ -2718,7 +2788,7 @@ export class Game {
 
   weaponDamageScale(w: WeaponInstance, baseDamage: number): number {
     const sailor = this.elapsed < this.player.neverSellUntil ? 1.3 : 1;
-    return baseDamage * this.damageTotal() * this.buffMult("damage") * rarityDamageMult(w.rarity) * sailor;
+    return baseDamage * this.damageTotal() * this.buffMult("damage") * rarityDamageMult(w.rarity) * sailor * (w.evolved ? EVOLVED_DAMAGE_MULT : 1);
   }
 
   private diffMult(): RunEffects {
@@ -2926,6 +2996,11 @@ export class Game {
     hash = mixHash(hash, this.chillUntil);
     hash = mixHash(hash, this.rigs.length);
     hash = mixHash(hash, this.trace);
+    hash = mixHash(hash, this.spikes.charge);
+    hash = mixHash(hash, this.spikes.overclockUntil);
+    hash = mixHash(hash, this.spikes.surges.length * 8 + this.spikes.blades.length);
+    hash = mixHash(hash, this.spikes.barrier);
+    hash = mixHash(hash, this.spikes.ascensions);
     hash = mixHash(hash, this.finale ? 1 + this.finalePhase : 0);
     hash = mixHash(hash, (this.stats.won ? 1 : 0) + (this.endless ? 2 : 0) + decoysAlive(this) * 4);
     for (let i = 0; i < this.weapons.length; i++) {
@@ -3123,12 +3198,13 @@ export class Game {
       if (w.jammed) continue;
       w.timer -= dt;
       const def = weaponAtLevel(w.kind, w.level);
-      const cd = def.cooldown * cooldownMult;
+      const cd = def.cooldown * cooldownMult * (w.evolved ? EVOLVED_COOLDOWN_MULT : 1);
       if (w.timer > 0) continue;
       w.timer = cd;
 
       if (def.orbit) continue;
       fireTool(this, w, def, cd);
+      echoVolley(this, w, def, cd);
     }
   }
 
@@ -3151,17 +3227,19 @@ export class Game {
       y,
       vx: dx * speed,
       vy: dy * speed,
-      radius: kind === "finality-beam" ? 6 : 5,
+      radius: (kind === "finality-beam" ? 6 : 5) * (overclocking(this) ? OVERCLOCK.shotSize : 1),
       dead: false,
       damage: this.weaponDamageScale(w, def.damage),
       life: isProof ? life * 1.8 : life,
       returnAt: isProof ? life * 0.9 : undefined,
-      pierce: isProof ? 999 : (def.pierce ?? 0) + this.perks.pierce,
+      pierce: isProof ? 999 : (def.pierce ?? 0) + this.perks.pierce + (overclocking(this) ? 1 : 0),
       fromPlayer: true,
       weaponKind: kind,
       color: TOOL_COLORS[kind] ?? DEFAULT_TOOL_COLOR,
       homing: false,
       targetId,
+      evolved: !!w.evolved,
+      boost: overclocking(this) ? OVERCLOCK.shotSize : 1,
     };
     this.projectiles.push(shot);
     return shot;
@@ -3237,7 +3315,7 @@ export class Game {
     compactDead(this.projectiles);
   }
 
-  private syncOrbiters() {
+  syncOrbiters() {
     const p = this.player;
     if (!p) return;
     const previous = this.orbiters;
@@ -3272,6 +3350,7 @@ export class Game {
     let lastWeapon: WeaponInstance | undefined;
     for (const o of this.orbiters) {
       o.angle += dt * (2.2 + (o.weaponKind === "rug-coin" ? 0.8 : 0));
+      o.radius = 18 * (overclocking(this) ? 1.4 : 1) * (this.weapons.find((x) => x.kind === o.weaponKind)?.evolved ? 1.25 : 1);
       o.x = p.x + Math.cos(o.angle) * o.dist;
       o.y = p.y + Math.sin(o.angle) * o.dist;
       if (this.elapsed < (o.offUntil ?? 0)) continue;
@@ -3367,7 +3446,8 @@ export class Game {
         if (!tools) this.bossTools.set(e.id, (tools = new Set()));
         tools.add(weapon);
       }
-    }
+    } else if (this.spikes.source) noteSpikeDamage(this, dealt);
+    chargeFromDamage(this, e, dealt);
     e.flash = 0.05;
     this.stats.damageDealt += dealt;
     this.audio.play("hit");
@@ -3417,6 +3497,7 @@ export class Game {
   private onEnemyKilled(e: Enemy) {
     const def = ENEMIES[e.kind];
     this.stats.kills++;
+    onSpikeKill(this, e);
     this.recordKill(e, def.isBoss === true);
     if (this.gearStats.healOnKill) this.healPlayer(this.gearStats.healOnKill);
     if (this.gearStats.fundsOnKill) this.fundsLost = Math.max(0, this.fundsLost - this.gearStats.fundsOnKill);
@@ -3571,6 +3652,7 @@ export class Game {
           this.applyTimedBuff(pk.buffKind);
           this.addToast(TIMED_BUFFS[pk.buffKind].name, TIMED_BUFFS[pk.buffKind].color);
         }
+        onPickupCollected(this);
       }
     }
     compactDead(this.pickups);
@@ -3657,6 +3739,7 @@ export class Game {
         level: w.level,
         rarity: w.rarity,
         jammed: !!w.jammed,
+        evolved: !!w.evolved,
       })),
       coins: p.coins,
       biome: `${biome.name} · ${AREA_RULES[biomeAt(p.x, p.y)].rule}`,
@@ -3693,6 +3776,15 @@ export class Game {
       traceMode: this.endless ? "endless" : this.finale ? "finale" : "trace",
       loops: this.loops,
       finalePhase: this.finalePhase,
+      overclock: {
+        charge: this.spikes.charge / OVERCLOCK.need,
+        ready: overclockReady(this),
+        active: overclocking(this),
+        remaining: Math.max(0, this.spikes.overclockUntil - this.elapsed),
+        length: overclockLength(this),
+      },
+      surges: this.spikes.surges.map((id) => ({ name: SURGES[id].name, color: SURGES[id].color })),
+      barrier: barrierCap(this) > 0 ? this.spikes.barrier : 0,
     });
   }
 }

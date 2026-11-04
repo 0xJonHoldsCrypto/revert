@@ -47,6 +47,9 @@ export const GradeShader = {
     uTilt: { value: 1 },
     uImpact: { value: 0 },
     uHurt: { value: 0 },
+    uOverclock: { value: 0 },
+    uFlash: { value: 0 },
+    uFlashColor: { value: [1, 1, 1] },
     toneMappingExposure: { value: 1 },
     uCbOn: { value: 0 },
     uCb: { value: new Matrix3() },
@@ -64,6 +67,9 @@ export const GradeShader = {
     uniform float uTilt;
     uniform float uImpact;
     uniform float uHurt;
+    uniform float uOverclock;
+    uniform float uFlash;
+    uniform vec3 uFlashColor;
     uniform float uCbOn;
     uniform mat3 uCb;
     varying vec2 vUv;
@@ -107,6 +113,14 @@ export const GradeShader = {
       float vignette = smoothstep(0.42, 1.05, length(fromCenter) * 1.4142);
       color *= 1.0 - vignette * 0.45;
       color = mix(color, vec3(0.95, 0.12, 0.16), smoothstep(0.25, 1.0, length(fromCenter) * 1.4142) * uHurt * 0.55);
+
+      if (uOverclock > 0.001) {
+        float edge = smoothstep(0.3, 1.0, length(fromCenter) * 1.4142);
+        color = mix(vec3(luma), color, 1.0 + uOverclock * 0.3);
+        color = mix(color, color * vec3(1.2, 0.9, 0.7), uOverclock * 0.55);
+        color += vec3(1.0, 0.38, 0.08) * edge * uOverclock * 0.26;
+      }
+      color += uFlashColor * uFlash;
 
       float grain = noise(vUv * 917.0 + fract(uTime) * 61.0) - 0.5;
       color += grain * 0.02;

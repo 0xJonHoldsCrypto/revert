@@ -109,6 +109,7 @@ import type { GearItem, GearSlot } from "./data/gear";
 import type { AbilityId } from "./data/abilities";
 import type { CameoId } from "./data/cameos";
 import type { AffixId } from "./data/affixes";
+import type { SurgeId } from "./data/surges";
 
 export type { WeaponRarity };
 
@@ -139,6 +140,7 @@ export interface UpgradeDef {
   recommended?: boolean;
   plain?: boolean;
   compare?: string[];
+  surge?: boolean;
 }
 
 export type PerkId =
@@ -152,6 +154,7 @@ export interface UpgradeContext {
   maxHp: (amount: number) => void;
   boostStat: (stat: "damage" | "speed" | "pickup" | "armor" | "cooldown" | "yield", amount: number) => void;
   special: (id: "leverage" | "flash-loan" | "multisig") => void;
+  surge: (id: SurgeId) => void;
   perk: (id: PerkId, amount: number) => void;
   hasUpgrade: (id: string) => boolean;
   hasWeapon: (kind: WeaponKind) => boolean;
@@ -261,6 +264,8 @@ export interface Enemy extends Entity {
   drainUntil?: number;
   drainTick?: number;
   drainDamage?: number;
+  bladeAt?: number;
+  trailAt?: number;
   blink?: { x: number; y: number; t: number };
   decoy?: boolean;
   finalePhase?: number;
@@ -288,6 +293,8 @@ export interface Projectile extends Entity {
   color: string;
   homing?: boolean;
   targetId?: number;
+  evolved?: boolean;
+  boost?: number;
 }
 
 export interface Orbiter extends Entity {
@@ -428,6 +435,7 @@ export interface WorldObstacle {
 export interface WeaponInstance {
   swings?: number;
   charge?: number;
+  echo?: number;
   kind: WeaponKind;
   level: number;
   timer: number;

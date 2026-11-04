@@ -4,7 +4,7 @@ import type { UpgradeDef } from "../types";
 import type { GamePhase } from "../types";
 import { formatTime } from "../utils/math";
 import type { Game, HudData } from "../game/Game";
-import { syncTouchAbility } from "./touchControls";
+import { syncTouchAbility, syncTouchOverclock } from "./touchControls";
 import { openCodex, openSettings } from "./gearButton";
 import { ACHIEVEMENT_BY_ID } from "../data/achievements";
 import { MODIFIER_BY_ID } from "../data/modifiers";
@@ -104,7 +104,7 @@ export class OverlayUI {
         <button type="button" class="btn btn-secondary" data-a="settings">SETTINGS</button>
         <button type="button" class="btn btn-secondary" data-a="restart">RESTART RUN</button>
         <button type="button" class="btn btn-secondary" data-a="quit">QUIT TO TITLE</button>
-        <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
+        <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>F</kbd> overclock <kbd>1-3</kbd> pick card <kbd>M</kbd> mute</p>
       </div>
       ${this.buildPanel()}
     `;
@@ -134,7 +134,8 @@ export class OverlayUI {
     this.hudEl = null;
     this.overlay.classList.add("interactive");
     const panel = document.createElement("div");
-    panel.className = "overlay-panel levelup";
+    const surge = choices.some((c) => c.surge);
+    panel.className = `overlay-panel levelup${surge ? " surge" : ""}`;
     const gear = this.game.choiceMode === "popup";
     const showHint = !gear && (this.levelHintOpen || !save.get().tutorial.levelHint);
     if (showHint) {
@@ -162,13 +163,13 @@ export class OverlayUI {
       card.type = "button";
       const rarity = c.rarity ?? "common";
       const kind = c.tag ?? (c.id.startsWith("deal-") || c.id.startsWith("bounty-") ? "CHOICE" : "PASSIVE");
-      card.className = `upgrade-card rarity-${rarity}${c.recommended ? " recommended" : ""}`;
+      card.className = `upgrade-card rarity-${rarity}${c.recommended ? " recommended" : ""}${c.surge ? " surge-card" : ""}`;
       const compare = c.compare?.length ? `<ul class="card-compare">${c.compare.map((l) => `<li>${l}</li>`).join("")}</ul>` : "";
       const value = c.value !== undefined && c.value > 0 ? `<small class="card-value">Worth about +${Math.round(c.value)} DPS</small>` : "";
       const gates = Boolean(c.tag?.startsWith("EVOLVE")) || c.id.startsWith("upgrade-");
       const banishNote = gates ? "Banish for this run. Warning: this card is part of an evolution." : "Banish for this run";
       const banish = !gear && this.game.banishes > 0 ? `<i class="card-banish" title="${banishNote}">✕</i>` : "";
-      card.innerHTML = `${c.recommended ? `<b class="card-rec">RECOMMENDED</b>` : ""}<kbd>${i + 1}</kbd>${banish}<span class="rarity-tag">${kind} · ${RARITY_LABEL[rarity]}</span><h4>${c.title}</h4><p>${c.description}</p>${compare}${value}`;
+      card.innerHTML = `${c.recommended ? `<b class="card-rec">RECOMMENDED</b>` : ""}<kbd>${i + 1}</kbd>${banish}${c.surge ? `<span class="surge-sparks" aria-hidden="true"></span>` : ""}<span class="rarity-tag">${c.surge ? "◆ SURGE · ONE PER MILESTONE" : `${kind} · ${RARITY_LABEL[rarity]}`}</span><h4>${c.title}</h4><p>${c.description}</p>${compare}${value}`;
       card.addEventListener("click", (event) => {
         if ((event.target as HTMLElement).classList.contains("card-banish")) {
           if (!gates || window.confirm("This card is part of an evolution. Banishing it blocks that evolution for this run. Banish anyway?")) this.game.banishCard(i);
@@ -189,7 +190,7 @@ export class OverlayUI {
     const shimmer = data.lie ? 1 + (Math.random() - 0.5) * 0.3 : 1;
     const fundsText = formatFunds(data.funds * shimmer);
     const weaponLines = data.weapons
-      .map((w) => `<div class="hud-weapon rarity-${w.rarity}${w.jammed ? " jammed" : ""}"><span>${w.jammed ? "HIJACKED" : w.name}</span><b>${"▮".repeat(Math.min(w.level, 8))}</b></div>`)
+      .map((w) => `<div class="hud-weapon rarity-${w.rarity}${w.jammed ? " jammed" : ""}"><span>${w.jammed ? "HIJACKED" : w.name}</span><b>${w.evolved ? "★" : ""}${"▮".repeat(Math.min(w.level, 8))}</b></div>`)
       .join("");
     const gearLines = data.gear
       .filter((g) => g.name)
@@ -199,13 +200,20 @@ export class OverlayUI {
       ? `<div class="hud-weapon hud-ability" style="color:${data.ability.color}"><span>${data.ability.name}</span><b>${data.ability.remaining > 0 ? `${Math.ceil(data.ability.remaining)}s` : "Q"}</b></div>`
       : "";
     const rigLines = data.rigs.map((r) => `<div class="hud-weapon hud-rig"><span>${r}</span><b>R</b></div>`).join("");
+    const surgeLines = data.surges.map((s) => `<div class="hud-weapon hud-surge" style="color:${s.color}"><span>◆ ${s.name}</span><b>S</b></div>`).join("");
     syncTouchAbility(data.ability);
+    syncTouchOverclock(data.overclock);
+    const oc = data.overclock;
+    const ocState = oc.active ? "active" : oc.ready ? "ready" : "charging";
+    const ocPct = Math.floor(oc.charge * 100);
+    const ocHtml = `<div class="hud-oc ${ocState}"><i>${oc.active ? "●" : oc.ready ? "▲" : "◇"}</i><span>OVERCLOCK</span><div class="hud-oc-bar"><div style="width:${oc.active ? Math.min(100, (oc.remaining / oc.length) * 100) : ocPct}%"></div></div><b>${oc.active ? `${Math.ceil(oc.remaining)}s` : oc.ready ? "F" : `${ocPct}%`}</b></div>`;
     const status = [
       data.event ? `<i style="color:${data.event.color}">${data.event.name} ${Math.ceil(data.event.remaining)}s</i>` : "",
       data.dust > 0 ? `DUSTED ×${data.dust} · DASH TO SHAKE` : "",
       data.signers > 0 ? `SIGNERS ${data.signers}/3` : "",
       data.leverage > 0 ? `LEV ${data.leverage}x` : "",
       data.flash ?? "",
+      data.barrier > 0 ? `◈ BARRIER ${Math.ceil(data.barrier)}` : "",
       data.shielded ? "LIQUIDITY LOCKED" : "",
       data.neverSell ? "NEVER SELL · NO DASH" : "",
       ...data.buffs.map((b) => `${b.label} ${Math.ceil(b.remaining)}s`),
@@ -241,7 +249,8 @@ export class OverlayUI {
       </div>`,
       `<div class="hud-zone">${data.biome}</div>`,
       `<div class="hud-status">${status.map((t) => `<span>${t}</span>`).join("")}</div>`,
-      `<div class="hud-loadout">${weaponLines}${gearLines}${rigLines}${abilityLine}</div>`,
+      `<div class="hud-loadout">${weaponLines}${gearLines}${rigLines}${surgeLines}${abilityLine}</div>`,
+      ocHtml,
       `<div class="hud-feed">${data.feed.map((l) => `<div>${l}</div>`).join("")}</div>`,
       `<div class="hud-toasts">${data.toasts.map((t) => `<div style="border-color:${t.color};color:${t.color}">${t.text}</div>`).join("")}</div>`,
       alert,

@@ -714,3 +714,39 @@ body[data-phase="cutscene"] #gear-btn, body[data-phase="cinematic"] #gear-btn { 
 .pm-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: #c8d0de; margin: 8px 0; }
 .pm-meta b { color: var(--amber-hi); }
 body.mod-dark #app::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; background: radial-gradient(circle at 50% 50%, transparent 18%, rgba(2, 3, 8, 0.55) 34%, rgba(2, 3, 8, 0.9) 60%); }
+
+.hud-oc { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; width: min(210px, calc(100vw - 24px)); height: 18px; padding: 0 6px; background: rgba(4, 6, 12, 0.82); border: 1px solid rgba(255, 255, 255, 0.1); font: 700 10px var(--mono); letter-spacing: 0.08em; color: #93a0b5; }
+.hud-oc i { font-style: normal; width: 10px; text-align: center; }
+.hud-oc span { white-space: nowrap; }
+.hud-oc-bar { flex: 1; height: 6px; background: #1a1e2a; }
+.hud-oc-bar div { height: 100%; background: #9a5a3f; }
+.hud-oc b { min-width: 28px; text-align: right; font-weight: 700; }
+.hud-oc.ready { color: #ffb27a; border-color: #ff6b3d; }
+.hud-oc.ready .hud-oc-bar div { background: repeating-linear-gradient(90deg, #ff6b3d 0 6px, #ffe08a 6px 10px); animation: oc-ready 0.7s steps(2) infinite; }
+.hud-oc.active { color: #fff; border-color: #ff6b3d; background: rgba(60, 20, 8, 0.9); }
+.hud-oc.active .hud-oc-bar div { background: linear-gradient(90deg, #ff6b3d, #ffe08a); }
+@keyframes oc-ready { 50% { opacity: 0.6; } }
+.hud-toasts { bottom: 30px; }
+@media (max-width: 640px) { .hud-toasts { bottom: 128px; } .hud-oc { left: 12px; transform: none; width: min(190px, calc(100vw - 24px)); bottom: 6px; } .hud-loadout { bottom: 30px; } }
+:root.calm .hud-oc.ready .hud-oc-bar div { animation: none; }
+.hud-surge { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+#touch-overclock { right: 100px; bottom: 100px; width: 66px; height: 66px; border-radius: 50%; border-color: #ff6b3d !important; background: linear-gradient(0deg, rgba(255, 107, 61, 0.55) var(--fill, 0%), rgba(4, 6, 12, 0.62) var(--fill, 0%)) !important; }
+#touch-overclock:disabled { opacity: 0.6; }
+#touch-overclock.ready { background: #ff6b3d !important; color: #1a0a04; opacity: 1; }
+#touch-overclock.active { background: #ffe08a !important; color: #1a0a04; opacity: 1; }
+#touch-overclock[hidden] { display: none; }
+.overlay-panel.surge .lv-wrap h1 { color: #ffd66b; text-shadow: 0 0 18px rgba(255, 194, 61, 0.55); letter-spacing: 0.06em; }
+.overlay-panel.surge .upgrade-grid { gap: 18px; }
+.upgrade-card.surge-card { min-height: 240px; padding: 34px 18px 18px; border: 3px solid #ffc23d; background: linear-gradient(180deg, #1c1608 0%, #0c0e18 70%); box-shadow: 0 0 0 1px #5a4310, 0 0 26px rgba(255, 194, 61, 0.35), inset 0 0 24px rgba(255, 194, 61, 0.12); clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px), 0 14px); }
+.upgrade-card.surge-card h4 { font-size: 28px; color: #ffe9a8; }
+.upgrade-card.surge-card p { font-size: 14px; color: #e8dcc0; }
+.upgrade-card.surge-card .rarity-tag { color: #ffc23d; font-weight: 700; letter-spacing: 0.08em; }
+.upgrade-card.surge-card:hover { border-color: #fff3c4; background: linear-gradient(180deg, #2a2008 0%, #141725 70%); }
+.upgrade-card.surge-card .card-compare { color: #ffd66b; }
+.upgrade-card.surge-card.recommended { box-shadow: 0 0 0 1px #5a4310, 0 0 34px rgba(255, 194, 61, 0.6); padding-top: 34px; }
+.surge-sparks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.surge-sparks::before, .surge-sparks::after { content: ""; position: absolute; bottom: -10px; left: 12%; width: 4px; height: 4px; background: #ffe08a; box-shadow: 40px -30px 0 #ffc23d, 90px 10px 0 #fff3c4, 140px -50px 0 #ffc23d, 190px 0 0 #ffe08a, 240px -20px 0 #fff3c4, 70px -80px 0 #ffe08a, 170px -90px 0 #ffc23d; animation: spark-rise 3.2s linear infinite; }
+.surge-sparks::after { left: 4%; animation-duration: 4.6s; animation-delay: -1.8s; opacity: 0.7; }
+@keyframes spark-rise { from { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } to { transform: translateY(-260px); opacity: 0; } }
+:root.calm .surge-sparks::before, :root.calm .surge-sparks::after { animation: none; opacity: 0.5; }
+@media (max-width: 640px) { .upgrade-card.surge-card { min-height: 0; padding: 30px 14px 14px; } .upgrade-card.surge-card h4 { font-size: 22px; } }

@@ -1,12 +1,16 @@
 import * as save from "./save";
 
-export type HapticKind = "hurt" | "levelUp" | "dash" | "boss";
+export type HapticKind = "hurt" | "levelUp" | "dash" | "boss" | "ascend" | "surge" | "overclock" | "ready";
 
 export const HAPTIC_PATTERNS: Record<HapticKind, number | number[]> = {
   hurt: [40, 30, 60],
   levelUp: [20, 40, 20, 40, 80],
   dash: 18,
   boss: [120, 60, 120, 60, 240],
+  ascend: [30, 40, 60, 40, 140],
+  surge: [40, 30, 40, 30, 120],
+  overclock: [60, 30, 100],
+  ready: [25, 40, 25],
 };
 
 const MIN_GAP_MS = 80;

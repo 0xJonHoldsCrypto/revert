@@ -21,7 +21,9 @@ export type AchievementMetric =
   | "won"
   | "winFast"
   | "winNightmare"
-  | "endlessTime";
+  | "endlessTime"
+  | "surges"
+  | "overclockKills";
 
 export type AchievementDef = {
   id: string;
@@ -36,7 +38,7 @@ const TABLE: [string, string, string, AchievementMetric, number][] = [
   ["three-bosses", "Incident Commander", "Defeat 3 bosses in one run.", "bosses", 3],
   ["six-bosses", "Chain Reaction", "Defeat 6 bosses in one run.", "bosses", 6],
   ["solo-boss", "One Tool Wonder", "Kill a boss using a single tool.", "soloBoss", 1],
-  ["first-evolve", "Fully Formed", "Evolve a tool.", "evolved", 1],
+  ["first-evolve", "First Ascension", "Evolve a tool and trigger its ascension.", "evolved", 1],
   ["triple-evolve", "Hard Fork Club", "Evolve 3 tools in one run.", "evolved", 3],
   ["no-dash", "Standing Ground", "Reach 10:00 without dashing.", "noDash", 1],
   ["survive-5", "Five Minute Finality", "Survive 5:00.", "time", 300],
@@ -62,6 +64,8 @@ const TABLE: [string, string, string, AchievementMetric, number][] = [
   ["reverted", "Reverted", "Trace the attacker's wallet and revert his exploit.", "won", 1],
   ["reverted-nightmare", "Reverted on Nightmare", "Revert the exploit on Nightmare.", "winNightmare", 1],
   ["speed-revert", "Speed Revert", "Revert the exploit in under 15:00.", "winFast", 1],
+  ["first-surge", "Surge Protocol", "Take a Surge at a milestone level.", "surges", 1],
+  ["overclock-crowd", "Thermal Throttle", "Revert 25 exploits in a single Overclock.", "overclockKills", 25],
   ["encore", "Encore", "Survive 10:00 of Endless after winning.", "endlessTime", 600],
 ];
 

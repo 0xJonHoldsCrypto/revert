@@ -13,6 +13,7 @@ export function headlessGame(move: () => { x: number; y: number } = () => ({ x: 
     consumeCardPick: () => null,
     consumeDash: () => false,
     consumeAbility: () => false,
+    consumeOverclock: () => false,
     consumeSkip: () => false,
     consumePause: () => false,
     moveVector: move,

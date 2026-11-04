@@ -4,9 +4,10 @@ import { isDailyDate } from "../daily";
 import { perksAreValid, type MetaPerkRanks } from "../data/metaPerks";
 import { modifiersAreValid, type ModifierId } from "../data/modifiers";
 import { unlockedListIsValid } from "../data/unlocks";
+import { OVERCLOCK_LOG_BASE } from "../data/spikes";
 import { cleanSetup, isRanked, type RunMode, type RunSetup } from "../game/runSetup";
 
-export const SIM_VERSION = 3;
+export const SIM_VERSION = 4;
 export const RUN_LOG_FORMAT = 2;
 export const CHECKPOINT_TICKS = 600;
 const MOVE_DIRECTIONS = 256;
@@ -58,6 +59,7 @@ export class RunRecorder {
   private log: RunLog;
   private moveCode = -1;
   private moveTicks = 0;
+  private overclocks: number[] = [];
 
   constructor(seed: number, hero: CharacterId, difficulty: DifficultyId, setup: RunSetup) {
     const clean = cleanSetup(setup);
@@ -103,6 +105,10 @@ export class RunRecorder {
     this.log.abilities.push(tick);
   }
 
+  overclock(tick: number) {
+    this.overclocks.push(tick);
+  }
+
   choice(tick: number, type: ChoiceType, index: number) {
     this.log.choices.push([tick, type, index]);
   }
@@ -129,7 +135,9 @@ export class RunRecorder {
     this.moveTicks = 0;
     this.log.ticks = ticks;
     this.log.finalHash = finalHash;
-    return structuredClone(this.log);
+    const out = structuredClone(this.log);
+    out.abilities = [...out.abilities, ...this.overclocks.map((t) => t + OVERCLOCK_LOG_BASE)];
+    return out;
   }
 
   private flushMove() {

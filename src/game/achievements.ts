@@ -1,7 +1,7 @@
 import { ACHIEVEMENTS, type AchievementMetric } from "../data/achievements";
 import { WIN } from "../data/trace";
 
-export type AchEvent = "kill" | "chest" | "merge" | "pick" | "evolve" | "dash" | "rig" | "cameo" | "event" | "end" | "win" | "endless";
+export type AchEvent = "kill" | "chest" | "merge" | "pick" | "evolve" | "dash" | "rig" | "cameo" | "event" | "end" | "win" | "endless" | "surge" | "overclock";
 
 export type AchPayload = {
   boss?: boolean;
@@ -18,6 +18,7 @@ export type AchPayload = {
   winTime?: number;
   nightmare?: boolean;
   endlessSec?: number;
+  kills?: number;
 };
 
 export type Metrics = Record<AchievementMetric, number>;
@@ -50,6 +51,8 @@ export function emptyMetrics(): Metrics {
     winFast: 0,
     winNightmare: 0,
     endlessTime: 0,
+    surges: 0,
+    overclockKills: 0,
   };
 }
 
@@ -121,6 +124,12 @@ export class RunTracker {
         m.won = 1;
         if ((p.winTime ?? Infinity) < WIN.fastSec) m.winFast = 1;
         if (p.nightmare) m.winNightmare = 1;
+        break;
+      case "surge":
+        m.surges++;
+        break;
+      case "overclock":
+        m.overclockKills = Math.max(m.overclockKills, p.kills ?? 0);
         break;
       case "endless":
         m.endlessTime = Math.max(m.endlessTime, p.endlessSec ?? 0);

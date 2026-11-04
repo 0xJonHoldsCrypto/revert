@@ -5,7 +5,7 @@ export type SfxId =
   | "hit" | "crit" | "kill" | "coin" | "xp" | "hurt" | "dash" | "levelUp" | "cardSelect" | "chest" | "jackpot"
   | "evolve" | "bossSpawn" | "bossDeath" | "enemyShot" | "nearMiss" | "ui" | "blip" | "pager" | "type" | "alarm"
   | "txConfirmed" | "liquidation" | "gasSpike" | "rugPull" | "thud" | "skitter" | "whoosh" | "sting" | "riser"
-  | "glitch" | "suck" | "impact" | "snore" | "death" | "pulse";
+  | "glitch" | "suck" | "impact" | "snore" | "death" | "pulse" | "ascend" | "surge" | "overclock" | "overclockEnd";
 
 type Category = "combat" | "pickup" | "free";
 
@@ -14,7 +14,7 @@ const CATEGORY: Partial<Record<SfxId, Category>> = {
   xp: "pickup", coin: "pickup", type: "pickup", blip: "pickup",
 };
 const MIN_GAP: Record<Category, number> = { combat: 1 / 5, pickup: 1 / 9, free: 0 };
-const FROZEN_ALLOWED = new Set<SfxId>(["ui", "cardSelect", "levelUp", "jackpot", "evolve"]);
+const FROZEN_ALLOWED = new Set<SfxId>(["ui", "cardSelect", "levelUp", "jackpot", "evolve", "ascend", "surge"]);
 const MUSIC_TRIM = 0.55;
 const FROZEN_MUSIC_SHARE = 0.3;
 const LEVEL_JINGLE_GAP_SEC = 1.5;
@@ -56,6 +56,7 @@ export class AudioEngine {
   onMuteChange: ((muted: boolean) => void) | null = null;
   silenced = false;
   private frozen = false;
+  private intensity = false;
   musicVolume = 1;
   sfxVolume = 1;
 
@@ -233,6 +234,12 @@ export class AudioEngine {
     if (drum === "k") this.kick(t.bus, at);
     if (drum === "s") this.noiseHit(t.bus, at, 0.1, 0.13, 1900, "bandpass");
     if (drum === "h") this.noiseHit(t.bus, at, 0.028, 0.045, 7200, "highpass");
+    if (this.intensity) {
+      if (t.step % 4 === 0 && drum !== "k") this.kick(t.bus, at);
+      if (t.step % 2 === 1 && drum !== "h") this.noiseHit(t.bus, at, 0.028, 0.05, 7600, "highpass");
+      const note = arp && arp !== "." ? arp : bass && bass !== "." ? bass : null;
+      if (note && t.step % 2 === 0) this.tone(t.bus, noteFrequency(note) * 2, at, t.stepSec * 0.6, "square", 0.035, 0.3, 0);
+    }
   }
 
   private tone(out: AudioNode, freq: number, at: number, dur: number, type: OscillatorType, gain: number, pan: number, vibrato: number, lowpass = 0) {
@@ -375,7 +382,33 @@ export class AudioEngine {
       case "snore": this.sweep(now, 80, 130, 0.5, "sawtooth", 0.08); this.sweep(now + 0.55, 150, 70, 0.4, "triangle", 0.1); break;
       case "death": this.sweep(now, 480, 36, 0.9, "square", 0.2); this.noiseHit(bus, now, 0.5, 0.3, 1200, "lowpass"); break;
       case "pulse": this.sweep(now, 80, 240, 0.16, "sine", 0.1); this.noiseHit(bus, now, 0.16, 0.035, 700, "bandpass"); break;
+      case "ascend":
+        this.sweep(now, 70, 40, 0.5, "sine", 0.55);
+        this.noiseHit(bus, now, 0.4, 0.35, 3200, "lowpass", 300);
+        this.sweep(now + 0.08, 180, 2400, 0.55, "sawtooth", 0.1);
+        this.seq(now + 0.45, [523, 659, 784, 1047, 1319, 1568], 0.07, 0.4, "square", 0.09);
+        this.seq(now + 0.45, [262, 330, 392], 0.07, 0.6, "triangle", 0.12);
+        break;
+      case "surge":
+        this.sweep(now, 120, 900, 0.35, "sawtooth", 0.12);
+        this.seq(now + 0.1, [392, 587, 784, 988, 1175], 0.06, 0.3, "square", 0.08);
+        this.noiseHit(bus, now, 0.25, 0.14, 5200, "highpass");
+        break;
+      case "overclock":
+        this.sweep(now, 60, 30, 0.45, "sine", 0.6);
+        this.sweep(now, 220, 1600, 0.3, "sawtooth", 0.12);
+        this.noiseHit(bus, now, 0.45, 0.3, 1800, "bandpass", 6000);
+        this.seq(now + 0.2, [330, 440, 659, 880], 0.05, 0.25, "square", 0.08);
+        break;
+      case "overclockEnd":
+        this.sweep(now, 900, 90, 0.5, "sawtooth", 0.1);
+        this.noiseHit(bus, now, 0.3, 0.1, 1200, "lowpass");
+        break;
     }
+  }
+
+  setIntensity(on: boolean) {
+    this.intensity = on;
   }
 
   dispose() {

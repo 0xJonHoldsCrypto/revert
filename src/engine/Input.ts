@@ -12,6 +12,7 @@ export class Input {
   touchMove = { x: 0, y: 0 };
   touchDash = false;
   abilityPressed = false;
+  overclockPressed = false;
   skipPressed = false;
   stickOrigin: { x: number; y: number } | null = null;
 
@@ -115,6 +116,7 @@ export class Input {
       if (k === "r") this.restartPressed = true;
       if (k === "m") this.mutePressed = true;
       if (k === "q" || k === "e") this.abilityPressed = true;
+      if (k === "f") this.overclockPressed = true;
       if (k === "x") this.skipPressed = true;
       if (k === "1" || k === "2" || k === "3") this.cardPick = Number(k) - 1;
     } else {
@@ -128,6 +130,7 @@ export class Input {
     this.dashPressed = false;
     this.touchDash = false;
     this.abilityPressed = false;
+    this.overclockPressed = false;
     this.skipPressed = false;
     this.pausePressed = false;
     this.advanceHeld = false;
@@ -188,6 +191,16 @@ export class Input {
     const v = this.abilityPressed;
     this.abilityPressed = false;
     return v;
+  }
+
+  consumeOverclock(): boolean {
+    const v = this.overclockPressed;
+    this.overclockPressed = false;
+    return v;
+  }
+
+  pressOverclock() {
+    this.overclockPressed = true;
   }
 
   pressDash() {

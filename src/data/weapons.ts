@@ -160,6 +160,8 @@ export const EVOLUTIONS: Record<WeaponKind, { name: string; blurb: string; needs
   "infinite-approval": { name: "Unlimited Allowance", blurb: "The drain jumps to four and ticks twice as fast.", needs: "private-flow" },
 };
 
+export const EVOLVED_DAMAGE_MULT = 1.3;
+export const EVOLVED_COOLDOWN_MULT = 0.92;
 export const KEEPER_EVOLVED_BONUS = 0.1;
 export const VAULT_SHOVES = 8;
 export const VAULT_EVOLVED_SHOVES = 5;

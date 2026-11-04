@@ -15,6 +15,9 @@ const WIN_BRANCH = process.env.WIN ?? "cashout";
 const FORCE_TRACE_MIN = Number(process.env.FORCE_TRACE ?? 0);
 const GOD = process.env.GOD === "1";
 const PACE = process.env.PACE === "1";
+const NO_OC = process.env.NO_OC === "1";
+const NO_SURGE = process.env.NO_SURGE === "1";
+const FORCE_SURGE = process.env.FORCE_SURGE ?? "";
 const PACE_RUNS = Number(process.env.PACE_RUNS ?? 3);
 
 const dir = mkdtempSync(join(tmpdir(), "revert-balance-"));
@@ -24,7 +27,7 @@ globalThis.window = { devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, a
 const { Game } = await import(out);
 
 function makeGame(move) {
-  const input = { keys: new Set(), advanceHeld: false, clearEdges() {}, consumeMute: () => false, consumeConfirm: () => false, consumeRestart: () => false, consumeCardPick: () => null, consumeDash: () => false, consumeAbility: () => false, consumeSkip: () => false, consumePause: () => false, moveVector: move, focus() {} };
+  const input = { keys: new Set(), advanceHeld: false, clearEdges() {}, consumeMute: () => false, consumeConfirm: () => false, consumeRestart: () => false, consumeCardPick: () => null, consumeDash: () => false, consumeAbility: () => false, consumeOverclock: () => false, consumeSkip: () => false, consumePause: () => false, moveVector: move, focus() {} };
   const game = new Game({ clientWidth: 1280, clientHeight: 720 }, input, { onPhaseChange() {}, onLevelUpChoices() {}, onHudUpdate() {} });
   Object.assign(game.audio, { play() {}, setMusic() {}, unlock() {}, duck() {} });
   return { game, input };
@@ -149,7 +152,7 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0, god = GO
   g.player.lift = 0;
   g.setPhase("playing");
   if (god) g.god = true;
-  const stats = { popups: 0, levelUps: 0, bossLanded: [], bossKillSec: [], affixKills: 0, elites: new Set(), traceAt: {}, finaleStart: 0, winAt: 0, fightSec: 0, finalePhase: 0, endlessAt: 0, dpsAtFinale: 0, blocked: { boss: 0, popup: 0, other: 0 } };
+  const stats = { surgeOffered: {}, surgePicked: {}, popups: 0, levelUps: 0, bossLanded: [], bossKillSec: [], affixKills: 0, elites: new Set(), traceAt: {}, finaleStart: 0, winAt: 0, fightSec: 0, finalePhase: 0, endlessAt: 0, dpsAtFinale: 0, blocked: { boss: 0, popup: 0, other: 0 } };
   const marks = [25, 50, 75, 100];
   let dashCount = 0;
   let lastBosses = 0;
@@ -173,14 +176,21 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0, god = GO
       }
       const recommended = cards.findIndex((c) => c.recommended);
       const index = picker === "smart" && recommended >= 0 ? recommended : Math.floor(Math.random() * cards.length);
+      if (cards.some((c) => c.surge)) {
+        for (const c of cards) stats.surgeOffered[c.id] = (stats.surgeOffered[c.id] ?? 0) + 1;
+        stats.surgePicked[cards[index].id] = (stats.surgePicked[cards[index].id] ?? 0) + 1;
+      }
+      if (NO_SURGE && cards[index].surge) cards[index].apply = () => true;
       g.pickUpgrade(index);
       continue;
     }
+    if (FORCE_SURGE && g.elapsed >= 90 && !g.spikes.surges.includes(FORCE_SURGE)) g["makeUpgradeContext"]().surge(FORCE_SURGE);
     if (g.phase === "cinematic" && g.cinematic) g.cinematic.t += 99;
     if (g.phase === "cutscene") g.cutscene.skip();
     if (i % skill.reaction === 0) move = steer(g, skill);
     input.consumeDash = () => ++dashCount % skill.dash === 0;
     input.consumeAbility = () => dashCount % 300 === 0;
+    input.consumeOverclock = () => !NO_OC && g.spikes.charge >= 220 && i % 7 === 0;
     if (forceTraceMin > 0 && g.elapsed >= forceTraceMin * 60 && g.trace < 100 && !g.won) {
       if (process.env.FORCE_CLEAR === "1") for (const e of g.enemies) if (e.kind.startsWith("boss")) e.dead = true;
       if (!g.anyBossAlive() || process.env.FORCE_CLEAR === "1") g.debugSetTrace(100);
@@ -211,7 +221,7 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0, god = GO
     lastBossAlive = bossAlive;
   }
   const damage = [...g.weaponDamage.entries()].sort((a, b) => b[1] - a[1]);
-  return { dpsAtFinale: stats.dpsAtFinale, finalePhase: stats.finalePhase, fightSec: stats.fightSec, blocked: stats.blocked, sources: { ...g.traceSources }, trace: g.trace, won: g.won, finale: stats.finaleStart > 0, finaleDied: stats.finaleStart > 0 && !g.won, funds: g.fundsLeft, dps: g.totalDps(), loops: g.loops, biomeHazards: g.biomeHazards.fired.length, t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
+  return { spikeDamage: [...g.spikes.damage.entries()], ascensions: g.spikes.ascensions, overclocks: g.spikes.overclockUses, bestCrowd: g.spikes.bestCrowd, surgeList: [...g.spikes.surges], dpsAtFinale: stats.dpsAtFinale, finalePhase: stats.finalePhase, fightSec: stats.fightSec, blocked: stats.blocked, sources: { ...g.traceSources }, trace: g.trace, won: g.won, finale: stats.finaleStart > 0, finaleDied: stats.finaleStart > 0 && !g.won, funds: g.fundsLeft, dps: g.totalDps(), loops: g.loops, biomeHazards: g.biomeHazards.fired.length, t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
 }
 
 function median(values) {
@@ -285,6 +295,30 @@ if (allRuns.length) {
   console.log(`  events/run ${mean(allRuns.map((r) => r.events.length)).toFixed(1)}  ${[...eventCounts.entries()].map(([id, n]) => `${id} ${n}`).join("  ")}`);
   console.log(`  affixed whales seen/run ${mean(allRuns.map((r) => r.elites)).toFixed(1)}  biome hazards/run ${mean(allRuns.map((r) => r.biomeHazards)).toFixed(1)}`);
   console.log(`  causes of death: ${[...causes.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c ?? "none"} ${n}`).join(", ")}`);
+}
+const surgeOffered = new Map();
+const surgePicked = new Map();
+for (const r of allRuns) {
+  for (const [id, n] of Object.entries(r.surgeOffered)) surgeOffered.set(id, (surgeOffered.get(id) ?? 0) + n);
+  for (const [id, n] of Object.entries(r.surgePicked)) surgePicked.set(id, (surgePicked.get(id) ?? 0) + n);
+}
+if (allRuns.length) {
+  console.log(`\nPower spikes (all skill runs): ascensions/run ${mean(allRuns.map((r) => r.ascensions)).toFixed(2)}  overclocks/run ${mean(allRuns.map((r) => r.overclocks)).toFixed(2)}  overclocks/min ${mean(allRuns.map((r) => r.overclocks / (r.t / 60))).toFixed(2)}  best crowd kills ${Math.max(...allRuns.map((r) => r.bestCrowd))}  surges/run ${mean(allRuns.map((r) => r.surgeList.length)).toFixed(2)}`);
+  console.log("Surge pick rate (picked / offered), share of total damage when taken:");
+  for (const [id, offered] of [...surgeOffered.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const key = id.replace("surge-", "");
+    const owners = allRuns.filter((r) => r.surgeList.includes(key));
+    const share = owners.map((r) => {
+      const total = r.damage.reduce((sum, [, v]) => sum + v, 0) + r.spikeDamage.reduce((sum, [, v]) => sum + v, 0) || 1;
+      return (r.spikeDamage.find(([k]) => k === key)?.[1] ?? 0) / total;
+    });
+    console.log(`  ${key.padEnd(17)} picked ${String(surgePicked.get(id) ?? 0).padStart(3)} / ${String(offered).padStart(3)} (${(((surgePicked.get(id) ?? 0) / offered) * 100).toFixed(0)}%)  own-damage share ${owners.length ? (median(share) * 100).toFixed(1) : "-"}%`);
+  }
+  const ocDamage = allRuns.map((r) => {
+    const total = r.damage.reduce((sum, [, v]) => sum + v, 0) + r.spikeDamage.reduce((sum, [, v]) => sum + v, 0) || 1;
+    return { asc: (r.spikeDamage.find(([k]) => k === "ascension")?.[1] ?? 0) / total, ring: (r.spikeDamage.find(([k]) => k === "overclock")?.[1] ?? 0) / total };
+  });
+  console.log(`  ascension blast share of damage: median ${(median(ocDamage.map((d) => d.asc)) * 100).toFixed(2)}%  overclock ring: ${(median(ocDamage.map((d) => d.ring)) * 100).toFixed(2)}%`);
 }
 console.log("\nAverage damage share when owned:");
 for (const [kind, shares] of [...toolShare.entries()].sort((a, b) => median(b[1]) - median(a[1]))) {

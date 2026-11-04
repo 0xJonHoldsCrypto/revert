@@ -2,6 +2,7 @@ import type { Game } from "../game/Game";
 import { decodeMove, setupOf, SIM_VERSION, type RunLog } from "./runLog";
 import { dailyPlan } from "../daily";
 import { heroAvailable } from "../data/unlocks";
+import { OVERCLOCK_LOG_BASE } from "../data/spikes";
 
 export type ReplayVerdict =
   | { ok: true; ticks: number; kills: number; level: number; score: number; timeSec: number; bosses: number; ranked: boolean; mode: RunLog["mode"] }
@@ -11,13 +12,15 @@ export type ReplayInput = {
   moveVector(): { x: number; y: number };
   consumeDash(): boolean;
   consumeAbility(): boolean;
+  consumeOverclock(): boolean;
 };
 
 export function replayInput(log: RunLog, tick: () => number): ReplayInput {
   let moveIndex = 0;
   let moveLeft = log.moves[1] ?? 0;
   const dashes = new Set(log.dashes);
-  const abilities = new Set(log.abilities);
+  const abilities = new Set(log.abilities.filter((t) => t < OVERCLOCK_LOG_BASE));
+  const overclocks = new Set(log.abilities.filter((t) => t >= OVERCLOCK_LOG_BASE).map((t) => t - OVERCLOCK_LOG_BASE));
   return {
     moveVector() {
       const code = log.moves[moveIndex] ?? 0;
@@ -30,6 +33,7 @@ export function replayInput(log: RunLog, tick: () => number): ReplayInput {
     },
     consumeDash: () => dashes.delete(tick()),
     consumeAbility: () => abilities.delete(tick()),
+    consumeOverclock: () => overclocks.delete(tick()),
   };
 }
 

@@ -18,6 +18,7 @@ import { AFFIXES } from "../data/affixes";
 import type { CharacterId, EnemyKind, InteractableKind } from "../types";
 import type { WeaponKind } from "../types";
 import { DECAL_ARC, DECAL_BLOB, DECAL_DISC, DECAL_RECT, DECAL_RING, DecalBatch, FxBatch, MAX_POINT_LIGHTS, SpriteBatch, type SpriteLights } from "./batches";
+import { SURGE_TUNING } from "../data/spikes";
 import { GradeShader, setColorblind } from "./gradeShader";
 import type { ColorblindMode } from "../save";
 import { canPromoteToHigh, DynamicResolution, pickQualityTier, QUALITY, TierPromoter } from "./quality";
@@ -475,6 +476,12 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   const scratchColor = new THREE.Color();
   const WHITE = new THREE.Color(1, 1, 1);
   const PLAYER_LIGHT = new THREE.Color(0.65, 0.95, 1);
+  const OC_LIGHT = new THREE.Color(1, 0.55, 0.25);
+  const OC_COLOR = new THREE.Color(1, 0.42, 0.24);
+  const EMBER_COLOR = new THREE.Color(1, 0.8, 0.4);
+  const BLADE_COLOR = new THREE.Color(1, 0.52, 0.32);
+  const TRAIL_COLOR = new THREE.Color(0.18, 0.9, 0.78);
+  const BARRIER_COLOR = new THREE.Color(0.71, 0.55, 1);
   const CHEST_LIGHT = new THREE.Color(1, 0.72, 0.28);
   const BOSS_LIGHT = new THREE.Color(1, 0.16, 0.2);
   const XP_COLOR = new THREE.Color(0.25, 0.85, 1);
@@ -530,7 +537,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
     fx.begin();
     decals.begin();
     scratchLights.length = 0;
-    scratchLights.push({ x: px, y: py, h: 64, color: PLAYER_LIGHT, power: 1 });
+    const hot = game.overclocking;
+    scratchLights.push({ x: px, y: py, h: 64, color: hot ? OC_LIGHT : PLAYER_LIGHT, power: hot ? 1.8 : 1 });
 
     emitProps(left, right, top, bottom, px, py);
     emitBiomeSeams(left, right, top, bottom);
@@ -852,11 +860,50 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         continue;
       }
       const look = (pr.weaponKind && PROJECTILE_LOOK[pr.weaponKind]) || DEFAULT_LOOK;
-      fx.push(x, y, 26, look.width, look.length, angle, color, look.glow);
+      const evo = pr.evolved === true;
+      const size = (pr.boost ?? 1) * (evo ? 1.3 : 1);
+      const width = look.width * size;
+      const length = look.length * size;
+      const glow = look.glow * (evo ? 1.4 : 1);
+      const tint = evo ? scratchColor.copy(color).lerp(WHITE, 0.4) : color;
+      fx.push(x, y, 26, width, length, angle, tint, glow);
+      if (evo) fx.push(x, y, 26, width * 0.4, length * 0.75, angle, WHITE, glow * 0.8);
       const speed = Math.hypot(pr.vx, pr.vy) || 1;
-      for (let i = 1; i <= look.trail; i++) {
-        const back = i * look.length * 0.6;
-        fx.push(x - (pr.vx / speed) * back, y - (pr.vy / speed) * back, 26, look.width * (1 - i * 0.2), look.length * 0.8, angle, color, look.glow * 0.5, 1 - i * 0.28);
+      const trail = look.trail + (evo ? 2 : 0);
+      for (let i = 1; i <= trail; i++) {
+        const back = i * length * 0.6;
+        fx.push(x - (pr.vx / speed) * back, y - (pr.vy / speed) * back, 26, width * Math.max(0.2, 1 - i * 0.2), length * 0.8, angle, tint, glow * 0.5, Math.max(0.1, 1 - i * (evo ? 0.2 : 0.28)));
+      }
+    }
+
+    const spikes = game.spikes;
+    for (const b of spikes.blades) {
+      if (!inView(b.x, b.y)) continue;
+      const fade = Math.min(1, (b.until - game.elapsed) / 0.6);
+      fx.push(b.x, b.y, 22, 9, 28, -(b.angle + Math.PI / 2), BLADE_COLOR, 2.6, fade);
+      if (cueShapes) decals.push(b.x, b.y, 9, 9, DECAL_RING, 1, WHITE, 0.8 * fade);
+    }
+    for (const n of spikes.trail) {
+      if (!inView(n.x, n.y)) continue;
+      const life = Math.min(1, (n.until - game.elapsed) / 1.2);
+      fx.push(n.x, n.y, 6, 24, 24, 0, TRAIL_COLOR, 1.6, life);
+      if (cueShapes) decals.push(n.x, n.y, 10, 10, DECAL_RING, 1, WHITE, 0.6 * life);
+    }
+    if (spikes.barrier > 0) {
+      const cap = game.player.maxHp * SURGE_TUNING.barrierShare * SURGE_TUNING.barrierMax || 1;
+      decals.push(px, py, 48, 48, DECAL_RING, Math.min(1, spikes.barrier / cap), BARRIER_COLOR, 0.9);
+      if (cueShapes) decals.push(px, py, 52, 52, DECAL_RING, Math.min(1, spikes.barrier / cap), WHITE, 0.6);
+    }
+    if (hot) {
+      const left = Math.max(0, spikes.overclockUntil - game.elapsed);
+      const pulse = calmView ? 0 : Math.sin(anim * 14) * 4;
+      fx.push(px, py, 14, 62 + pulse, 62 + pulse, 0, OC_COLOR, 2.4, 0.85);
+      decals.push(px, py, 40, 40, DECAL_RING, Math.min(1, left / spikes.overclockLen), OC_COLOR, 1);
+      decals.push(px, py, 44, 44, DECAL_RING, Math.min(1, left / spikes.overclockLen), WHITE, 0.7);
+      const embers = calmView ? 3 : 8;
+      for (let i = 0; i < embers; i++) {
+        const t = (anim * 1.6 + i / embers) % 1;
+        fx.push(px + Math.cos(i * 2.4 + anim) * 22, py - t * 8, 10 + t * 70, 5, 5, 0, EMBER_COLOR, 1.8, 1 - t);
       }
     }
 
@@ -888,6 +935,10 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
   }
 
   let appliedColorblind: ColorblindMode = "off";
+  let flashSerial = 0;
+  let flashLevel = 0;
+  let overclockLevel = 0;
+  const flashRgb = [1, 1, 1];
 
   return {
     render(game: Game, dt: number, alpha: number) {
@@ -915,6 +966,8 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         grade.uniforms.uImpact!.value = calm ? 0 : cutscenePlayer.impact;
         grade.uniforms.uHurt!.value = 0;
         grade.uniforms.uTilt!.value = 0;
+        grade.uniforms.uOverclock!.value = 0;
+        grade.uniforms.uFlash!.value = 0;
       } else {
         if (!game.player) return;
         renderPass.scene = scene;
@@ -925,6 +978,20 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         grade.uniforms.uImpact!.value = !calm && game.impactFrames > 0 ? 1 : 0;
         grade.uniforms.uHurt!.value = calm ? game.hurtPulse * 0.25 : game.hurtPulse;
         grade.uniforms.uTilt!.value = tier.tiltShift ? 1 : 0;
+        const spikes = game.spikes;
+        if (spikes.flashSerial !== flashSerial) {
+          flashSerial = spikes.flashSerial;
+          flashLevel = calm ? Math.min(spikes.flashStrength, 0.22) : spikes.flashStrength;
+          const hex = cachedColor(spikes.flashColor).getHex();
+          flashRgb[0] = ((hex >> 16) & 255) / 255;
+          flashRgb[1] = ((hex >> 8) & 255) / 255;
+          flashRgb[2] = (hex & 255) / 255;
+        }
+        flashLevel = Math.max(0, flashLevel - dt * (calm ? 1.6 : 2.2));
+        overclockLevel += ((game.overclocking ? (calm ? 0.5 : 1) : 0) - overclockLevel) * Math.min(1, dt * 6);
+        grade.uniforms.uFlash!.value = flashLevel;
+        grade.uniforms.uFlashColor!.value = flashRgb;
+        grade.uniforms.uOverclock!.value = overclockLevel;
       }
       grade.uniforms.uTime!.value = elapsed;
       grade.uniforms.toneMappingExposure!.value = renderer.toneMappingExposure;

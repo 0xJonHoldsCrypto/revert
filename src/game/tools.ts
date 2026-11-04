@@ -1,6 +1,7 @@
 import { ENEMIES } from "../data/enemies";
 import { APPROVAL_EVOLVED_SPREAD, APPROVAL_SPREAD, approvalTags, keeperCloses, keeperThreshold, VAULT_EVOLVED_SHOVES, VAULT_FREEZE_SEC, VAULT_SHOVES, weaponAtLevel } from "../data/weapons";
 import { COLORS } from "../constants";
+import { OVERCLOCK } from "../data/spikes";
 import type { Enemy, WeaponDef, WeaponInstance, WeaponKind } from "../types";
 import { angleBetween, dist, randRange } from "../utils/math";
 import { compact } from "./compact";
@@ -71,7 +72,7 @@ function arc(g: Game, x1: number, y1: number, x2: number, y2: number, color: str
 }
 
 function areaBonus(g: Game): number {
-  return 1 + g.perks.area;
+  return 1 + g.perks.area + (g.overclocking ? OVERCLOCK.areaBonus : 0);
 }
 
 function fireWhip(g: Game, w: WeaponInstance, def: WeaponDef) {

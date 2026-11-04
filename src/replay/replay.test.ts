@@ -50,6 +50,7 @@ function replayerFor(log: RunLog): Game {
   input.moveVector = scripted.moveVector;
   input.consumeDash = scripted.consumeDash;
   input.consumeAbility = scripted.consumeAbility;
+  input.consumeOverclock = scripted.consumeOverclock;
   return game;
 }
 

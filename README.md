@@ -18,6 +18,7 @@ npm run dev
 | WASD / arrows | Move |
 | Space | Dash (i-frames) |
 | Q / E | Active ability |
+| F | Overclock (when the meter is full; touch: the OC button above the ability button) |
 | 1-3 | Pick a card |
 | R / X | Reroll / skip cards |
 | M | Mute |
@@ -34,7 +35,7 @@ Everything persists in one versioned `localStorage` entry (`revert.save`, see `s
 
 After a death the post-mortem offers a 1200x630 share card drawn in code (`src/ui/shareCard.ts`, lazy): Share uses the Web Share API with the PNG where supported and otherwise copies or downloads it. SAVE RUN FILE downloads `revert-<seed>.run` and COPY RUN CODE copies a `REVERT1:` code (`src/replay/runCode.ts`, lazy: binary-packed, deflate-raw when the browser has CompressionStream, base64url; legacy JSON codes still decode). A text box (capped height) appears if the clipboard is blocked, and long runs are pointed at the file since their code is too big for chat apps, and REPLAY THIS SEED restarts with the same seed, hero and difficulty.
 
-31 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, affixes and network events, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is version 4 (history entries and lifetime stats carry `won`, `winTime`, `wins` and `fastestWin`) and migrates older saves. Every write re-reads storage first and other tabs' writes are picked up through the `storage` event, so two open tabs do not overwrite each other.
+33 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, affixes and network events, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is version 4 (history entries and lifetime stats carry `won`, `winTime`, `wins` and `fastestWin`) and migrates older saves. Every write re-reads storage first and other tabs' writes are picked up through the `storage` event, so two open tabs do not overwrite each other.
 
 ## Threat intel: affixes, network events, new tools and attackers
 
@@ -84,6 +85,22 @@ The Codex has an INTEL tab for affixes and events, and two achievements cover th
 | Cold Storage | Frost Vent | Three vents frost over, then vent; standing in one chills (40% slow) and stings |
 
 **Tool balance.** Mempool Pulse hits for 13 (was 20) with a smaller crowd bonus (3% per attacker, capped at ×1.6). Stablecoin Shield coins now catch enemy bullets and fire them back at the nearest attacker for five times the coin's damage plus double the bullet's, resting 1s after a catch (0.5s once evolved).
+
+## Power spikes: ascension, surges and overclock
+
+Builds used to creep up smoothly. Three systems now add moments where power visibly jumps. All numbers live in `src/data/spikes.ts` (ascension and overclock), `src/data/surges.ts` (the nine surges) and `src/data/weapons.ts` (evolved multipliers); the mechanics are in `src/game/spikes.ts`.
+
+**Ascension.** When a tool evolves it ascends: the sim freezes for 0.12s (a normal hit-stop), a gold shockwave (radius 300) deals 1.1x strike damage with falloff (bosses take 40% of that) and shoves regular attackers back, a banner names the new form with its one-line effect, a stinger plays and the screen flashes. The slow-motion beat (about 0.6s at 0.16x) is not simulated: `main.ts` scales how fast real time feeds the fixed 60 Hz steps (`Game.timeScale`), so every tick is identical and replays are unaffected. Evolved forms also deal x1.3 damage and cooldown x0.92 (`EVOLVED_*` in `weapons.ts`), shown on the EVOLVE card's compare lines and in `toolDps` and the Recommended score. Evolved shots are bigger, whiter and trail longer, evolved orbiters are 25% larger, and the HUD marks an evolved tool with a star.
+
+**Surges.** At levels 5, 10, 15, 20 and then every 10, after the normal level-up card, a gold SURGE popup offers three of nine build-defining powers through the existing popup path (`choiceMode: "popup"`, no new phase, so the phase specs are untouched). Each surge can be taken once per run, is scored by `scoreCards` and one is marked RECOMMENDED. Large clipped gold cards with rising sparks (a static gold frame under reduced motion; the star and diamond glyphs carry the meaning without colour). The nine: Echo Volley (every 6th shot of every tool fires twice, Relay laptops too), Blade Storm (kills drop a blade that orbits for 6s, up to 10), Overdrive (your three strongest tools gain a level, rigs a tier), Volatile Pickups (collecting anything explodes, one blast per 0.2s), Wake Trail (dashing leaves a trail that burns for 4s), Free Ascension (your strongest tool without its catalyst gains a level and ascends), Overcharge (Overclock fills 40% faster, lasts 3s longer and starts 25% full), Kill Barrier (every 60 kills raises a barrier worth 8% max HP, two at most; absorbs after the Ledger shield and before HP; never offered under Immutable Ledger) and Stasis Pulse (every 20s freezes nearby attackers for 1s and they take 25% more; bosses are not frozen). Surge damage is attributed in the post-mortem damage list.
+
+**Overclock.** Kills charge a meter (not time): each kill adds enemy XP / 6 clamped to 0.5 to 3 (whales 6, bosses 30, boss damage adds up to 40 over a boss's HP), through a token bucket capped at 6.5 per second so swarm waves cannot fill it instantly. 300 fills it, which is about 50 to 70s of real fighting (bots measured about one Overclock a minute, 8s of it active). The meter sits at the bottom of the HUD (diamond while charging, triangle plus F when ready, dot with seconds left while active) and the touch OC button fills like a gauge. Press F (or tap OC): for 8s cooldowns are halved (never below x0.25 combined), damage is x1.6, shots are 50% bigger and pierce one more, blasts and auras are 30% wider, rigs work twice as fast, and a ring blast (1.3x strike damage, radius 280) shoves attackers away. The player gets a heat aura with a depleting ring, a colour-grade shift and the music adds a double-time kick and hats. It is hero-agnostic; Ledger also refills half its shield, and nothing in it heals, so it respects Immutable Ledger. In Endless it scales through the same strike damage as everything else. The press is logged through the ability path: tick + 2^30 in `abilities` (`OVERCLOCK_LOG_BASE`), so the log shape, `RUN_LOG_FORMAT` 2 and `SIM_VERSION` 3 do not change and `replayInput` splits the two kinds back apart.
+
+**Accessibility.** Slow-mo and the screen flash are cosmetic and use real time: under reduced motion the slow-mo is capped at 0.15s (at x0.5), the flash is a faint tint under 0.15s, the overclock grade is half strength and pulsing, embers and sparks are reduced or static. The sim hit-stop is a constant 0.12s either way. `onHaptic` fires `ascend`, `surge`, `overclock` and `ready` (vibration patterns in `src/haptics.ts`). Every state has a shape or text cue besides colour, and colorblind modes add white rings to blades, trail nodes and the barrier.
+
+Achievements: First Ascension (the old Fully Formed), Surge Protocol and Thermal Throttle (25 kills in one Overclock). The Codex INTEL tab lists the nine surges, Ascension and Overclock once seen.
+
+`npm run balance` reports surge pick rates and damage shares, ascensions and overclocks per run. `NO_OC=1`, `NO_SURGE=1` and `FORCE_SURGE=<id>` ablate each system.
 
 ## Checks
 

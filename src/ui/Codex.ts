@@ -10,7 +10,8 @@ import { CAMEOS } from "../data/cameos";
 import { ENEMIES } from "../data/enemies";
 import { GEAR, SLOT_LABEL, type GearId } from "../data/gear";
 import { RARITY_COLORS } from "../data/rarity";
-import { EVOLUTIONS, WEAPONS } from "../data/weapons";
+import { SURGE_ORDER, SURGES } from "../data/surges";
+import { EVOLUTIONS, EVOLVED_COOLDOWN_MULT, EVOLVED_DAMAGE_MULT, WEAPONS } from "../data/weapons";
 import type { Game } from "../game/Game";
 import { THREAT_INTEL } from "../game/threats";
 import { getThreatSprite } from "../pixel/threatArt";
@@ -95,7 +96,15 @@ function intelEntries(data: save.SaveData): Entry[] {
     const def = BIOME_HAZARDS[id];
     return { key: `hz:${id}`, name: def.name, body: def.text, meta: `HAZARD · ${BIOME_LABEL[def.biome].name.toUpperCase()}`, color: def.color, seen: !!data.codex.seen[`hz:${id}`] };
   });
-  return [...affixes, ...events, ...hazards];
+  const surges = SURGE_ORDER.map((id) => {
+    const def = SURGES[id];
+    return { key: `s:${id}`, name: def.name, body: def.line, meta: "SURGE · MILESTONE LEVELS 5, 10, 15, 20, then every 10", color: def.color, seen: !!data.codex.seen[`s:${id}`] };
+  });
+  const spikes = [
+    { key: "x:ascend", name: "Ascension", body: `A tool evolves. The world freezes, a shockwave hits everything nearby, and the tool deals ${Math.round((EVOLVED_DAMAGE_MULT - 1) * 100)}% more damage and fires ${Math.round((1 - EVOLVED_COOLDOWN_MULT) * 100)}% faster.`, meta: "POWER SPIKE", color: "#ffc23d", seen: !!data.codex.seen["x:ascend"] },
+    { key: "x:overclock", name: "Overclock", body: "Kills charge a meter. Press F or tap OC: 8 seconds of halved cooldowns, 1.6x damage and bigger shots.", meta: "POWER SPIKE", color: "#ff6b3d", seen: !!data.codex.seen["x:overclock"] },
+  ];
+  return [...affixes, ...events, ...hazards, ...spikes, ...surges];
 }
 
 function crewEntries(data: save.SaveData): Entry[] {

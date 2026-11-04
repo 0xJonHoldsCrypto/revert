@@ -1,6 +1,6 @@
 import type { PerkId, UpgradeContext, UpgradeDef, WeaponKind, WeaponRarity } from "../types";
 import { defiUpgradePool } from "./defiProtocols";
-import { EVOLUTIONS, toolTrait, toolTraitLine, weaponAtLevel, WEAPONS } from "./weapons";
+import { EVOLUTIONS, EVOLVED_COOLDOWN_MULT, EVOLVED_DAMAGE_MULT, toolTrait, toolTraitLine, weaponAtLevel, WEAPONS } from "./weapons";
 
 export const MAX_WEAPON_SLOTS = 6;
 
@@ -40,6 +40,14 @@ function patchLines(kind: WeaponKind, level: number): string[] {
   return lines;
 }
 
+function ascensionLines(kind: WeaponKind, level: number): string[] {
+  const now = weaponAtLevel(kind, level);
+  const lines = [`Damage ${round(now.damage)} → ${round(now.damage * EVOLVED_DAMAGE_MULT)}`];
+  if (!WEAPONS[kind].orbit) lines.push(`Cooldown ${round(now.cooldown)}s → ${round(now.cooldown * EVOLVED_COOLDOWN_MULT)}s`);
+  lines.push("Ascension shockwave hits everything nearby");
+  return lines;
+}
+
 function upgradeWeapon(kind: WeaponKind, ctxNow: UpgradeContext): UpgradeDef {
   const w = WEAPONS[kind];
   const evo = EVOLUTIONS[kind];
@@ -51,7 +59,7 @@ function upgradeWeapon(kind: WeaponKind, ctxNow: UpgradeContext): UpgradeDef {
     title: evolving ? `${w.name} → ${evo.name}` : w.name,
     tag: evolving ? "EVOLVE" : `LV ${lv} → ${lv + 1}`,
     description: evolving ? evo.blurb : `Level ${lv + 1} of ${w.maxLevel}.`,
-    compare: evolving ? undefined : [...patchLines(kind, lv), ...(lv + 1 >= w.maxLevel && recipe ? [`Evolves with ${recipe}${ctxNow.hasUpgrade(evo.needs) ? " (owned)" : ""}`] : [])],
+    compare: evolving ? ascensionLines(kind, lv) : [...patchLines(kind, lv), ...(lv + 1 >= w.maxLevel && recipe ? [`Evolves with ${recipe}${ctxNow.hasUpgrade(evo.needs) ? " (owned)" : ""}`] : [])],
     rarity: evolving ? "legendary" : w.rarity,
     apply(ctx) {
       if (!ctx.hasWeapon(kind)) return false;

@@ -222,7 +222,7 @@ export class TitleScreen {
           <p class="t-contracts" hidden></p>
           <button type="button" class="t-daily"></button>
           <button type="button" class="t-start"><span>SIGN &amp; REVERT</span><kbd>ENTER</kbd></button>
-          <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>ESC</kbd> pause</p>
+          <p class="t-keys"><kbd>WASD</kbd> move <kbd>SPACE</kbd> dash <kbd>Q</kbd> ability <kbd>F</kbd> overclock <kbd>ESC</kbd> pause</p>
         </div>
       </div>
     `;
