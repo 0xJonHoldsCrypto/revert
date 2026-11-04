@@ -18,6 +18,9 @@ export type ShareData = {
   cause: string;
   score: number;
   seed: number;
+  won: boolean;
+  winTime: number;
+  loops: number;
 };
 
 export type ShareOutcome = "shared" | "copied" | "downloaded" | "cancelled" | "failed";
@@ -86,6 +89,15 @@ export async function renderShareCard(data: ShareData): Promise<HTMLCanvasElemen
   c.fillStyle = INK.muted;
   c.font = `700 18px ${FONT_MONO}`;
   c.fillText(`INCIDENT ${data.incident}`, 540, 130);
+  if (data.won) {
+    c.fillStyle = INK.gold;
+    c.fillRect(886, 100, 282, 40);
+    c.fillStyle = "#0b0e18";
+    c.font = `700 22px ${FONT_UI}`;
+    c.textAlign = "center";
+    c.fillText(`REVERTED · ${formatTime(data.winTime)}`, 1027, 128);
+    c.textAlign = "left";
+  }
 
   c.fillStyle = INK.gold;
   c.font = `700 150px ${FONT_UI}`;
@@ -99,7 +111,7 @@ export async function renderShareCard(data: ShareData): Promise<HTMLCanvasElemen
   c.fillText(formatTime(data.time), 540, 388);
   c.fillStyle = INK.muted;
   c.font = `700 16px ${FONT_MONO}`;
-  c.fillText("TIME ON-CHAIN", 540, 412);
+  c.fillText(data.won && data.loops > 0 ? `TIME ON-CHAIN · ${data.loops} LOOPS` : "TIME ON-CHAIN", 540, 412);
   c.fillStyle = INK.text;
   c.font = `700 56px ${FONT_UI}`;
   c.fillText(data.score.toLocaleString("en-US"), 800, 388);
@@ -130,6 +142,7 @@ export async function renderShareCard(data: ShareData): Promise<HTMLCanvasElemen
 }
 
 export function shareText(data: ShareData): string {
+  if (data.won) return `REVERT ${data.incident}: REVERTED the exploit in ${formatTime(data.winTime)} as ${data.hero}, saved ${data.savedPct.toFixed(1)}% of the funds. Seed ${data.seed >>> 0}.`;
   return `REVERT ${data.incident}: saved ${data.savedPct.toFixed(1)}% of the funds in ${formatTime(data.time)} as ${data.hero}. Seed ${data.seed >>> 0}.`;
 }
 

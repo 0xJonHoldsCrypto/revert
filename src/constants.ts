@@ -19,8 +19,6 @@ export const PLAYER_RADIUS = 18;
 
 export const MAX_ENEMIES = 500;
 
-export const SECOND_WALLET_TIME_SEC = 20 * 60;
-
 export const BOSS_TIMES = [120, 210, 300, 390, 480, 570, 660, 750, 840];
 const ENDLESS_BOSS_GAP_SEC = 105;
 export const BOSS_KINDS = [

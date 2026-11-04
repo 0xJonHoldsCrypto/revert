@@ -49,7 +49,8 @@ export type EnemyKind =
   | "boss-nightdesk"
   | "boss-grandmaster"
   | "boss-mev-king"
-  | "boss-oracle";
+  | "boss-oracle"
+  | "boss-attacker";
 
 export type WeaponKind =
   | "audit-dart"
@@ -136,6 +137,7 @@ export interface UpgradeDef {
   tag?: string;
   value?: number;
   recommended?: boolean;
+  plain?: boolean;
   compare?: string[];
 }
 
@@ -226,6 +228,7 @@ export interface Hazard {
   once?: boolean;
   track?: number;
   slow?: number;
+  grow?: number;
 }
 
 export interface Enemy extends Entity {
@@ -259,6 +262,9 @@ export interface Enemy extends Entity {
   drainTick?: number;
   drainDamage?: number;
   blink?: { x: number; y: number; t: number };
+  decoy?: boolean;
+  finalePhase?: number;
+  phaseBeat?: number;
   kind: EnemyKind;
   hp: number;
   maxHp: number;
@@ -435,4 +441,6 @@ export interface RunStats {
   damageDealt: number;
   timeSurvived: number;
   bossesDefeated: number;
+  won: boolean;
+  winTime: number;
 }

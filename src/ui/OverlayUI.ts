@@ -215,8 +215,15 @@ export class OverlayUI {
       : data.banner
         ? `<div class="hud-banner" style="border-color:${data.banner.tone}"><strong style="color:${data.banner.tone}">${data.banner.title}</strong><span>${data.banner.text}</span></div>`
         : "";
+    const traceHtml =
+      data.traceMode === "endless"
+        ? `<div class="hud-trace endless"><b class="hud-tag">ENDLESS</b><span>LOOPS<i> SURVIVED</i> <strong>${data.loops}</strong></span></div>`
+        : data.traceMode === "finale"
+          ? `<div class="hud-trace finale"><label><span>TRACE 100%<i class="w"> · FINAL CONFRONTATION</i></span></label><div class="hud-trace-bar"><div style="width:100%"></div></div></div>`
+          : `<div class="hud-trace${data.trace >= 100 ? " finale" : ""}"><label>${data.trace >= 100 ? `<span>TRACE 100%<i class="w"> · KILL THE BOSS FIRST</i></span>` : `<span>TRACE<i class="w"> · ATTACKER WALLET</i></span><strong>${Math.floor(data.trace)}%</strong>`}</label><div class="hud-trace-bar"><div style="width:${Math.min(100, data.trace)}%"></div><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div></div>`;
     const sections = [
       `<div class="hud-xp"><div style="width:${xpPct}%"></div></div>`,
+      traceHtml,
       `<div class="hud-funds${data.fundsPct < 30 ? " low" : ""}${data.lie ? " lying" : ""}">
         <label>FUNDS AT RISK</label>
         <strong>${fundsText}</strong>
@@ -298,9 +305,10 @@ export class OverlayUI {
       <div class="postmortem">
         <header>
           <span>INCIDENT ${m.incident} · BLOCK ${m.block.toLocaleString("en-US")}</span>
-          <span class="bad">${insolvent ? "INSOLVENT" : "RESPONDER DOWN"}</span>
+          <span class="${m.won ? "ok" : "bad"}">${m.won ? "REVERTED" : insolvent ? "INSOLVENT" : "RESPONDER DOWN"}</span>
         </header>
-        <h1>${insolvent ? "The treasury is empty." : "Rekt."}</h1>
+        <h1>${m.won ? (m.cashedOut ? "Exploit reverted." : "Reverted. Then rekt.") : insolvent ? "The treasury is empty." : "Rekt."}</h1>
+        ${m.won ? `<div class="pm-win"><b>👑 REVERTED</b><span>The attacker was traced and reverted at <strong>${formatTime(m.winTime)}</strong>${m.endless ? ` · <strong>${m.loops}</strong> ${m.loops === 1 ? "loop" : "loops"} survived in Endless` : ""}.</span></div>` : ""}
         <div class="pm-hero">
           <label>FUNDS SAVED</label>
           <strong>${formatFunds(m.saved)}</strong>
@@ -312,6 +320,7 @@ export class OverlayUI {
             <dl>
               <dt>Score</dt><dd>${m.score.toLocaleString("en-US")} · best ${m.best.toLocaleString("en-US")}</dd>
               <dt>Root cause</dt><dd>${m.cause}</dd>
+              ${m.won ? `<dt>Reverted at</dt><dd>${formatTime(m.winTime)}</dd>` : ""}
               <dt>Time on-chain</dt><dd>${formatTime(m.time)}</dd>
               <dt>Exploits reverted</dt><dd>${m.kills}</dd>
               <dt>Bosses contained</dt><dd>${m.bosses}</dd>
@@ -359,6 +368,9 @@ export class OverlayUI {
       cause: m.cause,
       score: m.score,
       seed: m.seed,
+      won: m.won,
+      winTime: m.winTime,
+      loops: m.loops,
     });
   }
 

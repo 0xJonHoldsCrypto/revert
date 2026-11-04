@@ -28,8 +28,8 @@ StartFromTitle == focused /\ phase = "menu" /\ Go("cutscene") /\ popups' = 0 /\ 
 IntroEnds == focused /\ phase = "cutscene" /\ Go("cinematic") /\ UNCHANGED <<focused, popups>>
 Landed == focused /\ phase = "cinematic" /\ Go("playing") /\ UNCHANGED <<focused, popups>>
 BossEntrance == focused /\ phase = "playing" /\ Go("cinematic") /\ UNCHANGED <<focused, popups>>
-SecondWallet == focused /\ phase = "playing" /\ Go("cutscene") /\ UNCHANGED <<focused, popups>>
-SecondWalletEnds == focused /\ phase = "cutscene" /\ Go("playing") /\ UNCHANGED <<focused, popups>>
+Victory == focused /\ phase = "playing" /\ Go("cutscene") /\ UNCHANGED <<focused, popups>>
+VictoryEnds == focused /\ phase = "cutscene" /\ Go("playing") /\ UNCHANGED <<focused, popups>>
 Pause == focused /\ phase = "playing" /\ Go("paused") /\ UNCHANGED <<focused, popups>>
 Resume == phase = "paused" /\ Go("playing") /\ focused' = TRUE /\ UNCHANGED popups
 LevelUp == focused /\ phase = "playing" /\ Go("levelup") /\ UNCHANGED <<focused, popups>>
@@ -50,7 +50,7 @@ Blur ==
 Focus == ~focused /\ focused' = TRUE /\ UNCHANGED <<phase, popups, audio>>
 
 Next ==
-  \/ StartFromTitle \/ IntroEnds \/ Landed \/ BossEntrance \/ SecondWallet \/ SecondWalletEnds
+  \/ StartFromTitle \/ IntroEnds \/ Landed \/ BossEntrance \/ Victory \/ VictoryEnds
   \/ Pause \/ Resume \/ LevelUp \/ QueuePopup \/ OpenPopup \/ PickCard
   \/ Die \/ Restart \/ QuitToTitle \/ Blur \/ Focus
 

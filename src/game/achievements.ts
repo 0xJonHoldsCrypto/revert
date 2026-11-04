@@ -1,6 +1,7 @@
 import { ACHIEVEMENTS, type AchievementMetric } from "../data/achievements";
+import { WIN } from "../data/trace";
 
-export type AchEvent = "kill" | "chest" | "merge" | "pick" | "evolve" | "dash" | "rig" | "cameo" | "event" | "end";
+export type AchEvent = "kill" | "chest" | "merge" | "pick" | "evolve" | "dash" | "rig" | "cameo" | "event" | "end" | "win" | "endless";
 
 export type AchPayload = {
   boss?: boolean;
@@ -14,6 +15,9 @@ export type AchPayload = {
   rigs?: number;
   cameo?: string;
   savedPct?: number;
+  winTime?: number;
+  nightmare?: boolean;
+  endlessSec?: number;
 };
 
 export type Metrics = Record<AchievementMetric, number>;
@@ -42,6 +46,10 @@ export function emptyMetrics(): Metrics {
     savedPct: 0,
     events: 0,
     affixWhale: 0,
+    won: 0,
+    winFast: 0,
+    winNightmare: 0,
+    endlessTime: 0,
   };
 }
 
@@ -108,6 +116,14 @@ export class RunTracker {
         break;
       case "end":
         m.savedPct = Math.max(m.savedPct, p.savedPct ?? 0);
+        break;
+      case "win":
+        m.won = 1;
+        if ((p.winTime ?? Infinity) < WIN.fastSec) m.winFast = 1;
+        if (p.nightmare) m.winNightmare = 1;
+        break;
+      case "endless":
+        m.endlessTime = Math.max(m.endlessTime, p.endlessSec ?? 0);
         break;
     }
     if (this.dashes === 0 && m.time >= NO_DASH_SEC) m.noDash = 1;

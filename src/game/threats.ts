@@ -3,6 +3,7 @@ import type { Enemy, EnemyKind, Hazard } from "../types";
 import { angleBetween, dist, randRange } from "../utils/math";
 import { compactDead } from "./compact";
 import type { Game } from "./Game";
+import { updateAttacker, updateDecoy } from "./finale";
 
 export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
   "script-kiddie": "Copied the exploit from a forum. Keeps running it.",
@@ -32,6 +33,7 @@ export const THREAT_INTEL: Partial<Record<EnemyKind, string>> = {
   censor: "Fences you in with a burning ring. Stay inside until it drops.",
   "dust-spammer": "Sprays dust that sticks and slows you. Dash to shake it off.",
   griefer: "Leaves timelocked mines behind. They arm, then wait for you.",
+  "boss-attacker": "The one behind it all. Hides behind fake wallets, drains the treasury, then rewrites the chain. Dash through the reorg.",
 };
 
 export const FRONTRUN_LEAD_SEC = 0.85;
@@ -92,7 +94,16 @@ export function updateEnemyBehavior(game: Game, e: Enemy, dt: number) {
   const d = dist(e.x, e.y, p.x, p.y);
   e.aiTimer = (e.aiTimer ?? AI_START_DELAY_SEC) - dt;
 
+  if (e.decoy) {
+    updateDecoy(game, e, dt);
+    return;
+  }
+
   switch (e.kind) {
+    case "boss-attacker": {
+      updateAttacker(game, e, dt, speed);
+      return;
+    }
     case "phishing-bot": {
       if (!e.revealed) {
         e.age = (e.age ?? 0) + dt;
@@ -593,6 +604,7 @@ export function updateHazards(game: Game, dt: number) {
     }
     if (h.t < h.windup) continue;
     if (h.spin) h.angle = (h.angle ?? 0) + h.spin * dt;
+    if (h.grow) h.r = (h.r ?? 0) + h.grow * dt;
     if (!h.fired && h.once) h.fired = true;
     if (!h.fired) {
       h.fired = true;

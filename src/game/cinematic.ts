@@ -21,7 +21,7 @@ export const BOSS_TIMELINE = {
   typeCps: 40,
 };
 
-export type BossGimmick = "rewind" | "salute" | "modal" | "prices" | "pdf" | "halt";
+export type BossGimmick = "rewind" | "salute" | "modal" | "prices" | "pdf" | "halt" | "trace";
 
 export const BOSS_ENTRANCES: Partial<Record<EnemyKind, { title: string; line: string; gimmick: BossGimmick }>> = {
   "boss-shill": { title: "Not Financial Advice", line: "Ser, this is the bottom. Smash that like. Buy my course.", gimmick: "prices" },
@@ -33,4 +33,5 @@ export const BOSS_ENTRANCES: Partial<Record<EnemyKind, { title: string; line: st
   "boss-oracle": { title: "Price Is A Suggestion", line: "Your collateral is worth whatever I say it is. Today: nothing.", gimmick: "prices" },
   "boss-nightdesk": { title: "Senior Recruiter", line: "Loved your GitHub. Please open the attached offer letter.", gimmick: "pdf" },
   "boss-grandmaster": { title: "The Final Patch", line: "Blocks stop when I say so. Say goodbye to finality.", gimmick: "halt" },
+  "boss-attacker": { title: "Wallet 1 of 2", line: "You traced me. Congratulations. The funds were never the point. Watch what a reorg feels like.", gimmick: "trace" },
 };

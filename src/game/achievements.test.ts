@@ -11,7 +11,7 @@ describe("achievement evaluator", () => {
     const ids = ACHIEVEMENTS.map((a) => a.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBeGreaterThanOrEqual(20);
-    expect(ids.length).toBeLessThanOrEqual(30);
+    expect(ids.length).toBeLessThanOrEqual(32);
     expect(ACHIEVEMENTS.every((a) => a.target > 0 && a.name && a.desc)).toBe(true);
   });
 
@@ -20,6 +20,17 @@ describe("achievement evaluator", () => {
     const t = new RunTracker();
     expect(t.step("kill", 5, { boss: true }, none)).toContain("first-boss");
     expect(t.step("kill", 6, { boss: true }, new Set(["first-boss"]))).not.toContain("first-boss");
+  });
+
+  it("awards the win achievements from the win and endless events", () => {
+    const only = (ids: string[]) => ids.filter((id) => ["reverted", "reverted-nightmare", "speed-revert", "encore"].includes(id)).sort();
+    expect(only(new RunTracker().step("win", 1000, { winTime: 1000, nightmare: false }, none))).toEqual(["reverted"]);
+    expect(only(new RunTracker().step("win", 800, { winTime: 800, nightmare: false }, none))).toEqual(["reverted", "speed-revert"]);
+    expect(only(new RunTracker().step("win", 899.9, { winTime: 899.9, nightmare: true }, none))).toEqual(["reverted", "reverted-nightmare", "speed-revert"]);
+    expect(only(new RunTracker().step("win", 900, { winTime: 900 }, none))).toEqual(["reverted"]);
+    const encore = new RunTracker();
+    expect(only(encore.step("endless", 1500, { endlessSec: 599 }, none))).toEqual([]);
+    expect(only(encore.step("endless", 1501, { endlessSec: 600 }, none))).toEqual(["encore"]);
   });
 
   it("counts evolutions toward the three-evolution run", () => {

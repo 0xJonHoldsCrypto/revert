@@ -6,7 +6,7 @@ import { isUnlockId, UNLOCK_BY_ID, unlockedIds } from "./data/unlocks";
 export const SAVE_KEY = "revert.save";
 export const LEGACY_PREFS_KEY = "revert.prefs.v1";
 export const LEGACY_AUDIO_KEY = "revert.audio.v1";
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const MAX_SHARDS = 1_000_000;
 export const CODEX_LIMIT = 400;
 export const HISTORY_LIMIT = 20;
@@ -32,6 +32,8 @@ export type LifetimeStats = {
   bosses: number;
   timeSec: number;
   bestTime: number;
+  wins: number;
+  fastestWin: number;
 };
 
 export type CodexData = {
@@ -47,6 +49,8 @@ export type RunSummary = {
   difficulty: string;
   tools: string[];
   rootCause: string;
+  won: boolean;
+  winTime: number;
 };
 
 export type BestEntry = { score: number; time: number };
@@ -137,6 +141,8 @@ function cleanSummary(raw: unknown): RunSummary | null {
     difficulty: text(raw.difficulty),
     tools: Array.isArray(raw.tools) ? raw.tools.filter((t): t is string => typeof t === "string").slice(0, 3).map((t) => t.slice(0, 40)) : [],
     rootCause: text(raw.rootCause, "None"),
+    won: raw.won === true,
+    winTime: raw.won === true ? num(raw.winTime, 0, 0, 1e7) : 0,
   };
 }
 
@@ -171,7 +177,7 @@ export function defaultSave(): SaveData {
     difficulty: null,
     tutorial: { done: false, levelHint: false },
     settings: { ...DEFAULT_SETTINGS },
-    stats: { runs: 0, kills: 0, bosses: 0, timeSec: 0, bestTime: 0 },
+    stats: { runs: 0, kills: 0, bosses: 0, timeSec: 0, bestTime: 0, wins: 0, fastestWin: 0 },
     history: [],
     bests: Object.create(null) as Record<string, BestEntry>,
     achievements: Object.create(null) as Record<string, number>,
@@ -229,6 +235,8 @@ export function sanitize(raw: unknown): SaveData {
       bosses: num(stats.bosses, 0, 0, 1e9),
       timeSec: num(stats.timeSec, 0, 0, 1e12),
       bestTime: num(stats.bestTime, 0, 0, 1e7),
+      wins: Math.floor(num(stats.wins, 0, 0, 1e9)),
+      fastestWin: num(stats.fastestWin, 0, 0, 1e7),
     },
     history: history.slice(0, HISTORY_LIMIT),
     bests: cleanBests(r.bests),
@@ -273,6 +281,11 @@ const MIGRATIONS: Record<number, (data: Record<string, unknown>) => Record<strin
     return { ...data, stats: { ...stats, bestTime }, achievements: {}, codex: { seen: {}, killed: {} } };
   },
   2: (data) => ({ ...data, meta: { shards: 0, earned: 0, perks: {} }, unlocks: {}, contracts: [], daily: emptyDaily() }),
+  3: (data) => {
+    const stats = isRecord(data.stats) ? data.stats : {};
+    const history = Array.isArray(data.history) ? data.history.map((h) => (isRecord(h) ? { ...h, won: false, winTime: 0 } : h)) : [];
+    return { ...data, stats: { ...stats, wins: 0, fastestWin: 0 }, history };
+  },
 };
 
 export function migrate(raw: unknown): SaveData | null {
@@ -401,6 +414,10 @@ export function recordRun(summary: RunSummary, kills: number, bosses: number): {
     d.stats.bosses += bosses;
     d.stats.timeSec += summary.time;
     d.stats.bestTime = Math.max(d.stats.bestTime, summary.time);
+    if (summary.won) {
+      d.stats.wins++;
+      d.stats.fastestWin = d.stats.fastestWin > 0 ? Math.min(d.stats.fastestWin, summary.winTime) : summary.winTime;
+    }
     d.best = Math.max(d.best, summary.score);
     const key = bestKey(summary.hero, summary.difficulty);
     const prior = d.bests[key];

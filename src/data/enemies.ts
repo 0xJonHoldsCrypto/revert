@@ -1,4 +1,5 @@
 import type { EnemyDef, EnemyKind } from "../types";
+import { FINALE } from "./trace";
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   "script-kiddie": {
@@ -195,6 +196,19 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     color: "#ffe08a",
     isBoss: true,
     contactCooldown: 0.35,
+  },
+  "boss-attacker": {
+    kind: "boss-attacker",
+    name: "The Attacker",
+    emoji: "🕳️",
+    hp: FINALE.hp,
+    speed: 74,
+    damage: 52,
+    radius: 46,
+    xp: 900,
+    color: "#ff2e63",
+    isBoss: true,
+    contactCooldown: 0.3,
   },
   "boss-oracle": {
     kind: "boss-oracle",

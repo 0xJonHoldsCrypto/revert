@@ -11,6 +11,11 @@ const MOD_RUNS = Number(process.env.MOD_RUNS ?? 2);
 const ONLY_MODS = process.env.ONLY_MODS === "1";
 const SKIP_MODS = process.env.SKIP_MODS === "1";
 const BASE_SEED = Number(process.env.SEED ?? 20261103);
+const WIN_BRANCH = process.env.WIN ?? "cashout";
+const FORCE_TRACE_MIN = Number(process.env.FORCE_TRACE ?? 0);
+const GOD = process.env.GOD === "1";
+const PACE = process.env.PACE === "1";
+const PACE_RUNS = Number(process.env.PACE_RUNS ?? 3);
 
 const dir = mkdtempSync(join(tmpdir(), "revert-balance-"));
 const out = join(dir, "game.mjs");
@@ -132,7 +137,7 @@ function seedFor(hero, index) {
   return (BASE_SEED + HEROES.indexOf(hero) * 7919 + index * 104729) >>> 0;
 }
 
-function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
+function run(hero, skillName, picker, difficulty, mods = [], index = 0, god = GOD, forceTraceMin = FORCE_TRACE_MIN) {
   const skill = SKILLS[skillName];
   let move = { x: 0, y: 0 };
   const { game: g, input } = makeGame(() => move);
@@ -143,7 +148,9 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
   g.cinematic = null;
   g.player.lift = 0;
   g.setPhase("playing");
-  const stats = { popups: 0, levelUps: 0, bossLanded: [], bossKillSec: [], affixKills: 0, elites: new Set() };
+  if (god) g.god = true;
+  const stats = { popups: 0, levelUps: 0, bossLanded: [], bossKillSec: [], affixKills: 0, elites: new Set(), traceAt: {}, finaleStart: 0, winAt: 0, fightSec: 0, finalePhase: 0, endlessAt: 0, dpsAtFinale: 0, blocked: { boss: 0, popup: 0, other: 0 } };
+  const marks = [25, 50, 75, 100];
   let dashCount = 0;
   let lastBosses = 0;
   let bossLandedAt = 0;
@@ -155,6 +162,15 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
       if (g.choiceMode === "popup") stats.popups++;
       else stats.levelUps++;
       const cards = g.levelUpChoices;
+      if (g.choiceMode === "popup" && cards.some((c) => c.id === "win-endless")) {
+        stats.winAt = g.stats.winTime;
+        stats.fightSec = g.stats.winTime - stats.finaleStart;
+        if (WIN_BRANCH === "endless") {
+          stats.endlessAt = g.elapsed;
+          g.pickUpgrade(0);
+        } else g.pickUpgrade(1);
+        continue;
+      }
       const recommended = cards.findIndex((c) => c.recommended);
       const index = picker === "smart" && recommended >= 0 ? recommended : Math.floor(Math.random() * cards.length);
       g.pickUpgrade(index);
@@ -165,7 +181,26 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
     if (i % skill.reaction === 0) move = steer(g, skill);
     input.consumeDash = () => ++dashCount % skill.dash === 0;
     input.consumeAbility = () => dashCount % 300 === 0;
+    if (forceTraceMin > 0 && g.elapsed >= forceTraceMin * 60 && g.trace < 100 && !g.won) {
+      if (process.env.FORCE_CLEAR === "1") for (const e of g.enemies) if (e.kind.startsWith("boss")) e.dead = true;
+      if (!g.anyBossAlive() || process.env.FORCE_CLEAR === "1") g.debugSetTrace(100);
+    }
     g.update(DT);
+    if (g.trace >= 100 && !g.finale && !g.won) {
+      if (g.anyBossAlive()) stats.blocked.boss++;
+      else if (g['popupQueue'].length) stats.blocked.popup++;
+      else stats.blocked.other++;
+    }
+    if (process.env.DEBUG_FINALE && g.trace >= 100 && i % 600 === 0) {
+      const b = g.enemies.find((e) => e.kind === "boss-attacker");
+      console.log(`  [${(g.elapsed / 60).toFixed(2)}m] phase ${g.phase} finale ${!!g.finale} won ${g.won} boss ${b ? `${Math.round(b.hp)}/${Math.round(b.maxHp)} p${b.finalePhase}` : "-"} bossesAlive ${g.enemies.filter((e) => e.kind.startsWith("boss") && !e.dead).map((e) => e.kind).join()}`);
+    }
+    if (g.finale && !stats.finaleStart) {
+      stats.finaleStart = g.elapsed;
+      stats.dpsAtFinale = g.totalDps();
+    }
+    if (g.finale) stats.finalePhase = Math.max(stats.finalePhase, g.finalePhase);
+    for (const m of marks) if (g.trace >= m && stats.traceAt[m] === undefined) stats.traceAt[m] = g.elapsed / 60;
     for (const e of g.enemies) if (e.affixes && !stats.elites.has(e.id)) stats.elites.add(e.id);
     const bossAlive = g.enemies.some((e) => e.kind.startsWith("boss"));
     if (bossAlive && !lastBossAlive) bossLandedAt = g.elapsed;
@@ -176,7 +211,7 @@ function run(hero, skillName, picker, difficulty, mods = [], index = 0) {
     lastBossAlive = bossAlive;
   }
   const damage = [...g.weaponDamage.entries()].sort((a, b) => b[1] - a[1]);
-  return { biomeHazards: g.biomeHazards.fired.length, t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
+  return { dpsAtFinale: stats.dpsAtFinale, finalePhase: stats.finalePhase, fightSec: stats.fightSec, blocked: stats.blocked, sources: { ...g.traceSources }, trace: g.trace, won: g.won, finale: stats.finaleStart > 0, finaleDied: stats.finaleStart > 0 && !g.won, funds: g.fundsLeft, dps: g.totalDps(), loops: g.loops, biomeHazards: g.biomeHazards.fired.length, t: g.elapsed, score: g.score(), level: g.player.level, kills: g.stats.kills, bosses: g.stats.bossesDefeated, cause: g.rootCause, coins: g.player.coins, ...stats, events: [...g.miniEvents.fired], elites: stats.elites.size, damage };
 }
 
 function median(values) {
@@ -188,7 +223,8 @@ const toolShare = new Map();
 const eventCounts = new Map();
 const causes = new Map();
 const allRuns = [];
-for (const [skill, picker, difficulty] of ONLY_MODS ? [] : [["casual", "naive", "normal"], ["good", "smart", "normal"], ["good", "smart", "easy"], ["good", "smart", "hard"]]) {
+const ONLY_CONFIGS = process.env.CONFIGS ? process.env.CONFIGS.split(",") : null;
+for (const [skill, picker, difficulty] of (ONLY_MODS ? [] : [["casual", "naive", "normal"], ["good", "smart", "normal"], ["good", "smart", "easy"], ["good", "smart", "hard"], ["good", "smart", "nightmare"]]).filter(([sk, , d]) => (ONLY_CONFIGS ? ONLY_CONFIGS.includes(`${sk}-${d}`) : d !== "nightmare"))) {
   console.log(`\n${skill} / ${picker} / ${difficulty}`);
   for (const hero of HEROES) {
     const runs = [];
@@ -203,7 +239,8 @@ for (const [skill, picker, difficulty] of ONLY_MODS ? [] : [["casual", "naive", 
     const perMin = (key) => (median(runs.map((r) => r[key] / (r.t / 60)))).toFixed(1);
     const kills = runs.flatMap((r) => r.bossKillSec);
     allRuns.push(...runs);
-    console.log(`  ${hero.padEnd(6)} survive ${minutes.toFixed(1).padStart(5)}m  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  popups/min ${perMin("popups")}  coins ${median(runs.map((r) => r.coins))}  firstBossKill ${median(runs.map((r) => r.bossKillSec[0] ?? -1))}s  bossKill(med) ${kills.length ? median(kills) : "-"}s  causes ${[...new Set(runs.map((r) => r.cause))].join(",")}`);
+    const traceLine = `trace ${median(runs.map((r) => r.trace)).toFixed(0)}% (max ${Math.max(...runs.map((r) => r.trace)).toFixed(0)}%)  finale ${runs.filter((r) => r.finale).length}/${runs.length}  wins ${runs.filter((r) => r.won).length}${runs.some((r) => r.won) ? `  fight ${median(runs.filter((r) => r.won).map((r) => r.fightSec)).toFixed(0)}s` : ""}${runs.some((r) => r.finale) ? `  maxPhase ${Math.max(...runs.map((r) => r.finalePhase))}  dps@finale ${Math.round(median(runs.filter((r) => r.finale).map((r) => r.dpsAtFinale)))}` : ""}`;
+    console.log(`  ${hero.padEnd(6)} ${traceLine}  survive ${minutes.toFixed(1).padStart(5)}m  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  popups/min ${perMin("popups")}  coins ${median(runs.map((r) => r.coins))}  firstBossKill ${median(runs.map((r) => r.bossKillSec[0] ?? -1))}s  bossKill(med) ${kills.length ? median(kills) : "-"}s  causes ${[...new Set(runs.map((r) => r.cause))].join(",")}`);
   }
 }
 function mean(values) {
@@ -218,6 +255,31 @@ for (const mod of MODS) {
   const perMin = (key) => median(runs.map((r) => r[key] / (r.t / 60))).toFixed(1);
   console.log(`  ${(mod || "(none)").padEnd(13)} survive ${median(runs.map((r) => r.t / 60)).toFixed(1).padStart(5)}m (mean ${mean(runs.map((r) => r.t / 60)).toFixed(1)})  lv ${median(runs.map((r) => r.level))}  bosses ${median(runs.map((r) => r.bosses))}  levelups/min ${perMin("levelUps")}  kills/min ${perMin("kills")}  score ${median(runs.map((r) => r.score))} (mean ${Math.round(mean(runs.map((r) => r.score)))})`);
 }
+function fmtMin(v) {
+  return v === undefined ? "-" : v.toFixed(1);
+}
+
+if (allRuns.length) {
+  const byMark = (m) => allRuns.map((r) => r.traceAt[m]).filter((v) => v !== undefined);
+  console.log("\nTrace pacing (all skill runs, minutes):");
+  for (const m of [25, 50, 75, 100]) console.log(`  reached ${String(m).padStart(3)}%  ${byMark(m).length}/${allRuns.length} runs  median ${byMark(m).length ? fmtMin(median(byMark(m))) : "-"}m`);
+  const names = [...new Set(allRuns.flatMap((r) => Object.keys(r.sources)))];
+  console.log(`  mean trace points per minute by source: ${names.map((n) => `${n} ${(mean(allRuns.map((r) => (r.sources[n] ?? 0) / (r.t / 60)))).toFixed(2)}`).join("  ")}`);
+  console.log(`  waiting at 100% (seconds, mean/run): boss alive ${mean(allRuns.map((r) => r.blocked.boss / 60)).toFixed(1)}  popup queued ${mean(allRuns.map((r) => r.blocked.popup / 60)).toFixed(1)}  other ${mean(allRuns.map((r) => r.blocked.other / 60)).toFixed(1)}`);
+  console.log(`  trace at end: median ${median(allRuns.map((r) => r.trace)).toFixed(0)}%  mean ${mean(allRuns.map((r) => r.trace)).toFixed(0)}%`);
+}
+
+if (PACE) {
+  console.log(`\npace · good / smart / ${PACE_RUNS} runs per hero · invulnerable (a bot that cannot die: upper bound for how fast trace fills)`);
+  for (const difficulty of (process.env.PACE_DIFFS ?? "easy,normal,hard,nightmare").split(",")) {
+    const runs = [];
+    for (const hero of HEROES) for (let i = 0; i < PACE_RUNS; i++) runs.push(run(hero, "good", "smart", difficulty, [], i, true, 0));
+    const reached = runs.map((r) => r.traceAt[100]).filter((v) => v !== undefined);
+    const wins = runs.filter((r) => r.won);
+    console.log(`  ${difficulty.padEnd(9)} t25 ${fmtMin(median(runs.map((r) => r.traceAt[25]).filter((v) => v !== undefined)))}m  t50 ${fmtMin(median(runs.map((r) => r.traceAt[50]).filter((v) => v !== undefined)))}m  t75 ${fmtMin(median(runs.map((r) => r.traceAt[75]).filter((v) => v !== undefined)))}m  t100 ${reached.length}/${runs.length} median ${reached.length ? fmtMin(median(reached)) : "-"}m  won ${wins.length}/${runs.length}  fight median ${wins.length ? median(wins.map((r) => r.fightSec)).toFixed(0) : "-"}s  bosses ${median(runs.map((r) => r.bosses))}  dps@end ${Math.round(median(runs.map((r) => r.dps)))}`);
+  }
+}
+
 if (allRuns.length) {
   console.log("\nNetwork events and elites (all skill runs):");
   console.log(`  events/run ${mean(allRuns.map((r) => r.events.length)).toFixed(1)}  ${[...eventCounts.entries()].map(([id, n]) => `${id} ${n}`).join("  ")}`);

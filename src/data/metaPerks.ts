@@ -1,3 +1,5 @@
+import { WIN } from "./trace";
+
 export type MetaPerkId = "edge" | "vault" | "reorg" | "blocklist" | "seed" | "magnet" | "alpha";
 
 export type MetaPerkEffect = {
@@ -104,12 +106,12 @@ export function perkTotals(ranks: MetaPerkRanks): Required<MetaPerkEffect> {
   return sum;
 }
 
-export type ShardInput = { timeSec: number; baseScore: number; bosses: number; tainted: boolean; shardMult: number };
+export type ShardInput = { timeSec: number; baseScore: number; bosses: number; tainted: boolean; shardMult: number; won?: boolean };
 
 export const MAX_SHARDS_PER_RUN = 400;
 
 export function shardsForRun(run: ShardInput): number {
   if (run.tainted) return 0;
-  const raw = (Math.max(0, run.timeSec) / 60) * 2 + Math.max(0, run.baseScore) / 1500 + Math.max(0, run.bosses) * 4;
+  const raw = (Math.max(0, run.timeSec) / 60) * 2 + Math.max(0, run.baseScore) / 1500 + Math.max(0, run.bosses) * 4 + (run.won ? WIN.shards : 0);
   return Math.min(MAX_SHARDS_PER_RUN, Math.floor(raw * Math.max(0, run.shardMult)));
 }

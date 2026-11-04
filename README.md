@@ -34,7 +34,7 @@ Everything persists in one versioned `localStorage` entry (`revert.save`, see `s
 
 After a death the post-mortem offers a 1200x630 share card drawn in code (`src/ui/shareCard.ts`, lazy): Share uses the Web Share API with the PNG where supported and otherwise copies or downloads it. SAVE RUN FILE downloads `revert-<seed>.run` and COPY RUN CODE copies a `REVERT1:` code (`src/replay/runCode.ts`, lazy: binary-packed, deflate-raw when the browser has CompressionStream, base64url; legacy JSON codes still decode). A text box (capped height) appears if the clipboard is blocked, and long runs are pointed at the file since their code is too big for chat apps, and REPLAY THIS SEED restarts with the same seed, hero and difficulty.
 
-27 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, affixes and network events, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is version 3 and migrates older saves. Every write re-reads storage first and other tabs' writes are picked up through the `storage` event, so two open tabs do not overwrite each other.
+31 achievements (`src/data/achievements.ts`, evaluated by the pure tracker in `src/game/achievements.ts`) unlock from events Game emits and toast in-run. The lazy Codex (`src/ui/Codex.ts`, opened from the title screen or pause menu) lists threats, affixes and network events, tools with evolutions, gear, cameos, achievements and lifetime stats; unseen entries show as ???. Tainted runs (debug cheats) grant nothing and record no codex progress. None of this is read by the simulation, so replays are unaffected. The save is version 4 (history entries and lifetime stats carry `won`, `winTime`, `wins` and `fastestWin`) and migrates older saves. Every write re-reads storage first and other tabs' writes are picked up through the `storage` event, so two open tabs do not overwrite each other.
 
 ## Threat intel: affixes, network events, new tools and attackers
 
@@ -93,11 +93,30 @@ npm run balance
 npm run formal
 ```
 
-`npm run balance` plays headless bots across all six heroes (`HEROES=keel,ledger` to narrow) and difficulties (the good bot also dodges lanes, beams and trackers), then every contract, and prints tool damage shares, network event counts, affixed whales per run and causes of death. Runs use fixed seeds per hero and run index (`SEED` changes the base), so contracts are compared on the same seeds. Set `CAP` (minutes), `RUNS` and `MOD_RUNS` to change its size, `ONLY_MODS=1` to run only the contracts and `SKIP_MODS=1` to skip them.
+`npm run balance` plays headless bots across all six heroes (`HEROES=keel,ledger` to narrow) and difficulties (the good bot also dodges lanes, beams and trackers), then every contract, and prints tool damage shares, network event counts, affixed whales per run and causes of death. Runs use fixed seeds per hero and run index (`SEED` changes the base), so contracts are compared on the same seeds. Set `CAP` (minutes), `RUNS` and `MOD_RUNS` to change its size, `ONLY_MODS=1` to run only the contracts and `SKIP_MODS=1` to skip them. It also reports trace progress at death, when each run crossed 25/50/75/100%, trace points per minute by source and finale outcomes. `WIN=endless` makes bots keep playing after a win (default cashes out), `FORCE_TRACE=<minutes>` forces the trace to 100% at that time to test the fight, and `PACE=1` runs invulnerable bots (`PACE_RUNS`, `PACE_DIFFS`) to measure how fast the trace can fill when survival is not the limit.
 
-## Goal
+## Goal: trace the attacker, then play on
 
-The run is endless and ends only when you die. The first boss arrives at 2:00, and bosses keep cycling and scaling after that. Collect XP, level up, open chests, take deals and post a high score.
+Every run now has an ending. The HUD shows a **TRACE** meter (ticks at 25, 50 and 75%, each with a toast). It fills from, in order of weight: boss kills (6.5 points each), a small time trickle (2 per minute) and, from two per-minute budgets so they cannot rush it, stopping bridge drainers (0.9), bounty whales (4) and elite whales (1.3) from the kills budget (2 up front plus 1 a minute), and merges (2), staking pads (0.8) and hardware racks (1.5, upgrades 0.6) from the points-of-interest budget (1.5 plus 0.7 a minute). All numbers live in one table, `src/data/trace.ts`, including the difficulty multiplier (Easy ×1.2, Normal ×1, Hard ×0.96, Nightmare ×0.92). Contracts and the daily do not change it.
+
+Measured pacing (`npm run balance`, bots, Normal): invulnerable bots that kill every boss as it comes and use what they walk past hit 100% at 16.9 to 20.3 minutes (median about 19), with 25% at 4.6 to 6.9, 50% at 7.8 to 11.5 and 75% at 11.3 to 13.5. They kill bosses slower than a good player does, so a competent run should land nearer 13 to 16 minutes and a bosses-only run nearer 19. Invulnerable bots on Hard reach only 75% at about 15 minutes and do not hit 100% inside 30; on Nightmare they reach 50% at about 10 minutes, so the bots cannot judge those two tiers. Easy reaches 100% at a median of 13.2 minutes in the bots that survive that long (15 of 24 runs). Ordinary bots die first: median trace at death is 40% (casual, Normal), 50% (good, Normal), 32% (good, Hard) and 7% (good, Nightmare).
+
+At 100% (and once no other boss is alive) the board is purged, the HUD locks and a boss cinematic introduces **THE ATTACKER** (`src/game/finale.ts`). Ordinary spawns, waves and the Doxxed hunt stop for the fight; every attack is a telegraphed hazard with at least a one second windup and no instant projectiles. HP scales with difficulty only (24,000 base: a stationary 1,900 DPS test build kills him in about 67s, a 1,100 DPS build in about 93s) and phases cannot be skipped, however hard you hit him:
+
+| Phase | HP | What changes |
+| --- | --- | --- |
+| 1 · Decoys | 100 to 66% | Four fake wallets spawn around you and detonate after 9s (a 1.3s circle telegraph). While any lives he takes 20% damage and shows a SHIELDED tag. He also casts circle volleys and aimed beams. |
+| 2 · Siphon | 66 to 33% | The treasury drains 2.2M a second (never below 8% of the funds) until you kill the bridge drainers he spawns, while rotating beams, three-lane lockdowns and circle rings run. |
+| 3 · Reorg | below 33% | He speeds up and sends a rewind ring that expands at 360 px/s after a 1.5s telegraph. It cannot be outrun, dash through it. Beam fans and circle volleys fill the gaps. |
+
+Dying during the fight ends the run as normal. Killing him sweeps the board, plays the new victory cutscene (the exploit is reverted and the funds are back, but a second attacker wallet just woke up) and opens a popup with two cards, both ordinary popup choices so they go through the recorded choice path and replay verification:
+
+- **KEEP PLAYING · ENDLESS** keeps the run going. The HUD swaps the meter for an `ENDLESS` tag and a *Loops survived* counter (one loop per 60s). The existing late-game scaling and anti-camping whales keep climbing, bosses stay on their schedule (overdue ones are skipped and the next waits 30s) and the horde ramps back in over 25s.
+- **CASH OUT · FINISH RUN** ends the run through the normal post-mortem as a win.
+
+A win books a crown: `won` and `winTime` are stored in the run summary, the history list and the share card show REVERTED with the time to win, the score gets +20,000 plus 5 per second under 30:00, and shards get +80 (never for tainted runs). Quitting or restarting after a win still books it. Achievements: Reverted, Reverted on Nightmare, Speed Revert (under 15:00) and Encore (10:00 of Endless). The state hash covers trace progress, the finale phase, decoys, win and endless, so replays prove the whole path. `SIM_VERSION` stays 3 and the log shape is unchanged.
+
+Debug helpers (`?debug` panel, all taint the run): `game.debugSetTrace(pct)`, `debugFinishTrace()`, `debugFinalePhase(1|2|3)` and `debugKillAttacker()`. Tests can instead set `TRACE_DEBUG` (`rateMult`, `finaleHpMult`) in `src/data/trace.ts` to reach a real, replayable win without tainting.
 
 ## X player card
 

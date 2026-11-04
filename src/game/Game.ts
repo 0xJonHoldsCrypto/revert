@@ -6,7 +6,6 @@ import {
   DASH,
   MAX_ENEMIES,
   PLAYER_RADIUS,
-  SECOND_WALLET_TIME_SEC,
 } from "../constants";
 import { CHARACTERS, getCharacter, LEDGER_RECHARGE_DELAY_SEC, LEDGER_RECHARGE_SEC, LEDGER_SHIELD_FRACTION, LEDGER_THORNS_MULT, LEDGER_THORNS_RADIUS, RELAY_MAX_RIGS, RELAY_RIG_COST, RELAY_RIG_OUTPUT, RELAY_START_RIG } from "../data/characters";
 import { BIOME_HAZARDS, isBiomeHazard } from "../data/biomeHazards";
@@ -52,6 +51,8 @@ import { groundHalfExtents } from "../render/view";
 import { defaultSetup, runEffects, setupDigest, cleanSetup, type RunEffects, type RunSetup } from "./runSetup";
 import { lockedTools } from "../data/unlocks";
 import { shardsForRun } from "../data/metaPerks";
+import { FINALE, TRACE, TRACE_DEBUG, TRACE_MILESTONE_TEXT, traceRate, WIN, winScoreBonus, type TracePool } from "../data/trace";
+import { decoysAlive } from "./finale";
 import type { DailyRecord } from "../daily";
 import type {
   BiomeHazardId,
@@ -143,6 +144,10 @@ const PERK_VALUE: Record<PerkId, number> = {
   pierce: 0.1, multishot: 0.3, area: 0.12, crit: 0.12, regen: 0.08, thorns: 0.05, dashBlast: 0.1, dashCooldown: 0.05, xp: 0.06, coin: 0.04, killBlast: 0.1, abilityCooldown: 0.05, revive: 0.3, rerolls: 0.03,
   lpRange: 0.15, launchpool: 0.15, cleanFeed: 0.03, bugBounty: 0.1, eigen: 0.1, aave: 0.08, lido: 0.04, flashbots: 0.07, wormhole: 0.03, opGrant: 0.05, curve: 0.04,
 };
+const ENDLESS_RAMP_FLOOR = 0.2;
+const ENDLESS_RAMP_SEC = 25;
+const ENDLESS_BOSS_GRACE_SEC = 30;
+const VICTORY_BEAT_SEC = 1.6;
 const MAX_WHALES = 3;
 const LATE_GAME_MIN = 10;
 const LATE_HP_GROWTH = 1.07;
@@ -239,6 +244,10 @@ export type HudData = {
   toasts: { text: string; color: string; until: number }[];
   shielded: boolean;
   neverSell: boolean;
+  trace: number;
+  traceMode: "trace" | "finale" | "endless";
+  loops: number;
+  finalePhase: number;
 };
 
 export type RunPlan = { setup: RunSetup; seed?: number; hero?: CharacterId; difficulty?: DifficultyId };
@@ -299,8 +308,18 @@ export class Game {
   private popupQueue: { title: string; cards: UpgradeDef[] }[] = [];
   private gearStats: GearStats = {};
   private chestsOpened = 0;
-  private secondWalletDone = false;
-  stats: RunStats = { kills: 0, damageDealt: 0, timeSurvived: 0, bossesDefeated: 0 };
+  trace = 0;
+  traceSources: Record<string, number> = {};
+  private traceMilestone = 0;
+  private traceUsed: Record<TracePool, number> = { kills: 0, poi: 0 };
+  finale: { bossId: number } | null = null;
+  endless = false;
+  cashedOut = false;
+  private endlessSince = 0;
+  private victoryPending = false;
+  private cashOutPending = false;
+  private bossHoldUntil = 0;
+  stats: RunStats = { kills: 0, damageDealt: 0, timeSurvived: 0, bossesDefeated: 0, won: false, winTime: 0 };
 
   readonly cutscene = new CutsceneEngine();
 
@@ -375,6 +394,7 @@ export class Game {
   private nextGasAt = 150;
   private seenKinds = new Set<EnemyKind>();
   private bannerQueue: { title: string; text: string; tone: string; hint?: boolean }[] = [];
+  private lastEndlessSec = -1;
   private lastFeedAt = -1;
   private leverage = 0;
   private flashUntil = 0;
@@ -637,6 +657,7 @@ export class Game {
   }
 
   private resetRun(seed = (Math.random() * 2 ** 31) | 0, setup: RunSetup = defaultSetup()) {
+    this.bookAbandonedWin();
     this.flushCodex();
     this.setup = cleanSetup(setup);
     this.effects = runEffects(this.runDifficulty, this.setup);
@@ -706,7 +727,18 @@ export class Game {
     this.particles = [];
     this.floaters = [];
     this.weapons = [{ kind: ch.startWeapon, level: 1, timer: 0, rarity: WEAPONS[ch.startWeapon].rarity }];
-    this.stats = { kills: 0, damageDealt: 0, timeSurvived: 0, bossesDefeated: 0 };
+    this.stats = { kills: 0, damageDealt: 0, timeSurvived: 0, bossesDefeated: 0, won: false, winTime: 0 };
+    this.trace = 0;
+    this.traceSources = {};
+    this.traceMilestone = 0;
+    this.traceUsed = { kills: 0, poi: 0 };
+    this.finale = null;
+    this.endless = false;
+    this.cashedOut = false;
+    this.endlessSince = 0;
+    this.victoryPending = false;
+    this.cashOutPending = false;
+    this.bossHoldUntil = 0;
     this.worldSeed = seed;
     seedSim(this.worldSeed);
     setBiomeSeed(this.worldSeed);
@@ -722,7 +754,6 @@ export class Game {
     this.toasts = [];
     this.gearStats = {};
     this.chestsOpened = 0;
-    this.secondWalletDone = false;
     this.rigs = [];
     this.loans = [];
     this.seals = [];
@@ -802,11 +833,12 @@ export class Game {
     this.input.clearEdges();
     this.cutsceneHold = 0;
     if (phase === "menu") {
+      this.bookAbandonedWin();
       this.flushCodex();
       this.audio.setMusic("title");
       this.beginAttract();
     }
-    if (phase === "lost") this.audio.setMusic("gameOver", true);
+    if (phase === "lost") this.audio.setMusic(this.cashedOut ? "win" : "gameOver", true);
     this.audio.duck(phase === "paused" || phase === "levelup");
     if (phase === "playing") this.syncMusic();
     this.cb.onPhaseChange(phase);
@@ -839,6 +871,12 @@ export class Game {
       this.input.clearEdges();
       this.audio.play("cardSelect");
       this.setPhase("playing");
+      if (this.cashOutPending) {
+        this.cashOutPending = false;
+        this.cashedOut = true;
+        this.audio.play("txConfirmed");
+        this.setPhase("lost");
+      }
       return;
     }
     const ctx = this.makeUpgradeContext();
@@ -1047,14 +1085,8 @@ export class Game {
     this.elapsed += dt;
     this.stats.timeSurvived = this.elapsed;
 
-    if (!this.secondWalletDone && this.elapsed >= SECOND_WALLET_TIME_SEC) {
-      this.secondWalletDone = true;
-      this.setPhase("cutscene");
-      this.cutscene.play("victory", () => {
-        this.queueBanner("THE ATTACKER HAS A SECOND WALLET", "It never ends. How long can you hold?", "#ff5c48");
-        this.setPhase("playing");
-      });
-      this.audio.play("txConfirmed");
+    if (this.victoryPending && !this.popupQueue.length && this.elapsed >= this.popupHoldUntil && this.dying <= 0) {
+      this.beginVictory();
       return;
     }
 
@@ -1100,8 +1132,10 @@ export class Game {
     this.updateParticles(dt);
     this.updateYield(dt);
     this.syncMusic();
+    this.updateFinale();
     this.checkBossSchedule();
     this.updateHunt();
+    this.updateTrace(dt);
     if (++this.hudTick % HUD_TICKS === 0) this.pushHud();
 
     if (this.god) this.player.hp = this.player.maxHp;
@@ -1139,6 +1173,200 @@ export class Game {
     return Math.max(0, bossTimeAt(this.bossesSpawned) - this.elapsed);
   }
 
+  get won(): boolean {
+    return this.stats.won;
+  }
+
+  get loops(): number {
+    return this.endless ? Math.floor((this.elapsed - this.endlessSince) / WIN.loopSec) : 0;
+  }
+
+  get finalePhase(): number {
+    const boss = this.finale ? this.bosses.find((b) => b.id === this.finale!.bossId && !b.dead) : undefined;
+    return boss?.finalePhase ?? 0;
+  }
+
+  addTrace(amount: number, source = "time", pool?: TracePool) {
+    if (this.attract || this.stats.won || this.finale || this.trace >= TRACE.goal || amount <= 0) return;
+    if (pool) {
+      const rule = TRACE.pools[pool];
+      const room = rule.head + (rule.perMin * this.elapsed) / 60 - this.traceUsed[pool];
+      amount = Math.min(amount, Math.max(0, room));
+      if (amount <= 0) return;
+      this.traceUsed[pool] += amount;
+    }
+    const gain = Math.min(TRACE.goal - this.trace, amount * traceRate(this.runDifficulty));
+    this.trace += gain;
+    this.traceSources[source] = (this.traceSources[source] ?? 0) + gain;
+    while (this.traceMilestone < TRACE.milestones.length && this.trace >= TRACE.milestones[this.traceMilestone]!) {
+      const mark = TRACE.milestones[this.traceMilestone]!;
+      this.traceMilestone++;
+      this.addToast(`TRACE ${mark}% · ${TRACE_MILESTONE_TEXT[this.traceMilestone - 1]}`, "#2ee6c7");
+      this.pushFeed(`Trace ${mark}%: ${TRACE_MILESTONE_TEXT[this.traceMilestone - 1]!.toLowerCase()}`);
+      this.audio.play("txConfirmed");
+    }
+    if (this.trace >= TRACE.goal) {
+      this.queueBanner("TRACE COMPLETE", "The attacker's wallet is exposed. Defeat any boss still alive and he will come for you.", "#ff2e63");
+      this.pushFeed("Trace 100%: attacker wallet exposed");
+    }
+  }
+
+  private updateTrace(dt: number) {
+    if (this.dying > 0) return;
+    if (!this.endless) {
+      this.addTrace(TRACE.perSec * dt);
+      return;
+    }
+    const sec = Math.floor(this.elapsed - this.endlessSince);
+    if (sec !== this.lastEndlessSec) {
+      this.lastEndlessSec = sec;
+      this.emit("endless", { endlessSec: sec });
+    }
+  }
+
+  private updateFinale() {
+    if (this.finale || this.stats.won || this.attract || this.trace < TRACE.goal) return;
+    if (this.anyBossAlive() || this.dying > 0 || this.popupQueue.length) return;
+    const p = this.player;
+    for (const e of this.enemies) {
+      if (e.dead || ENEMIES[e.kind].isBoss) continue;
+      if (e.carried) this.fundsLost = Math.max(0, this.fundsLost - e.carried);
+      e.dead = true;
+    }
+    this.clearEnemyAttacks();
+    this.shockwaves.push({ x: p.x, y: p.y, radius: 520, life: 0.8, maxLife: 0.8, color: "#ff2e63" });
+    this.logEvent("Trace complete. Attacker wallet exposed");
+    this.finale = { bossId: 0 };
+    this.beginBossEntrance("boss-attacker");
+  }
+
+  attackerShielded(e: Enemy): boolean {
+    return e.kind === "boss-attacker" && (e.finalePhase ?? 1) === 1 && decoysAlive(this) > 0;
+  }
+
+  private attackerFloor(e: Enemy): number {
+    const phase = e.finalePhase ?? 1;
+    if (phase >= 3) return 0;
+    return (phase === 1 ? FINALE.phaseTwoAt : FINALE.phaseThreeAt) * e.maxHp - 1;
+  }
+
+  siphonFunds(amount: number, floorShare: number) {
+    const floor = FUNDS_TOTAL * floorShare;
+    if (this.fundsLeft <= floor) return;
+    this.loseFunds(Math.min(amount, this.fundsLeft - floor));
+  }
+
+  private onAttackerKilled(e: Enemy) {
+    const p = this.player;
+    this.finale = null;
+    this.stats.won = true;
+    this.stats.winTime = this.elapsed;
+    this.trace = TRACE.goal;
+    this.victoryPending = true;
+    this.popupHoldUntil = this.elapsed + VICTORY_BEAT_SEC;
+    p.invuln = Math.max(p.invuln, VICTORY_BEAT_SEC + 2);
+    for (const other of this.enemies) {
+      if (other === e || other.dead) continue;
+      if (other.carried) this.fundsLost = Math.max(0, this.fundsLost - other.carried);
+      other.dead = true;
+      this.burstParticles(other.x, other.y, ENEMIES[other.kind].color, 4);
+    }
+    this.clearEnemyAttacks();
+    this.logEvent("The Attacker's wallet reverted");
+    this.emit("win", { winTime: this.elapsed, nightmare: this.runDifficulty === "nightmare" });
+  }
+
+  private beginVictory() {
+    this.victoryPending = false;
+    this.setPhase("cutscene");
+    this.cutscene.play("victory", () => this.offerEnding());
+    this.audio.play("txConfirmed");
+  }
+
+  private offerEnding() {
+    this.popupHoldUntil = this.elapsed;
+    this.showPopup("EXPLOIT REVERTED", [
+      {
+        id: "win-endless",
+        title: "KEEP PLAYING · ENDLESS",
+        tag: "ENDLESS",
+        description: "His second wallet is still out there. Enemies keep scaling and bosses keep coming. Your win is already banked. Count the loops.",
+        rarity: "epic",
+        value: 0,
+        plain: true,
+        apply: () => {
+          this.enterEndless();
+          return true;
+        },
+      },
+      {
+        id: "win-cashout",
+        title: "BANK THE WIN · FINISH RUN",
+        tag: "BANK IT",
+        description: "End the run now as REVERTED. Score, shards and the crown are booked.",
+        rarity: "legendary",
+        value: 0,
+        plain: true,
+        apply: () => {
+          this.cashOutPending = true;
+          return true;
+        },
+      },
+    ]);
+    this.setPhase("playing");
+  }
+
+  private enterEndless() {
+    this.endless = true;
+    this.endlessSince = this.elapsed;
+    this.lastEndlessSec = -1;
+    while (bossTimeAt(this.bossesSpawned + 1) <= this.elapsed) this.bossesSpawned++;
+    this.bossHoldUntil = this.elapsed + ENDLESS_BOSS_GRACE_SEC;
+    this.nextHuntAt = Math.max(this.nextHuntAt, this.elapsed + 20);
+    this.queueBanner("ENDLESS", "Everything keeps scaling and bosses keep coming. How many loops can you hold?", "#ff5c48");
+    this.addToast("ENDLESS · his second wallet is still out there", "#ff5c48");
+  }
+
+  debugSetTrace(pct: number) {
+    this.taintRun();
+    this.trace = clamp(pct, 0, TRACE.goal);
+    this.traceMilestone = TRACE.milestones.filter((m) => m <= this.trace).length;
+  }
+
+  debugFinalePhase(phase: number) {
+    this.taintRun();
+    if (!this.finale) this.debugSetTrace(TRACE.goal);
+    const boss = this.bosses.find((b) => b.kind === "boss-attacker" && !b.dead);
+    if (boss) boss.hp = boss.maxHp * [1, 0.6, 0.3][clamp(phase, 1, 3) - 1]!;
+  }
+
+  debugKillAttacker() {
+    this.taintRun();
+    const boss = this.bosses.find((b) => b.kind === "boss-attacker" && !b.dead);
+    if (!boss) return;
+    boss.finalePhase = 3;
+    this.damageEnemy(boss, boss.maxHp * 2);
+  }
+
+  debugFinishTrace() {
+    this.taintRun();
+    this.trace = 0;
+    this.traceMilestone = 0;
+    this.addTrace(TRACE.goal / traceRate(this.runDifficulty));
+  }
+
+  private damageList() {
+    return [...this.weaponDamage.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
+  }
+
+  private bookAbandonedWin() {
+    if (!this.player || this.attract || !this.stats.won || this.runRecorded || this.recorder.tainted) return;
+    this.flushCodex();
+    this.recordRun(this.damageList());
+  }
+
   buildSummary() {
     const p = this.player;
     const total = this.totalDps();
@@ -1166,7 +1394,8 @@ export class Game {
   }
 
   baseScore(): number {
-    return Math.floor(this.stats.timeSurvived * 10 + this.stats.kills + this.stats.bossesDefeated * 500 + this.fundsLeft / 1e6);
+    const win = this.stats.won ? winScoreBonus(this.stats.winTime) : 0;
+    return Math.floor(this.stats.timeSurvived * 10 + this.stats.kills + this.stats.bossesDefeated * 500 + this.fundsLeft / 1e6 + win);
   }
 
   score(): number {
@@ -1187,6 +1416,10 @@ export class Game {
   private updateHunt() {
     const every = this.effects.huntEverySec;
     if (every <= 0 || this.attract || this.elapsed < this.nextHuntAt) return;
+    if (this.finale) {
+      this.nextHuntAt = this.elapsed + every;
+      return;
+    }
     this.nextHuntAt += every;
     const at = this.ringPoint(40);
     const e = this.spawnEnemyAt(this.pickHordeKind(), at.x, at.y, true);
@@ -1485,6 +1718,7 @@ export class Game {
 
   private causeName(): string {
     const c = this.rootCause;
+    if (this.cashedOut) return "Cashed out";
     if (c === "insolvent") return "Protocol insolvent";
     if (c === "hazard") return "Environment hazard";
     if (!c) return "None";
@@ -1527,10 +1761,14 @@ export class Game {
       this.emit("end", { savedPct: (saved / FUNDS_TOTAL) * 100 });
     }
     const cause = this.causeName();
-    const damage = [...this.weaponDamage.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([kind, amount]) => ({ name: WEAPONS[kind as WeaponKind].name, amount }));
+    const damage = this.damageList();
     return {
+      won: this.stats.won,
+      winTime: this.stats.winTime,
+      cashedOut: this.cashedOut,
+      endless: this.endless,
+      loops: this.loops,
+      trace: this.trace,
       incident: `RVT-${(this.worldSeed >>> 0).toString(16).slice(0, 6).toUpperCase()}`,
       block: this.blockHeight,
       saved,
@@ -1565,7 +1803,7 @@ export class Game {
     if (this.runRecorded || this.recorder.tainted || this.attract) return Math.max(stored.best, score);
     this.runRecorded = true;
     const cause = this.causeName();
-    const shards = shardsForRun({ timeSec: this.stats.timeSurvived, baseScore: this.baseScore(), bosses: this.stats.bossesDefeated, tainted: this.recorder.tainted, shardMult: this.effects.shardMult });
+    const shards = shardsForRun({ timeSec: this.stats.timeSurvived, baseScore: this.baseScore(), bosses: this.stats.bossesDefeated, tainted: this.recorder.tainted, shardMult: this.effects.shardMult, won: this.stats.won });
     save.awardShards(shards);
     const daily = this.setup.mode === "daily" && this.setup.date ? save.recordDaily(this.setup.date, score) : null;
     this.reward = { shards, daily };
@@ -1578,6 +1816,8 @@ export class Game {
         difficulty: this.runDifficulty,
         tools: damage.slice(0, 3).map((d) => d.name),
         rootCause: cause,
+        won: this.stats.won,
+        winTime: this.stats.winTime,
       },
       this.stats.kills,
       this.stats.bossesDefeated
@@ -2198,6 +2438,7 @@ export class Game {
     else p.gear[slot] = upgraded;
     this.recomputeGear();
     this.emit("merge", { tier: upgraded.tier });
+    this.addTrace(TRACE.merge, "merge", "poi");
     this.impactFrames = 4;
     this.audio.play("evolve");
     this.addToast(`Merged: ${gearName(upgraded)}`, "#b58cff");
@@ -2267,6 +2508,7 @@ export class Game {
           this.player.coins -= price;
           this.spentSinceBoss += price;
           rig.tier++;
+          this.addTrace(TRACE.rig * 0.4, "rig", "poi");
           this.audio.play("evolve");
           return true;
         },
@@ -2292,6 +2534,7 @@ export class Game {
     if (this.rigs.length >= this.maxRigs()) this.rigs.shift();
     this.rigs.push({ kind, tier: 0, x: this.player.x, y: this.player.y, angle: this.rigs.length * Math.PI, attackTimer: 1 });
     this.emit("rig", { rigs: this.rigs.length });
+    this.addTrace(TRACE.rig, "rig", "poi");
     this.ringParticle(this.player.x, this.player.y, SIDEKICKS[kind].orbit, SIDEKICKS[kind].color);
     this.audio.play("txConfirmed");
   }
@@ -2300,6 +2543,7 @@ export class Game {
     const kind = PAD_BOOSTS[Math.floor(this.rand() * PAD_BOOSTS.length)]!;
     this.applyTimedBuff(kind);
     this.addToast(`${TIMED_BUFFS[kind].name}: ${TIMED_BUFFS[kind].line}`, TIMED_BUFFS[kind].color);
+    this.addTrace(TRACE.pad, "pad", "poi");
     this.audio.play("txConfirmed");
   }
 
@@ -2382,7 +2626,7 @@ export class Game {
       card.recommended = false;
       if ((card.value ?? 0) > (best?.value ?? -Infinity)) best = card;
     }
-    if (best) best.recommended = true;
+    if (best && !cards.some((c) => c.plain)) best.recommended = true;
   }
 
   private updateWells(dt: number) {
@@ -2483,18 +2727,20 @@ export class Game {
 
   private aliveCeiling(): number {
     const t = this.elapsed;
+    const ramp = this.endless ? clamp(ENDLESS_RAMP_FLOOR + (t - this.endlessSince) / ENDLESS_RAMP_SEC, 0, 1) : 1;
     let from = ALIVE_CURVE[0]!;
     for (const point of ALIVE_CURVE) {
       if (t < point[0]) {
         const f = (t - from[0]) / (point[0] - from[0]);
-        return (from[1] + (point[1] - from[1]) * f) * this.diffMult().spawnMult * this.miniEvents.spawnMult();
+        return (from[1] + (point[1] - from[1]) * f) * this.diffMult().spawnMult * this.miniEvents.spawnMult() * ramp;
       }
       from = point;
     }
-    return from[1] * this.diffMult().spawnMult * this.miniEvents.spawnMult();
+    return from[1] * this.diffMult().spawnMult * this.miniEvents.spawnMult() * ramp;
   }
 
   private updateSpawner(dt: number) {
+    if (this.finale || this.victoryPending) return;
     this.spawnTimer -= dt;
     if (this.spawnTimer > 0) return;
     const ceiling = Math.min(MAX_ENEMIES, this.aliveCeiling());
@@ -2604,7 +2850,8 @@ export class Game {
   }
 
   private checkBossSchedule() {
-    if (this.elapsed < bossTimeAt(this.bossesSpawned)) return;
+    if (this.elapsed < bossTimeAt(this.bossesSpawned) || this.elapsed < this.bossHoldUntil) return;
+    if (this.finale || this.victoryPending || (this.trace >= TRACE.goal && !this.stats.won)) return;
     const kind: EnemyKind = bossKindAt(this.bossesSpawned);
     this.bossesSpawned++;
     this.beginBossEntrance(kind);
@@ -2615,7 +2862,8 @@ export class Game {
     const def = ENEMIES[kind];
     const dm = this.diffMult();
     const index = Math.max(0, this.bossesSpawned - 1);
-    const scale = (1 + index * 0.35) * Math.pow(2.2, bossTierAt(index)) * dm.enemyHpMult * this.nextBossHpBonus;
+    const finale = kind === "boss-attacker";
+    const scale = finale ? dm.enemyHpMult * TRACE_DEBUG.finaleHpMult * this.nextBossHpBonus : (1 + index * 0.35) * Math.pow(2.2, bossTierAt(index)) * dm.enemyHpMult * this.nextBossHpBonus;
     this.nextBossHpBonus = 1;
     this.spawnedSinceRebuild = true;
     const boss: Enemy = {
@@ -2629,12 +2877,16 @@ export class Game {
       dead: false,
       hp: def.hp * scale,
       maxHp: def.hp * scale,
-      damage: def.damage * scale,
+      damage: def.damage * (finale ? FINALE.damageScale : scale),
       speed: def.speed * dm.enemySpeedMult,
       contactCd: 0,
       flash: 0,
       wobble: 0,
     };
+    if (finale) {
+      boss.aiTimer = FINALE.openingDelaySec;
+      if (this.finale) this.finale.bossId = boss.id;
+    }
     this.enemies.push(boss);
     if (def.isBoss) this.bosses.push(boss);
   }
@@ -2673,6 +2925,9 @@ export class Game {
     hash = mixHash(hash, this.ledgerShield);
     hash = mixHash(hash, this.chillUntil);
     hash = mixHash(hash, this.rigs.length);
+    hash = mixHash(hash, this.trace);
+    hash = mixHash(hash, this.finale ? 1 + this.finalePhase : 0);
+    hash = mixHash(hash, (this.stats.won ? 1 : 0) + (this.endless ? 2 : 0) + decoysAlive(this) * 4);
     for (let i = 0; i < this.weapons.length; i++) {
       const w = this.weapons[i]!;
       hash = mixHash(hash, w.level);
@@ -3081,7 +3336,7 @@ export class Game {
   }
 
   damageEnemy(e: Enemy, damage: number, pushX = 0, pushY = 0, weapon?: WeaponKind) {
-    const shielded = e.kind === "boss-oracle" && this.enemies.some((m) => m.feedNode && !m.dead);
+    const shielded = (e.kind === "boss-oracle" && this.enemies.some((m) => m.feedNode && !m.dead)) || this.attackerShielded(e);
     const big = !!(e.elite || ENEMIES[e.kind].isBoss);
     let multiplier = 1;
     if (weapon !== undefined && this.perks.crit > 0 && simRandom() < this.perks.crit) multiplier *= 2;
@@ -3093,7 +3348,7 @@ export class Game {
       if (e.auditHits % 3 === 0) multiplier *= 3;
     }
     if (weapon && this.player.characterId === "diff" && e.hp >= e.maxHp) multiplier *= 2;
-    let dealt = Math.max(1, Math.round((shielded ? damage * 0.25 : damage) * multiplier));
+    let dealt = Math.max(1, Math.round((shielded ? damage * (e.kind === "boss-attacker" ? FINALE.decoyShieldMult : 0.25) : damage) * multiplier));
     if ((e.shield ?? 0) > 0) {
       dealt = Math.round(absorbShield(this, e, dealt));
       if (dealt <= 0) {
@@ -3103,6 +3358,7 @@ export class Game {
       }
     }
     e.hp -= dealt;
+    if (e.kind === "boss-attacker") e.hp = Math.max(e.hp, this.attackerFloor(e));
     e.revealed = true;
     if (weapon) {
       this.weaponDamage.set(weapon, (this.weaponDamage.get(weapon) ?? 0) + dealt);
@@ -3172,14 +3428,19 @@ export class Game {
     if (e.affixes) affixOnDeath(this, e);
     if ((e.drainUntil ?? 0) > this.elapsed) spreadDrain(this, e);
     this.miniEvents.onKill(e);
+    if (e.kind === "boss-attacker") this.onAttackerKilled(e);
+    else if (def.isBoss) this.addTrace(TRACE.boss, "boss");
+    else if (e.bounty) this.addTrace(TRACE.bounty, "bounty", "kills");
+    else if (e.elite) this.addTrace(TRACE.whale, "whale", "kills");
+    else if (e.kind === "bridge-drainer") this.addTrace(TRACE.drainer, "drainer", "kills");
     if (e.elite) {
       const title = e.bounty ? "BOUNTY COLLECTED" : "WHALE LIQUIDATED";
       this.addToast(title, "#ffc23d");
       if (e.bounty) this.openChest("BOUNTY CHEST: PICK ONE", "rare", "#ffc23d", e.x, e.y);
       else this.spawnPickup(e.x, e.y, "coin", rollGold("uncommon"));
     }
-    if (def.isBoss || e.elite) this.popupHoldUntil = this.elapsed + (def.isBoss ? 1.2 : 0.4);
-    if (def.isBoss) {
+    if (e.kind !== "boss-attacker" && (def.isBoss || e.elite)) this.popupHoldUntil = this.elapsed + (def.isBoss ? 1.2 : 0.4);
+    if (def.isBoss && e.kind !== "boss-attacker") {
       this.openChest("BOSS CHEST: PICK ONE", RARITY_ORDER[Math.min(4, 1 + Math.floor(this.stats.bossesDefeated / 2))]!, def.color, e.x, e.y);
       if (this.perks.opGrant > 0 && this.spentSinceBoss > 0) {
         const refund = Math.round(this.spentSinceBoss * 0.25);
@@ -3428,6 +3689,10 @@ export class Game {
       dust: this.dustStacks,
       shielded: this.elapsed < p.shieldUntil,
       neverSell: this.elapsed < p.neverSellUntil,
+      trace: this.trace,
+      traceMode: this.endless ? "endless" : this.finale ? "finale" : "trace",
+      loops: this.loops,
+      finalePhase: this.finalePhase,
     });
   }
 }

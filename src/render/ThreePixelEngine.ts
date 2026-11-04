@@ -627,6 +627,7 @@ export async function createThreePixelEngine(canvas: HTMLCanvasElement): Promise
         }
         if ((e.shield ?? 0) > 0) decals.push(x, y, e.radius * 2.3, e.radius * 2.3, DECAL_RING, (e.shield ?? 0) / Math.max(1, e.shieldMax ?? 1), SHIELD_COLOR, 0.95);
       }
+      if (e.kind === "boss-attacker" && game.attackerShielded(e)) decals.push(x, y, e.radius * 2.1, e.radius * 2.1, DECAL_RING, 1, SHIELD_COLOR, 0.95);
       if ((e.drainUntil ?? 0) > game.elapsed) fx.push(x, y, 14, 20, 20, 0, DRAIN_COLOR, 1.1, 0.6);
       if (e.blink) {
         decals.push(e.blink.x, e.blink.y, 24, 24, DECAL_RING, 1 - e.blink.t / FRONTRUN_WINDUP_SEC, BLINK_COLOR, 0.95);

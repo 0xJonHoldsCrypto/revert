@@ -102,6 +102,28 @@ function drawGimmick(ctx: CanvasRenderingContext2D, gimmick: string, t: number, 
     }
     return;
   }
+  if (gimmick === "trace") {
+    ctx.fillStyle = "rgba(255,46,99,0.1)";
+    ctx.fillRect(0, 0, w, h);
+    for (let y = (t * 240) % 28; y < h; y += 28) {
+      ctx.fillStyle = "rgba(255,46,99,0.12)";
+      ctx.fillRect(0, y, w, 2);
+    }
+    const barW = Math.min(520, w * 0.8);
+    ctx.fillStyle = "rgba(4,6,12,0.88)";
+    ctx.fillRect((w - barW) / 2 - 12, h * 0.22 - 38, barW + 24, 112);
+    ctx.fillStyle = "#ff2e63";
+    ctx.font = `800 ${w < 520 ? 22 : 30}px ${FONT_MONO}`;
+    ctx.fillText("TRACE COMPLETE · 100%", w / 2, h * 0.22 - 12);
+    ctx.fillStyle = "#1a1e2a";
+    ctx.fillRect((w - barW) / 2, h * 0.22 + 10, barW, 12);
+    ctx.fillStyle = pulse ? "#ff2e63" : "#ff6a8a";
+    ctx.fillRect((w - barW) / 2, h * 0.22 + 10, barW, 12);
+    ctx.fillStyle = "#ffc23d";
+    ctx.font = `600 ${w < 520 ? 12 : 15}px ${FONT_MONO}`;
+    ctx.fillText(`0x5ec0…nd01 → 0xdead…c0de → ${Math.floor(t * 7) % 2 ? "LOCATED" : "LOCATING"}`, w / 2, h * 0.22 + 52);
+    return;
+  }
   if (gimmick === "salute") {
     ctx.fillStyle = "#ff5c48";
     ctx.font = `800 26px ${FONT_MONO}`;

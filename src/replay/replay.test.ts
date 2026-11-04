@@ -8,6 +8,7 @@ import type { RunPlan } from "../game/Game";
 import { defaultSetup } from "../game/runSetup";
 import { dailyPlan } from "../daily";
 import { heroUnlockId, toolUnlockId } from "../data/unlocks";
+import { TRACE_DEBUG } from "../data/trace";
 
 function scriptedRun(seconds: number, aspect = 16 / 9, idle = 0, plan?: RunPlan) {
   let tick = 0;
@@ -50,6 +51,31 @@ function replayerFor(log: RunLog): Game {
   input.consumeDash = scripted.consumeDash;
   input.consumeAbility = scripted.consumeAbility;
   return game;
+}
+
+function scriptedWin(branch: "endless" | "cashout", endlessSeconds = 25) {
+  let tick = 0;
+  const game = headlessGame(() => ({ x: Math.cos(tick / 90), y: Math.sin(tick / 130) }));
+  game.chooseHero("keel");
+  game.runPlan = { setup: defaultSetup(), seed: 4242 };
+  startRun(game);
+  let endlessAt = 0;
+  while (game.runTick < 60 * 120 && game.phase !== "lost") {
+    tick++;
+    if (game.phase === "levelup") {
+      const win = game.choiceMode === "popup" && game.levelUpChoices.some((c) => c.id === "win-endless");
+      if (win) {
+        game.pickUpgrade(branch === "endless" ? 0 : 1);
+        endlessAt = game.runTick;
+      } else game.pickUpgrade(0);
+      continue;
+    }
+    if (game.phase === "cinematic" && game.cinematic) game.cinematic.t += 99;
+    if (game.phase === "cutscene") game.cutscene.skip();
+    game.update(1 / 60);
+    if (endlessAt && game.runTick - endlessAt > endlessSeconds * 60) break;
+  }
+  return { game, log: game.runLog(), winTick: endlessAt };
 }
 
 describe("move encoding", () => {
@@ -177,5 +203,65 @@ describe("replay", () => {
   it("keeps a three minute log small", () => {
     const { log } = scriptedRun(180);
     expect(serializeRunLog(log).length).toBeLessThan(40_000);
+  });
+
+  describe("through the win", () => {
+    const tune = () => {
+      TRACE_DEBUG.rateMult = 700;
+      TRACE_DEBUG.finaleHpMult = 0.0001;
+    };
+    const untune = () => {
+      TRACE_DEBUG.rateMult = 1;
+      TRACE_DEBUG.finaleHpMult = 1;
+    };
+
+    it("replays a run that wins and keeps playing in endless", () => {
+      tune();
+      try {
+        const { game, log } = scriptedWin("endless");
+        expect(game.won).toBe(true);
+        expect(game.endless).toBe(true);
+        expect(log.choices.some(([, type]) => type === "pick")).toBe(true);
+        const parsed = parseRunLog(serializeRunLog(log))!;
+        const replayer = replayerFor(parsed);
+        const verdict = replayRun(replayer, parsed);
+        expect(verdict).toMatchObject({ ok: true, kills: game.stats.kills });
+        expect(replayer.won).toBe(true);
+        expect(replayer.endless).toBe(true);
+        expect(replayer.stats.winTime).toBeCloseTo(game.stats.winTime, 6);
+        expect(replayer.loops).toBe(game.loops);
+      } finally {
+        untune();
+      }
+    });
+
+    it("replays a run that wins and cashes out", () => {
+      tune();
+      try {
+        const { game, log } = scriptedWin("cashout");
+        expect(game.phase).toBe("lost");
+        expect(game.cashedOut).toBe(true);
+        const replayer = replayerFor(log);
+        expect(replayRun(replayer, log)).toMatchObject({ ok: true, score: game.score() });
+        expect(replayer.phase).toBe("lost");
+        expect(replayer.won).toBe(true);
+      } finally {
+        untune();
+      }
+    });
+
+    it("rejects a win log whose continue and cash-out choice was swapped", () => {
+      tune();
+      try {
+        const { log, winTick } = scriptedWin("endless");
+        const swapped: RunLog = structuredClone(log);
+        const at = swapped.choices.findIndex(([tick, type]) => tick === winTick && type === "pick");
+        expect(at).toBeGreaterThanOrEqual(0);
+        swapped.choices[at] = [winTick, "pick", 1];
+        expect(replayRun(replayerFor(swapped), swapped).ok).toBe(false);
+      } finally {
+        untune();
+      }
+    });
   });
 });

@@ -2,7 +2,7 @@
 
 `GamePhase.tla` models the phase machine in `Game.setPhase`: popups, pause, window focus and audio silence.
 
-`CutsceneFlow.tla` models the intro, repeating boss entrances and the one-time second-wallet scene in an endless run.
+`CutsceneFlow.tla` models the intro, repeating boss entrances (the final confrontation is one of them) and the one-time victory scene after the finale. The continue or cash-out choice is an ordinary popup (`QueuePopup`, `OpenPopup`, `PickCard`), and cashing out is `Die`, so the win flow needs no extra phase.
 
 These specs are hand-written models. TLC proves properties of the model, not of the TypeScript, so change them whenever the phase logic changes.
 

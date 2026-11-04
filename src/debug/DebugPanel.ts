@@ -37,6 +37,8 @@ export function mountDebugPanel(game: Game, renderStats: () => RenderStats | nul
   panel.appendChild(stats);
   panel.appendChild(row("t", TIME_JUMPS.map((t) => button(`${t}s`, () => game.debugSetTime(t)))));
   panel.appendChild(row("boss", BOSS_KINDS.map((k) => button(k.replace("boss-", ""), () => game.debugSpawnBoss(k as EnemyKind)))));
+  panel.appendChild(row("trace", [25, 50, 99].map((v) => button(`${v}%`, () => game.debugSetTrace(v)))));
+  panel.appendChild(row("finale", [1, 2, 3].map((n) => button(`phase ${n}`, () => game.debugFinalePhase(n))).concat([button("kill", () => game.debugKillAttacker())])));
   panel.appendChild(row("scene", CUTSCENES.map((c) => button(c, () => game.debugPlayCutscene(c)))));
   panel.appendChild(
     row("cheat", [

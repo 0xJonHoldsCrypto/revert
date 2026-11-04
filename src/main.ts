@@ -155,7 +155,7 @@ function collectNoteworthy() {
   const list = game.enemies;
   for (let i = 0; i < list.length; i++) {
     const e = list[i]!;
-    if (e.elite || e.bounty || e.kind === "insider" || e.feedNode || e.implant || e.carried || ENEMIES[e.kind].isBoss) noteworthy.push(e);
+    if (e.elite || e.bounty || e.decoy || e.kind === "insider" || e.feedNode || e.implant || e.carried || ENEMIES[e.kind].isBoss) noteworthy.push(e);
   }
 }
 
@@ -163,7 +163,7 @@ function drawEnemyTags(w: number, h: number) {
   uiCtx.textAlign = "center";
   uiCtx.font = `700 11px ${FONT_MONO}`;
   for (const e of noteworthy) {
-    if (e.kind !== "insider" && !e.feedNode && !e.implant && !e.carried && !e.elite) continue;
+    if (e.kind !== "insider" && !e.feedNode && !e.implant && !e.carried && !e.elite && !e.decoy) continue;
     const s = pixelEngine?.worldToScreen(e.x, e.y - e.radius * 3.6, w, h);
     if (!s || s.x < 0 || s.y < 0 || s.x > w || s.y > h) continue;
     let text = "";
@@ -174,6 +174,7 @@ function drawEnemyTags(w: number, h: number) {
       color = e.affixes?.length ? AFFIXES[e.affixes[0]!].color : "#ffc23d";
     }
     else if (e.kind === "insider" && !e.revealed) text = "STAFF ✓";
+    else if (e.decoy) { text = "FAKE WALLET"; color = "#ff2e63"; }
     else if (e.implant) { text = "IMPLANT"; color = "#ff5c48"; }
     else if (e.feedNode) { text = "PRICE FEED"; color = "#79c0ff"; }
     else if (e.carried) { text = `-$${(e.carried / 1e6).toFixed(1)}M`; color = "#ff5c48"; }
@@ -373,13 +374,21 @@ function drawRunChrome(w: number, h: number) {
     const pct = Math.max(0, boss.hp / boss.maxHp);
     const shown = game.priceLieTimer > 0 ? Math.abs(Math.sin(performance.now() / 90)) : pct;
     uiCtx.fillStyle = "rgba(4,6,12,0.82)";
-    uiCtx.fillRect(w * 0.25, 82, w * 0.5, 16);
-    uiCtx.fillStyle = "#e0303c";
-    uiCtx.fillRect(w * 0.25 + 2, 84, (w * 0.5 - 4) * shown, 12);
+    const barY = w < 640 ? 192 : 118;
+    const barX = w < 640 ? w * 0.1 : w * 0.25;
+    const barW = w < 640 ? w * 0.8 : w * 0.5;
+    uiCtx.fillRect(barX, barY, barW, 16);
+    uiCtx.fillStyle = boss.kind === "boss-attacker" ? "#ff2e63" : "#e0303c";
+    uiCtx.fillRect(barX + 2, barY + 2, (barW - 4) * shown, 12);
+    if (boss.kind === "boss-attacker") {
+      uiCtx.fillStyle = "rgba(255,255,255,0.7)";
+      for (const mark of [0.33, 0.66]) uiCtx.fillRect(barX + 2 + (barW - 4) * mark, barY, 2, 16);
+    }
     uiCtx.fillStyle = "#fff";
     uiCtx.font = `700 11px ${FONT_MONO}`;
     uiCtx.textAlign = "center";
-    uiCtx.fillText(ENEMIES[boss.kind].name.toUpperCase(), w / 2, 94);
+    const phaseTag = boss.kind === "boss-attacker" ? ` · PHASE ${Math.max(1, boss.finalePhase ?? 1)}/3${game.attackerShielded(boss) ? " · SHIELDED" : ""}` : "";
+    uiCtx.fillText(`${ENEMIES[boss.kind].name.toUpperCase()}${phaseTag}`, w / 2, barY + 12);
   }
 
   let prompt = "";

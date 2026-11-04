@@ -284,7 +284,7 @@ export class CutscenePlayer {
     else if (p.id === "explorer") this.drawExplorerText(c, step, false);
     else if (p.id === "vaultSafe") this.drawExplorerText(c, step, true);
     else if (p.id === "multisig") this.drawMultisigText(c, false);
-    else if (p.id === "signers") this.drawMultisigText(c, this.channel("signers.awake", step, 0) > 0.5, this.channel("signers.line", step, 0) > 0.5);
+    else if (p.id === "signers") this.drawMultisigText(c, this.channel("signers.awake", step, 0) > 0.5, Math.round(this.channel("signers.line", step, 0)));
     else if (p.id === "wallet") this.drawWalletText(c);
     else if (p.id === "tear") this.drawGasText(c, step);
     else if (p.id === "soc") this.drawCaption(c, "03:12 · EXCHANGE SOC · NIGHT SHIFT", "#ffc23d");
@@ -292,7 +292,7 @@ export class CutscenePlayer {
   }
 
   private liveKey(p: PanelObject, step: number): string {
-    if (p.id === "explorer" || p.id === "vaultSafe") return `${Math.floor(step * 2)}`;
+    if (p.id === "explorer" || p.id === "vaultSafe") return `${Math.floor(step * 2)}:${this.channel("vaultSafe.second", step, 0)}`;
     if (p.id === "tear") return `${this.channel("tear.gas", step, 0)}:${Math.floor(step)}`;
     if (p.id === "pager") return `${Math.floor(step / 2) % 2}`;
     if (p.id === "signers") return `${this.channel("signers.awake", step, 0)}:${this.channel("signers.line", step, 0)}`;
@@ -326,7 +326,7 @@ export class CutscenePlayer {
     c.textBaseline = "middle";
     c.font = `600 22px ${FONT_MONO}`;
     c.fillStyle = "#6de8d4";
-    c.fillText("explorer.chain  /  hot-wallet-7  /  outgoing", 120, 25);
+    c.fillText(recover ? "explorer.chain  /  attacker-wallet-1  /  frozen" : "explorer.chain  /  hot-wallet-7  /  outgoing", 120, 25);
 
     const value = this.channel(recover ? "vaultSafe.counter" : "explorer.counter", step, 1.2);
     c.font = `700 112px ${FONT_MONO}`;
@@ -334,7 +334,7 @@ export class CutscenePlayer {
     c.fillText(`$${value.toFixed(2)}B`, 56, 138);
     c.font = `600 26px ${FONT_MONO}`;
     c.fillStyle = "#ffc23d";
-    c.fillText(recover ? (value < 0.01 ? "OUTFLOW: REVERSED" : "ROLLING BACK…") : "DRAINING · status: EXPLOIT LIVE", 60, 204);
+    c.fillText(recover ? (value < 0.01 ? "EXPLOIT REVERTED · FUNDS RETURNED" : "ROLLING BACK…") : "DRAINING · status: EXPLOIT LIVE", 60, 204);
 
     const scroll = Math.floor(step * 0.75);
     c.font = `500 22px ${FONT_MONO}`;
@@ -343,7 +343,7 @@ export class CutscenePlayer {
       const hash = (n >>> 0).toString(16).padStart(8, "0");
       const amount = (((n >>> 4) % 900) + 40).toFixed(0);
       c.fillStyle = i === 6 ? "#7ee7d6" : `rgba(126,231,214,${0.28 + i * 0.1})`;
-      c.fillText(`0x${hash}…   ->  mixer_${(n >>> 7) % 9}   -$${amount}M`, 60, 256 + i * 30);
+      c.fillText(recover ? `0x${hash}…   <-  returned   +$${amount}M` : `0x${hash}…   ->  mixer_${(n >>> 7) % 9}   -$${amount}M`, 60, 256 + i * 30);
     }
 
     if (recover) {
@@ -352,6 +352,26 @@ export class CutscenePlayer {
         c.fillStyle = "#2ee6c7";
         c.textAlign = "center";
         c.fillText("FUNDS SAFE", LIVE_W / 2, 590);
+      }
+      if (this.channel("vaultSafe.second", step, 0) > 0.5) {
+        c.fillStyle = "rgba(12,6,10,0.95)";
+        c.fillRect(44, 440, LIVE_W - 88, 250);
+        c.strokeStyle = "#ff5c48";
+        c.lineWidth = 4;
+        c.strokeRect(44, 440, LIVE_W - 88, 250);
+        c.textAlign = "left";
+        c.font = `600 24px ${FONT_MONO}`;
+        c.fillStyle = "#ff9d8c";
+        c.fillText("new activity · attacker-wallet-2 of 2", 70, 476);
+        c.font = `700 52px ${FONT_MONO}`;
+        c.fillStyle = "#ffffff";
+        c.fillText("0x5ec0…nd01", 70, 546);
+        c.font = `700 40px ${FONT_MONO}`;
+        c.fillStyle = "#ffc23d";
+        c.fillText("status: ACTIVE · balance: ???", 70, 610);
+        c.font = `600 26px ${FONT_MONO}`;
+        c.fillStyle = "#ff9d8c";
+        c.fillText("wallet 1 was the decoy.", 70, 658);
       }
       return;
     }
@@ -376,7 +396,7 @@ export class CutscenePlayer {
     }
   }
 
-  private drawMultisigText(c: CanvasRenderingContext2D, allAwake: boolean, line = false) {
+  private drawMultisigText(c: CanvasRenderingContext2D, allAwake: boolean, line = 0) {
     c.textAlign = "center";
     c.textBaseline = "middle";
     c.font = `700 40px ${FONT_MONO}`;
@@ -393,12 +413,17 @@ export class CutscenePlayer {
       c.fillText("ONLINE", 480, 170);
       c.fillText("ONLINE", 768, 170);
     }
-    if (line) {
+    if (line > 0) {
       c.fillStyle = "rgba(4,6,12,0.92)";
-      c.fillRect(80, 570, LIVE_W - 160, 96);
+      c.fillRect(80, 530, LIVE_W - 160, 150);
       c.fillStyle = "#ffffff";
       c.font = `700 42px ${FONT_MONO}`;
-      c.fillText("gm. what'd we miss?", LIVE_W / 2, 618);
+      c.fillText("gm. what'd we miss?", LIVE_W / 2, 574);
+    }
+    if (line > 1) {
+      c.fillStyle = "#ff9d8c";
+      c.font = `700 36px ${FONT_MONO}`;
+      c.fillText("everything. wallet #2 is live.", LIVE_W / 2, 636);
     }
   }
 

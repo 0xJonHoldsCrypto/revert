@@ -46,7 +46,8 @@ function runLine(run: save.RunSummary): HTMLElement {
   const row = document.createElement("li");
   const when = run.date ? new Date(run.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
   const tools = run.tools.length ? ` · ${run.tools.join(", ")}` : "";
-  row.textContent = `${when} · ${heroName(run.hero)} · ${difficultyName(run.difficulty)} · ${run.score.toLocaleString("en-US")} · ${formatTime(run.time)} · ${run.rootCause}${tools}`;
+  const crown = run.won ? `👑 REVERTED ${formatTime(run.winTime)} · ` : "";
+  row.textContent = `${crown}${when} · ${heroName(run.hero)} · ${difficultyName(run.difficulty)} · ${run.score.toLocaleString("en-US")} · ${formatTime(run.time)} · ${run.rootCause}${tools}`;
   return row;
 }
 

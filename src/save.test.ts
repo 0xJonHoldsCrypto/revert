@@ -32,7 +32,7 @@ function memory(initial: Record<string, string> = {}): StorageLike & { data: Rec
   };
 }
 
-const run = (score: number, hero = "keel", difficulty = "normal"): RunSummary => ({ date: 1, time: 100, score, hero, difficulty, tools: ["Audit Dart"], rootCause: "None" });
+const run = (score: number, hero = "keel", difficulty = "normal"): RunSummary => ({ date: 1, time: 100, score, hero, difficulty, tools: ["Audit Dart"], rootCause: "None", won: false, winTime: 0 });
 
 describe("save migration", () => {
   it("migrates legacy prefs and audio values", () => {
@@ -75,7 +75,7 @@ describe("save migration", () => {
     });
     expect(save.best).toBe(0);
     expect(save.hero).toBeNull();
-    expect(save.stats).toEqual({ runs: 0, kills: 0, bosses: 3, timeSec: 0, bestTime: 0 });
+    expect(save.stats).toEqual({ runs: 0, kills: 0, bosses: 3, timeSec: 0, bestTime: 0, wins: 0, fastestWin: 0 });
     expect(save.history).toHaveLength(1);
     expect(Object.keys(save.bests)).toEqual(["keel:normal"]);
   });
@@ -199,6 +199,41 @@ describe("v1 to v2 migration", () => {
 
   it("derives best time from history", () => {
     expect(migrate(v1)!.stats.bestTime).toBe(333);
+  });
+
+  it("migrates a v3 save and marks old runs as not won", () => {
+    const old = {
+      v: 3,
+      best: 900,
+      stats: { runs: 4, kills: 10, bosses: 1, timeSec: 800, bestTime: 300 },
+      history: [{ date: 5, time: 300, score: 900, hero: "keel", difficulty: "normal", tools: ["Audit Dart"], rootCause: "None" }],
+    };
+    const out = migrate(old)!;
+    expect(out.v).toBe(SAVE_VERSION);
+    expect(out.stats).toMatchObject({ runs: 4, wins: 0, fastestWin: 0 });
+    expect(out.history[0]).toMatchObject({ score: 900, won: false, winTime: 0 });
+  });
+
+  it("keeps won and win time on summaries and drops bogus ones", () => {
+    const out = sanitize({ history: [{ ...run(5), won: true, winTime: 845 }, { ...run(6), won: "yes", winTime: 99 }, { ...run(7), won: false, winTime: 50 }] });
+    expect(out.history.map((h) => [h.won, h.winTime])).toEqual([[true, 845], [false, 0], [false, 0]]);
+  });
+
+  it("records wins and the fastest win in lifetime stats", () => {
+    const storage = memory();
+    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
+    try {
+      recordRun({ ...run(100), won: true, winTime: 900 }, 1, 1);
+      recordRun({ ...run(200), won: true, winTime: 800 }, 1, 1);
+      recordRun({ ...run(50) }, 1, 1);
+      const saved = JSON.parse(storage.data[SAVE_KEY]!);
+      expect(saved.stats).toMatchObject({ wins: 2, fastestWin: 800 });
+      expect(saved.history[2]).toMatchObject({ won: true, winTime: 900 });
+    } finally {
+      if (original) Object.defineProperty(globalThis, "localStorage", original);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
   });
 
   it("cleans malformed achievement and codex data", () => {
