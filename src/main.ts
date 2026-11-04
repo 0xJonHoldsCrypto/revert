@@ -374,7 +374,7 @@ function drawRunChrome(w: number, h: number) {
     const pct = Math.max(0, boss.hp / boss.maxHp);
     const shown = game.priceLieTimer > 0 ? Math.abs(Math.sin(performance.now() / 90)) : pct;
     uiCtx.fillStyle = "rgba(4,6,12,0.82)";
-    const barY = w < 640 ? 192 : 118;
+    const barY = w < 640 ? 210 : 118;
     const barX = w < 640 ? w * 0.1 : w * 0.25;
     const barW = w < 640 ? w * 0.8 : w * 0.5;
     uiCtx.fillRect(barX, barY, barW, 16);

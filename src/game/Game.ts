@@ -104,6 +104,7 @@ const BOSS_DRAIN_PER_SEC = 500_000;
 const HIT_FUNDS_LOSS = 250_000;
 const HIT_FUNDS_DAMAGE_CAP = 60;
 const DRAIN_TAPER_SEC = 900;
+const ENDLESS_DRAIN_EASE = 0.4;
 const BLOCK_START = 21_000_000;
 const BLOCK_SECONDS = 12;
 const KILL_FEED: Partial<Record<EnemyKind, string>> = {
@@ -1718,7 +1719,8 @@ export class Game {
     if (this.swapTimer > 0) this.swapTimer -= dt;
     this.updateCamping();
     const bossAlive = this.anyBossAlive();
-    this.loseFunds(((AMBIENT_DRAIN_PER_SEC + (bossAlive ? BOSS_DRAIN_PER_SEC : 0)) * dt) / (1 + this.elapsed / DRAIN_TAPER_SEC));
+    const endlessEase = this.endless ? ENDLESS_DRAIN_EASE : 1;
+    this.loseFunds(((AMBIENT_DRAIN_PER_SEC + (bossAlive ? BOSS_DRAIN_PER_SEC : 0)) * dt * endlessEase) / (1 + this.elapsed / DRAIN_TAPER_SEC));
 
     if (this.elapsed >= this.nextGasAt) {
       this.nextGasAt = this.elapsed + randRange(95, 150);
@@ -1775,7 +1777,7 @@ export class Game {
     if (this.gasActive) m *= 1.25;
     if (this.elapsed < this.flashUntil) m *= 0.5;
     if (this.elapsed < this.flashDebtUntil) m *= 1.35;
-    if (overclocking(this)) m = Math.max(OVERCLOCK.minCooldownMult, m * OVERCLOCK.cooldownMult);
+    if (overclocking(this)) m = Math.min(m, Math.max(OVERCLOCK.minCooldownMult, m * OVERCLOCK.cooldownMult));
     return m;
   }
 

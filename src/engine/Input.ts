@@ -116,7 +116,7 @@ export class Input {
       if (k === "r") this.restartPressed = true;
       if (k === "m") this.mutePressed = true;
       if (k === "q" || k === "e") this.abilityPressed = true;
-      if (k === "f") this.overclockPressed = true;
+      if (k === "f" && !e.ctrlKey && !e.altKey) this.overclockPressed = true;
       if (k === "x") this.skipPressed = true;
       if (k === "1" || k === "2" || k === "3") this.cardPick = Number(k) - 1;
     } else {
